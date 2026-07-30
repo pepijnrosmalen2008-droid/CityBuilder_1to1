@@ -1,6 +1,5 @@
 using Unity.Entities;
 using Unity.Mathematics;
-using UnityEngine;
 
 namespace CityBuilder.Game.Kavellen
 {
@@ -12,7 +11,7 @@ namespace CityBuilder.Game.Kavellen
     /// on every tick would defeat the point of that performance pattern, so it's added here.
     public struct KavelCore : IComponentData
     {
-        public Hash128 Id;
+        public Unity.Entities.Hash128 Id;
         public int DistrictId;
         public float Oppervlakte;              // m^2, derived from Geometrie -- see KavelOppervlakteSystem
         public float Marktwaarde;               // grondwaarde, zie GrondwaardeSystem

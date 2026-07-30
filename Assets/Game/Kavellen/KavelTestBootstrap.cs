@@ -134,7 +134,7 @@ namespace CityBuilder.Game.Kavellen
 
                 em.SetComponentData(kavel, new KavelCore
                 {
-                    Id = new Hash128((uint)(i + 1), 0, 0, 0),
+                    Id = new Unity.Entities.Hash128((uint)(i + 1), 0, 0, 0),
                     DistrictId = i % 2,
                     Oppervlakte = 0f, // KavelOppervlakteSystem berekent dit bij de eerste GeometrieDirty-pass
                     Marktwaarde = 0f,
