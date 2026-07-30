@@ -5,6 +5,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using CityBuilder.Game.Wegennetwerk;
 using CityBuilder.Game.Ontwikkeling;
+using CityBuilder.Game.Visualisatie;
 
 namespace CityBuilder.Game.SpelerTools
 {
@@ -37,6 +38,13 @@ namespace CityBuilder.Game.SpelerTools
         enum TekenModus { Recht, Bocht }
         enum TekenFase { Geen, WachtOpEindpunt, WachtOpBuiging }
 
+        /// Stap 5: los van de teken-submodus (Recht/Bocht) staat de tool als geheel in Bouwen of
+        /// Upgraden. In Upgraden selecteert een klik een bestaand segment en vervangt het
+        /// wegtype in-place -- geen nieuwe knopen, geen nieuwe kavels, alleen lane-samenstelling/
+        /// snelheidslimiet/busvlag en de bijbehorende mesh worden herbouwd.
+        enum ToolActie { Bouwen, Upgraden }
+        const float UpgradeSelectieAfstand = 6f;
+
         /// Stap 4: hoogte-keuze voor het volgende segment. Vaste representatieve waarden i.p.v.
         /// een aparte hoogte-editor -- past bij de rest van de tool (kies een type, teken een
         /// segment) en is genoeg om bruggen/tunnels daadwerkelijk bruikbaar te maken.
@@ -57,6 +65,7 @@ namespace CityBuilder.Game.SpelerTools
         WegTypeId _actiefType = WegTypeId.Straat;
         TekenModus _modus = TekenModus.Recht;
         HoogteKeuze _hoogteKeuze = HoogteKeuze.OpMaaiveld;
+        ToolActie _actie = ToolActie.Bouwen;
 
         // Recht-modus state.
         bool _bezigMetTekenen;
@@ -92,6 +101,7 @@ namespace CityBuilder.Game.SpelerTools
             HandleTypeSelectie();
             HandleModusSelectie();
             HandleHoogteSelectie();
+            HandleActieSelectie();
 
             if (!RaycastNaarTerrein(out Vector3 hitPunt))
             {
@@ -99,10 +109,39 @@ namespace CityBuilder.Game.SpelerTools
                 return;
             }
 
+            if (_actie == ToolActie.Upgraden)
+            {
+                UpdateUpgradeModus(hitPunt);
+                return;
+            }
+
             if (_modus == TekenModus.Recht)
                 UpdateRechteModus(hitPunt);
             else
                 UpdateBochtModus(hitPunt);
+        }
+
+        void HandleActieSelectie()
+        {
+            if (Input.GetKeyDown(KeyCode.U))
+            {
+                _actie = _actie == ToolActie.Bouwen ? ToolActie.Upgraden : ToolActie.Bouwen;
+                AnnuleerTekenen();
+                _laatsteMelding = $"Actie: {_actie}.";
+            }
+        }
+
+        /// Upgraden gebruikt geen sleep-/meerklik-interactie: één klik op een bestaand segment
+        /// past het geselecteerde wegtype direct toe.
+        void UpdateUpgradeModus(Vector3 hitPunt)
+        {
+            if (!Input.GetMouseButtonDown(0)) return;
+
+            var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+            if (ZoekSegmentBijPunt(em, hitPunt, UpgradeSelectieAfstand, out Entity segment))
+                UpgradeSegment(em, segment);
+            else
+                _laatsteMelding = "Geen weg gevonden om te upgraden.";
         }
 
         void HandleModusSelectie()
@@ -337,6 +376,76 @@ namespace CityBuilder.Game.SpelerTools
             return a + ab * t;
         }
 
+        /// Zelfde afstandsberekening als ZoekDichtstbijzijndSegmentPunt, maar zonder de
+        /// eindpunt-uitsluiting daarvan (die is er specifiek om een onnodige splitsing vlak naast
+        /// een knoop te voorkomen -- hier willen we juist het hele segment kunnen selecteren,
+        /// inclusief vlak bij zijn uiteinden).
+        static bool ZoekSegmentBijPunt(EntityManager em, Vector3 punt, float maxAfstand, out Entity gevondenSegment)
+        {
+            gevondenSegment = Entity.Null;
+            float besteAfstand = maxAfstand;
+
+            var query = em.CreateEntityQuery(typeof(WegSegmentData));
+            var entiteiten = query.ToEntityArray(Allocator.Temp);
+
+            for (int i = 0; i < entiteiten.Length; i++)
+            {
+                var spline = em.GetBuffer<WegSegmentSplinePunt>(entiteiten[i]);
+                for (int s = 0; s < spline.Length - 1; s++)
+                {
+                    Vector3 a = new Vector3(spline[s].Punt.x, spline[s].Punt.y, spline[s].Punt.z);
+                    Vector3 b = new Vector3(spline[s + 1].Punt.x, spline[s + 1].Punt.y, spline[s + 1].Punt.z);
+                    Vector3 dichtstbij = DichtstbijzijndPuntOpLijnstuk(punt, a, b);
+                    float afstand = Vector3.Distance(punt, dichtstbij);
+
+                    if (afstand < besteAfstand)
+                    {
+                        besteAfstand = afstand;
+                        gevondenSegment = entiteiten[i];
+                    }
+                }
+            }
+            entiteiten.Dispose();
+            return gevondenSegment != Entity.Null;
+        }
+
+        /// Vervangt het wegtype van een bestaand segment in-place: lanes herbouwd vanuit
+        /// WegTypeCatalogus, snelheidslimiet/busvlag opnieuw afgeleid, CapaciteitDirty gezet.
+        /// VanNode/NaarNode/HoogteProfiel blijven ongewijzigd -- een upgrade verandert het
+        /// wegtype, niet de ligging of hoogte. De bestaande mesh past niet meer bij de nieuwe
+        /// lane-samenstelling, dus die wordt weggehaald en de WegVisueelGemaakt-tag verwijderd
+        /// zodat WegVisualisatieSystem het segment volgende frame opnieuw opbouwt (zelfde route
+        /// als na een segment-splitsing).
+        void UpgradeSegment(EntityManager em, Entity segment)
+        {
+            var data = em.GetComponentData<WegSegmentData>(segment);
+            if (data.WegType == _actiefType)
+            {
+                _laatsteMelding = "Dit segment is al dit wegtype.";
+                return;
+            }
+
+            var laneBuffer = em.GetBuffer<LaneBufferElement>(segment);
+            laneBuffer.Clear();
+            foreach (var spec in WegTypeCatalogus.GetLanes(_actiefType))
+                laneBuffer.Add(new LaneBufferElement { Type = spec.Type, Richting = spec.Richting, BreedteMeter = spec.BreedteMeter });
+
+            data.WegType = _actiefType;
+            data.Snelheidslimiet = WegTypeCatalogus.GetSnelheidslimiet(_actiefType);
+            data.HeeftBusoverlay = _actiefType == WegTypeId.StraatMetBus;
+            em.SetComponentData(segment, data);
+
+            if (!em.HasComponent<CapaciteitDirty>(segment))
+                em.AddComponent<CapaciteitDirty>(segment);
+
+            var oudVisueel = GameObject.Find($"WegVisueel_{segment.Index}");
+            if (oudVisueel != null) Object.Destroy(oudVisueel);
+            if (em.HasComponent<WegVisueelGemaakt>(segment))
+                em.RemoveComponent<WegVisueelGemaakt>(segment);
+
+            _laatsteMelding = $"Segment geüpgraded naar {_actiefType}.";
+        }
+
         void MaakRechteWegsegment(Vector3 start, Vector3 eind)
         {
             var em = World.DefaultGameObjectInjectionWorld.EntityManager;
@@ -515,11 +624,22 @@ namespace CityBuilder.Game.SpelerTools
             var stijl = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.UpperLeft, normal = { textColor = Color.white } };
             var knopStijl = new GUIStyle(GUI.skin.button) { fontSize = 14 };
 
-            GUI.Box(new Rect(10, Screen.height - 265, 320, 255), "", stijl);
-            GUI.Label(new Rect(20, Screen.height - 260, 300, 24), $"Wegtekentool -- {_actiefType} -- modus: {_modus} -- hoogte: {_hoogteKeuze}", stijl);
-            GUI.Label(new Rect(20, Screen.height - 240, 300, 65),
-                "Recht: klik-sleep-los. Bocht: klik start, klik eind, beweeg\nvoor de bocht, klik om af te ronden.\n" +
-                "C wisselt modus, H wisselt maaiveld/brug/tunnel,\nrechtermuisknop annuleert, 1-9 wegtype.", stijl);
+            GUI.Box(new Rect(10, Screen.height - 285, 320, 275), "", stijl);
+            GUI.Label(new Rect(20, Screen.height - 280, 300, 24), $"Wegtekentool -- {_actiefType} -- actie: {_actie}", stijl);
+            GUI.Label(new Rect(20, Screen.height - 260, 300, 20), $"modus: {_modus} -- hoogte: {_hoogteKeuze}", stijl);
+
+            if (_actie == ToolActie.Bouwen)
+            {
+                GUI.Label(new Rect(20, Screen.height - 240, 300, 65),
+                    "Recht: klik-sleep-los. Bocht: klik start, klik eind, beweeg\nvoor de bocht, klik om af te ronden.\n" +
+                    "C wisselt modus, H wisselt maaiveld/brug/tunnel,\nrechtermuisknop annuleert, 1-9 wegtype.", stijl);
+            }
+            else
+            {
+                GUI.Label(new Rect(20, Screen.height - 240, 300, 65),
+                    "Klik op een bestaande weg om 'm naar het\ngeselecteerde wegtype te upgraden.", stijl);
+            }
+            GUI.Label(new Rect(20, Screen.height - 165, 300, 20), "U wisselt bouwen/upgraden.", stijl);
 
             for (int i = 0; i < kBeschikbareTypes.Length; i++)
             {
