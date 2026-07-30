@@ -364,7 +364,9 @@ namespace CityBuilder.Game.SpelerTools
                 Snelheidslimiet = WegTypeCatalogus.GetSnelheidslimiet(_actiefType),
                 HuidigeBelasting = 0f,
                 HoogteProfiel = new HoogteProfielData { Modus = HoogteProfielModus.OpMaaiveld, HoogteOffset = 0f, OvergangsLengte = 0f },
-                HeeftBusoverlay = false,
+                // Sluit aan bij WegTypeCatalogus' aanpak (zelfde lanes als Straat, alleen dit
+                // vlag verschilt) -- de speler-tool moet die keuze wel daadwerkelijk doorzetten.
+                HeeftBusoverlay = _actiefType == WegTypeId.StraatMetBus,
             });
 
             var kavels = KavelGeneratieUtility.GenereerKavelsLangsWeg(em, segment, _kavelRegel, districtId: 0);
