@@ -12,13 +12,19 @@ namespace CityBuilder.Game.SpelerTools
     /// Skylines. Gebruikt UnityEngine.Input (het "oude" Input Manager) -- exact dezelfde API als
     /// FreeCamera.cs, wat al bevestigd werkt in dit project, dus geen nieuwe input-risico's.
     ///
+    /// Stap 1 van de CS1/2-vergelijking: snapping op zowel bestaande knopen als bestaande
+    /// segmenten (met splitsing), zodat een nieuw segment altijd op een echte knoop aansluit --
+    /// nooit los in de lucht/grond eindigt. Dat is precies wat de "groen ertussen"-gaten
+    /// veroorzaakte: twee segmenten die elkaar rakelings misten in plaats van op dezelfde knoop
+    /// te eindigen. Kruispunt-mesh (de vulling op de knoop zelf) komt in WegVisualisatieSystem.
+    ///
     /// Zodra een segment klaar is, genereert deze tool meteen kavels langs de nieuwe weg via de
-    /// al bestaande KavelGeneratieUtility (doc 07) -- net als in Cities Skylines maakt een nieuw
-    /// getekende weg de aangrenzende grond direct bebouwbaar, geen aparte zoneer-stap nodig.
+    /// al bestaande KavelGeneratieUtility (doc 07).
     [AddComponentMenu("City Builder/Weg Bouw Tool")]
     public class WegBouwTool : MonoBehaviour
     {
-        public float snapAfstand = 8f;
+        public float nodeSnapAfstand = 8f;
+        public float segmentSnapAfstand = 5f;
         public float minimumSegmentLengte = 5f;
 
         static readonly WegTypeId[] kBeschikbareTypes =
@@ -67,13 +73,13 @@ namespace CityBuilder.Game.SpelerTools
 
             if (Input.GetMouseButtonDown(0))
             {
-                _startPunt = SnapNaarBestaandeNode(hitPunt);
+                _startPunt = BerekenSnapPunt(hitPunt);
                 _bezigMetTekenen = true;
                 _preview.enabled = true;
             }
             else if (_bezigMetTekenen && Input.GetMouseButtonUp(0))
             {
-                Vector3 eindPunt = SnapNaarBestaandeNode(hitPunt);
+                Vector3 eindPunt = BerekenSnapPunt(hitPunt);
                 _bezigMetTekenen = false;
                 _preview.enabled = false;
 
@@ -90,7 +96,7 @@ namespace CityBuilder.Game.SpelerTools
             }
             else if (_bezigMetTekenen)
             {
-                Vector3 eindPunt = SnapNaarBestaandeNode(hitPunt);
+                Vector3 eindPunt = BerekenSnapPunt(hitPunt);
                 _preview.SetPosition(0, _startPunt + Vector3.up * 1f);
                 _preview.SetPosition(1, eindPunt + Vector3.up * 1f);
             }
@@ -119,14 +125,30 @@ namespace CityBuilder.Game.SpelerTools
             return false;
         }
 
-        Vector3 SnapNaarBestaandeNode(Vector3 punt)
+        /// Puur voor preview/beslissing "waar zou dit naartoe snappen" -- geen entity-mutaties.
+        /// Nodes wegen zwaarder dan segmenten: als beide binnen bereik liggen, wint de node.
+        Vector3 BerekenSnapPunt(Vector3 ruwPunt)
         {
             var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+
+            if (ZoekDichtstbijzijndeNode(em, ruwPunt, nodeSnapAfstand, out Vector3 nodePunt))
+                return nodePunt;
+
+            if (ZoekDichtstbijzijndSegmentPunt(em, ruwPunt, segmentSnapAfstand, out _, out Vector3 segmentPunt, out _))
+                return segmentPunt;
+
+            return ruwPunt;
+        }
+
+        static bool ZoekDichtstbijzijndeNode(EntityManager em, Vector3 punt, float maxAfstand, out Vector3 gevondenPositie)
+        {
             var query = em.CreateEntityQuery(typeof(NetwerkNodeData));
             var nodes = query.ToComponentDataArray<NetwerkNodeData>(Allocator.Temp);
 
-            Vector3 beste = punt;
-            float besteAfstand = snapAfstand;
+            gevondenPositie = punt;
+            float besteAfstand = maxAfstand;
+            bool gevonden = false;
+
             for (int i = 0; i < nodes.Length; i++)
             {
                 Vector3 nodePos = new Vector3(nodes[i].Positie.x, nodes[i].Positie.y, nodes[i].Positie.z);
@@ -134,11 +156,56 @@ namespace CityBuilder.Game.SpelerTools
                 if (afstand < besteAfstand)
                 {
                     besteAfstand = afstand;
-                    beste = nodePos;
+                    gevondenPositie = nodePos;
+                    gevonden = true;
                 }
             }
             nodes.Dispose();
-            return beste;
+            return gevonden;
+        }
+
+        static bool ZoekDichtstbijzijndSegmentPunt(EntityManager em, Vector3 punt, float maxAfstand,
+            out Entity gevondenSegment, out Vector3 gevondenPunt, out float gevondenAfstand)
+        {
+            gevondenSegment = Entity.Null;
+            gevondenPunt = punt;
+            gevondenAfstand = maxAfstand;
+
+            var query = em.CreateEntityQuery(typeof(WegSegmentData));
+            var entiteiten = query.ToEntityArray(Allocator.Temp);
+
+            for (int i = 0; i < entiteiten.Length; i++)
+            {
+                var spline = em.GetBuffer<WegSegmentSplinePunt>(entiteiten[i]);
+                for (int s = 0; s < spline.Length - 1; s++)
+                {
+                    Vector3 a = new Vector3(spline[s].Punt.x, spline[s].Punt.y, spline[s].Punt.z);
+                    Vector3 b = new Vector3(spline[s + 1].Punt.x, spline[s + 1].Punt.y, spline[s + 1].Punt.z);
+                    Vector3 dichtstbij = DichtstbijzijndPuntOpLijnstuk(punt, a, b);
+                    float afstand = Vector3.Distance(punt, dichtstbij);
+
+                    // Vermijd snappen vlak bij het eigen eindpunt van het segment -- dat geval
+                    // wordt al door ZoekDichtstbijzijndeNode afgehandeld en zou hier onnodig een
+                    // splitsing vlak naast een bestaande knoop veroorzaken.
+                    if (afstand < gevondenAfstand && Vector3.Distance(dichtstbij, a) > 1f && Vector3.Distance(dichtstbij, b) > 1f)
+                    {
+                        gevondenAfstand = afstand;
+                        gevondenPunt = dichtstbij;
+                        gevondenSegment = entiteiten[i];
+                    }
+                }
+            }
+            entiteiten.Dispose();
+            return gevondenSegment != Entity.Null;
+        }
+
+        static Vector3 DichtstbijzijndPuntOpLijnstuk(Vector3 p, Vector3 a, Vector3 b)
+        {
+            Vector3 ab = b - a;
+            float lengteKwadraat = ab.sqrMagnitude;
+            if (lengteKwadraat < 0.0001f) return a;
+            float t = Mathf.Clamp01(Vector3.Dot(p - a, ab) / lengteKwadraat);
+            return a + ab * t;
         }
 
         void MaakWegsegment(Vector3 start, Vector3 eind)
@@ -150,9 +217,12 @@ namespace CityBuilder.Game.SpelerTools
 
             Entity segment = em.CreateEntity(typeof(WegSegmentData), typeof(WegSegmentSplinePunt), typeof(LaneBufferElement), typeof(CapaciteitDirty));
 
+            var vanPos = em.GetComponentData<NetwerkNodeData>(vanNode).Positie;
+            var naarPos = em.GetComponentData<NetwerkNodeData>(naarNode).Positie;
+
             var spline = em.GetBuffer<WegSegmentSplinePunt>(segment);
-            spline.Add(new WegSegmentSplinePunt { Punt = new float3(start.x, start.y, start.z) });
-            spline.Add(new WegSegmentSplinePunt { Punt = new float3(eind.x, eind.y, eind.z) });
+            spline.Add(new WegSegmentSplinePunt { Punt = vanPos });
+            spline.Add(new WegSegmentSplinePunt { Punt = naarPos });
 
             var lanes = em.GetBuffer<LaneBufferElement>(segment);
             foreach (var spec in WegTypeCatalogus.GetLanes(_actiefType))
@@ -176,31 +246,95 @@ namespace CityBuilder.Game.SpelerTools
             _laatsteMelding = $"{_actiefType} aangelegd ({Vector3.Distance(start, eind):0}m), {kavels.Length} kavels erlangs gegenereerd.";
         }
 
+        /// Vindt een bestaande knoop op deze positie, splitst een bestaand segment als de positie
+        /// daar middenop valt, of maakt anders een verse losse knoop.
         Entity VindOfMaakNode(EntityManager em, Vector3 positie)
         {
-            var query = em.CreateEntityQuery(typeof(NetwerkNodeData));
-            var entiteiten = query.ToEntityArray(Allocator.Temp);
-            var data = query.ToComponentDataArray<NetwerkNodeData>(Allocator.Temp);
+            var nodeQuery = em.CreateEntityQuery(typeof(NetwerkNodeData));
+            var nodeEntiteiten = nodeQuery.ToEntityArray(Allocator.Temp);
+            var nodeData = nodeQuery.ToComponentDataArray<NetwerkNodeData>(Allocator.Temp);
 
             Entity gevonden = Entity.Null;
-            for (int i = 0; i < data.Length; i++)
+            for (int i = 0; i < nodeData.Length; i++)
             {
-                Vector3 nodePos = new Vector3(data[i].Positie.x, data[i].Positie.y, data[i].Positie.z);
+                Vector3 nodePos = new Vector3(nodeData[i].Positie.x, nodeData[i].Positie.y, nodeData[i].Positie.z);
                 if (Vector3.Distance(nodePos, positie) < 0.5f)
                 {
-                    gevonden = entiteiten[i];
+                    gevonden = nodeEntiteiten[i];
                     break;
                 }
             }
-            entiteiten.Dispose();
-            data.Dispose();
+            nodeEntiteiten.Dispose();
+            nodeData.Dispose();
 
             if (gevonden != Entity.Null)
                 return gevonden;
 
+            if (ZoekDichtstbijzijndSegmentPunt(em, positie, 0.5f, out Entity teSplitsen, out Vector3 splitsPunt, out _))
+                return SplitsSegmentOpPunt(em, teSplitsen, splitsPunt);
+
             Entity node = em.CreateEntity(typeof(NetwerkNodeData));
             em.SetComponentData(node, new NetwerkNodeData { Type = NodeType.Kruispunt, Positie = new float3(positie.x, positie.y, positie.z) });
             return node;
+        }
+
+        /// Splitst een bestaand segment in twee op het gegeven punt: nieuwe knoop erop, twee
+        /// nieuwe segmenten met dezelfde wegtype/lane-samenstelling, oude segment (+ zijn visueel)
+        /// verwijderd.
+        static Entity SplitsSegmentOpPunt(EntityManager em, Entity teSplitsen, Vector3 splitsPunt)
+        {
+            var sjabloon = em.GetComponentData<WegSegmentData>(teSplitsen);
+            Entity vanNode = sjabloon.VanNode;
+            Entity naarNode = sjabloon.NaarNode;
+
+            Entity nieuweNode = em.CreateEntity(typeof(NetwerkNodeData));
+            em.SetComponentData(nieuweNode, new NetwerkNodeData { Type = NodeType.Kruispunt, Positie = new float3(splitsPunt.x, splitsPunt.y, splitsPunt.z) });
+
+            var oudeLanes = em.GetBuffer<LaneBufferElement>(teSplitsen);
+            var laneKopie = new NativeArray<LaneBufferElement>(oudeLanes.Length, Allocator.Temp);
+            for (int i = 0; i < oudeLanes.Length; i++)
+                laneKopie[i] = oudeLanes[i];
+
+            MaakSegmentTussenNodes(em, vanNode, nieuweNode, sjabloon, laneKopie);
+            MaakSegmentTussenNodes(em, nieuweNode, naarNode, sjabloon, laneKopie);
+            laneKopie.Dispose();
+
+            var oudVisueel = GameObject.Find($"WegVisueel_{teSplitsen.Index}");
+            if (oudVisueel != null) Object.Destroy(oudVisueel);
+            em.DestroyEntity(teSplitsen);
+
+            return nieuweNode;
+        }
+
+        static Entity MaakSegmentTussenNodes(EntityManager em, Entity van, Entity naar, in WegSegmentData sjabloon, NativeArray<LaneBufferElement> lanes)
+        {
+            Entity segment = em.CreateEntity(typeof(WegSegmentData), typeof(WegSegmentSplinePunt), typeof(LaneBufferElement), typeof(CapaciteitDirty));
+
+            var vanPos = em.GetComponentData<NetwerkNodeData>(van).Positie;
+            var naarPos = em.GetComponentData<NetwerkNodeData>(naar).Positie;
+
+            var spline = em.GetBuffer<WegSegmentSplinePunt>(segment);
+            spline.Add(new WegSegmentSplinePunt { Punt = vanPos });
+            spline.Add(new WegSegmentSplinePunt { Punt = naarPos });
+
+            var laneBuffer = em.GetBuffer<LaneBufferElement>(segment);
+            for (int i = 0; i < lanes.Length; i++)
+                laneBuffer.Add(lanes[i]);
+
+            em.SetComponentData(segment, new WegSegmentData
+            {
+                Id = new Unity.Entities.Hash128((uint)segment.Index, 12, 0, 0),
+                WegType = sjabloon.WegType,
+                VanNode = van,
+                NaarNode = naar,
+                Capaciteit = 0,
+                Snelheidslimiet = sjabloon.Snelheidslimiet,
+                HuidigeBelasting = 0f,
+                HoogteProfiel = sjabloon.HoogteProfiel,
+                HeeftBusoverlay = sjabloon.HeeftBusoverlay,
+            });
+
+            return segment;
         }
 
         void OnGUI()
