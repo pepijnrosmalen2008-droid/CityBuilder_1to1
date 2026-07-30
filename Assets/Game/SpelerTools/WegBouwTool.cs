@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -12,11 +13,16 @@ namespace CityBuilder.Game.SpelerTools
     /// Skylines. Gebruikt UnityEngine.Input (het "oude" Input Manager) -- exact dezelfde API als
     /// FreeCamera.cs, wat al bevestigd werkt in dit project, dus geen nieuwe input-risico's.
     ///
-    /// Stap 1 van de CS1/2-vergelijking: snapping op zowel bestaande knopen als bestaande
-    /// segmenten (met splitsing), zodat een nieuw segment altijd op een echte knoop aansluit --
-    /// nooit los in de lucht/grond eindigt. Dat is precies wat de "groen ertussen"-gaten
-    /// veroorzaakte: twee segmenten die elkaar rakelings misten in plaats van op dezelfde knoop
-    /// te eindigen. Kruispunt-mesh (de vulling op de knoop zelf) komt in WegVisualisatieSystem.
+    /// Stap 1: snapping op zowel bestaande knopen als bestaande segmenten (met splitsing), zodat
+    /// een nieuw segment altijd op een echte knoop aansluit -- nooit los eindigt. Kruispunt-
+    /// vulling zit in KruispuntVisualisatieSystem.
+    ///
+    /// Stap 2 (dit bestand): Bocht-modus met een kwadratische Bézier (klik start, klik eind,
+    /// beweeg voor het buigpunt, klik om af te ronden). Dit is bewust een vereenvoudiging van
+    /// CS1/2's cubic-Bézier-met-tangenten-continuiteit (die zorgt dat aangrenzende segmenten
+    /// vloeiend in elkaar overlopen over de hele graaf) -- dat is een aanzienlijk grotere
+    /// aparte feature. Eén buigpunt per segment geeft al een bochtige weg, wat de directe vraag
+    /// was; tangent-continuiteit tussen segmenten is een latere verfijning.
     ///
     /// Zodra een segment klaar is, genereert deze tool meteen kavels langs de nieuwe weg via de
     /// al bestaande KavelGeneratieUtility (doc 07).
@@ -26,6 +32,10 @@ namespace CityBuilder.Game.SpelerTools
         public float nodeSnapAfstand = 8f;
         public float segmentSnapAfstand = 5f;
         public float minimumSegmentLengte = 5f;
+        const int kBochtSamples = 12;
+
+        enum TekenModus { Recht, Bocht }
+        enum TekenFase { Geen, WachtOpEindpunt, WachtOpBuiging }
 
         static readonly WegTypeId[] kBeschikbareTypes =
         {
@@ -37,8 +47,16 @@ namespace CityBuilder.Game.SpelerTools
         KavelGeneratieRegel _kavelRegel = new KavelGeneratieRegel { MaxDiepteVanafWeggrens = 50f, MinFrontbreedte = 20f };
 
         WegTypeId _actiefType = WegTypeId.Straat;
+        TekenModus _modus = TekenModus.Recht;
+
+        // Recht-modus state.
         bool _bezigMetTekenen;
         Vector3 _startPunt;
+
+        // Bocht-modus state.
+        TekenFase _fase = TekenFase.Geen;
+        Vector3 _p0, _p2;
+
         LineRenderer _preview;
         Camera _camera;
         string _laatsteMelding = "";
@@ -63,18 +81,44 @@ namespace CityBuilder.Game.SpelerTools
         void Update()
         {
             HandleTypeSelectie();
+            HandleModusSelectie();
 
-            bool heeftHit = RaycastNaarTerrein(out Vector3 hitPunt);
-            if (!heeftHit)
+            if (!RaycastNaarTerrein(out Vector3 hitPunt))
             {
-                if (_bezigMetTekenen) _preview.enabled = false;
+                if (_bezigMetTekenen || _fase != TekenFase.Geen) _preview.enabled = false;
                 return;
             }
 
+            if (_modus == TekenModus.Recht)
+                UpdateRechteModus(hitPunt);
+            else
+                UpdateBochtModus(hitPunt);
+        }
+
+        void HandleModusSelectie()
+        {
+            if (Input.GetKeyDown(KeyCode.C))
+            {
+                _modus = _modus == TekenModus.Recht ? TekenModus.Bocht : TekenModus.Recht;
+                AnnuleerTekenen();
+                _laatsteMelding = $"Modus: {(_modus == TekenModus.Recht ? "Recht" : "Bocht")}.";
+            }
+        }
+
+        void AnnuleerTekenen()
+        {
+            _bezigMetTekenen = false;
+            _fase = TekenFase.Geen;
+            _preview.enabled = false;
+        }
+
+        void UpdateRechteModus(Vector3 hitPunt)
+        {
             if (Input.GetMouseButtonDown(0))
             {
                 _startPunt = BerekenSnapPunt(hitPunt);
                 _bezigMetTekenen = true;
+                _preview.positionCount = 2;
                 _preview.enabled = true;
             }
             else if (_bezigMetTekenen && Input.GetMouseButtonUp(0))
@@ -84,22 +128,80 @@ namespace CityBuilder.Game.SpelerTools
                 _preview.enabled = false;
 
                 if (Vector3.Distance(_startPunt, eindPunt) >= minimumSegmentLengte)
-                    MaakWegsegment(_startPunt, eindPunt);
+                    MaakRechteWegsegment(_startPunt, eindPunt);
                 else
                     _laatsteMelding = "Segment te kort, geannuleerd.";
             }
             else if (_bezigMetTekenen && Input.GetMouseButtonDown(1))
             {
-                _bezigMetTekenen = false;
-                _preview.enabled = false;
+                AnnuleerTekenen();
                 _laatsteMelding = "Tekenen geannuleerd.";
             }
             else if (_bezigMetTekenen)
             {
                 Vector3 eindPunt = BerekenSnapPunt(hitPunt);
-                _preview.SetPosition(0, _startPunt + Vector3.up * 1f);
-                _preview.SetPosition(1, eindPunt + Vector3.up * 1f);
+                _preview.SetPosition(0, _startPunt + Vector3.up);
+                _preview.SetPosition(1, eindPunt + Vector3.up);
             }
+        }
+
+        void UpdateBochtModus(Vector3 hitPunt)
+        {
+            if (_fase != TekenFase.Geen && Input.GetMouseButtonDown(1))
+            {
+                AnnuleerTekenen();
+                _laatsteMelding = "Tekenen geannuleerd.";
+                return;
+            }
+
+            switch (_fase)
+            {
+                case TekenFase.Geen:
+                    if (Input.GetMouseButtonDown(0))
+                    {
+                        _p0 = BerekenSnapPunt(hitPunt);
+                        _fase = TekenFase.WachtOpEindpunt;
+                        _preview.positionCount = 2;
+                        _preview.enabled = true;
+                    }
+                    break;
+
+                case TekenFase.WachtOpEindpunt:
+                    _preview.SetPosition(0, _p0 + Vector3.up);
+                    _preview.SetPosition(1, hitPunt + Vector3.up);
+                    if (Input.GetMouseButtonDown(0))
+                    {
+                        _p2 = BerekenSnapPunt(hitPunt);
+                        _fase = TekenFase.WachtOpBuiging;
+                    }
+                    break;
+
+                case TekenFase.WachtOpBuiging:
+                    // Het buigpunt is bewust ongesnapt -- het is een vormgreep, geen netwerkknoop.
+                    ToonBuigPreview(_p0, hitPunt, _p2);
+                    if (Input.GetMouseButtonDown(0))
+                    {
+                        MaakGebogenWegsegment(_p0, hitPunt, _p2);
+                        AnnuleerTekenen();
+                    }
+                    break;
+            }
+        }
+
+        void ToonBuigPreview(Vector3 p0, Vector3 p1, Vector3 p2)
+        {
+            _preview.positionCount = kBochtSamples + 1;
+            for (int i = 0; i <= kBochtSamples; i++)
+            {
+                float t = (float)i / kBochtSamples;
+                _preview.SetPosition(i, BerekenKwadratischeBezier(p0, p1, p2, t) + Vector3.up);
+            }
+        }
+
+        static Vector3 BerekenKwadratischeBezier(Vector3 p0, Vector3 p1, Vector3 p2, float t)
+        {
+            float u = 1f - t;
+            return u * u * p0 + 2f * u * t * p1 + t * t * p2;
         }
 
         void HandleTypeSelectie()
@@ -208,21 +310,45 @@ namespace CityBuilder.Game.SpelerTools
             return a + ab * t;
         }
 
-        void MaakWegsegment(Vector3 start, Vector3 eind)
+        void MaakRechteWegsegment(Vector3 start, Vector3 eind)
         {
             var em = World.DefaultGameObjectInjectionWorld.EntityManager;
-
             Entity vanNode = VindOfMaakNode(em, start);
             Entity naarNode = VindOfMaakNode(em, eind);
-
-            Entity segment = em.CreateEntity(typeof(WegSegmentData), typeof(WegSegmentSplinePunt), typeof(LaneBufferElement), typeof(CapaciteitDirty));
-
             var vanPos = em.GetComponentData<NetwerkNodeData>(vanNode).Positie;
             var naarPos = em.GetComponentData<NetwerkNodeData>(naarNode).Positie;
 
+            MaakWegsegmentMetSpline(vanNode, naarNode, new List<float3> { vanPos, naarPos });
+        }
+
+        void MaakGebogenWegsegment(Vector3 p0Ruw, Vector3 p1, Vector3 p2Ruw)
+        {
+            var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+            Entity vanNode = VindOfMaakNode(em, p0Ruw);
+            Entity naarNode = VindOfMaakNode(em, p2Ruw);
+            var vanPos = em.GetComponentData<NetwerkNodeData>(vanNode).Positie;
+            var naarPos = em.GetComponentData<NetwerkNodeData>(naarNode).Positie;
+
+            var punten = new List<float3>(kBochtSamples + 1);
+            for (int i = 0; i <= kBochtSamples; i++)
+            {
+                float t = (float)i / kBochtSamples;
+                Vector3 p = BerekenKwadratischeBezier(ToVector3(vanPos), p1, ToVector3(naarPos), t);
+                punten.Add(new float3(p.x, p.y, p.z));
+            }
+
+            MaakWegsegmentMetSpline(vanNode, naarNode, punten);
+        }
+
+        void MaakWegsegmentMetSpline(Entity vanNode, Entity naarNode, List<float3> splinePunten)
+        {
+            var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+
+            Entity segment = em.CreateEntity(typeof(WegSegmentData), typeof(WegSegmentSplinePunt), typeof(LaneBufferElement), typeof(CapaciteitDirty));
+
             var spline = em.GetBuffer<WegSegmentSplinePunt>(segment);
-            spline.Add(new WegSegmentSplinePunt { Punt = vanPos });
-            spline.Add(new WegSegmentSplinePunt { Punt = naarPos });
+            foreach (var p in splinePunten)
+                spline.Add(new WegSegmentSplinePunt { Punt = p });
 
             var lanes = em.GetBuffer<LaneBufferElement>(segment);
             foreach (var spec in WegTypeCatalogus.GetLanes(_actiefType))
@@ -243,8 +369,14 @@ namespace CityBuilder.Game.SpelerTools
 
             var kavels = KavelGeneratieUtility.GenereerKavelsLangsWeg(em, segment, _kavelRegel, districtId: 0);
 
-            _laatsteMelding = $"{_actiefType} aangelegd ({Vector3.Distance(start, eind):0}m), {kavels.Length} kavels erlangs gegenereerd.";
+            float lengte = 0f;
+            for (int i = 0; i < splinePunten.Count - 1; i++)
+                lengte += Vector3.Distance(ToVector3(splinePunten[i]), ToVector3(splinePunten[i + 1]));
+
+            _laatsteMelding = $"{_actiefType} aangelegd ({lengte:0}m), {kavels.Length} kavels erlangs gegenereerd.";
         }
+
+        static Vector3 ToVector3(float3 f) => new Vector3(f.x, f.y, f.z);
 
         /// Vindt een bestaande knoop op deze positie, splitst een bestaand segment als de positie
         /// daar middenop valt, of maakt anders een verse losse knoop.
@@ -280,7 +412,9 @@ namespace CityBuilder.Game.SpelerTools
 
         /// Splitst een bestaand segment in twee op het gegeven punt: nieuwe knoop erop, twee
         /// nieuwe segmenten met dezelfde wegtype/lane-samenstelling, oude segment (+ zijn visueel)
-        /// verwijderd.
+        /// verwijderd. Werkt op basis van de eindpunten van het gesplitste segment, niet zijn
+        /// eventuele tussenliggende bochtpunten -- een bocht wordt dus als twee rechte helften
+        /// heraangelegd bij een splitsing. Acceptabele vereenvoudiging voor nu.
         static Entity SplitsSegmentOpPunt(EntityManager em, Entity teSplitsen, Vector3 splitsPunt)
         {
             var sjabloon = em.GetComponentData<WegSegmentData>(teSplitsen);
@@ -342,9 +476,11 @@ namespace CityBuilder.Game.SpelerTools
             var stijl = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.UpperLeft, normal = { textColor = Color.white } };
             var knopStijl = new GUIStyle(GUI.skin.button) { fontSize = 14 };
 
-            GUI.Box(new Rect(10, Screen.height - 220, 320, 210), "", stijl);
-            GUI.Label(new Rect(20, Screen.height - 215, 300, 24), $"Wegtekentool -- actief: {_actiefType}", stijl);
-            GUI.Label(new Rect(20, Screen.height - 195, 300, 40), "Klik-sleep om te tekenen, rechtermuisknop annuleert.\nToetsen 1-9 wisselen wegtype.", stijl);
+            GUI.Box(new Rect(10, Screen.height - 245, 320, 235), "", stijl);
+            GUI.Label(new Rect(20, Screen.height - 240, 300, 24), $"Wegtekentool -- {_actiefType} -- modus: {_modus}", stijl);
+            GUI.Label(new Rect(20, Screen.height - 220, 300, 55),
+                "Recht: klik-sleep-los. Bocht: klik start, klik eind, beweeg\nvoor de bocht, klik om af te ronden.\n" +
+                "C wisselt modus, rechtermuisknop annuleert, 1-9 wegtype.", stijl);
 
             for (int i = 0; i < kBeschikbareTypes.Length; i++)
             {
