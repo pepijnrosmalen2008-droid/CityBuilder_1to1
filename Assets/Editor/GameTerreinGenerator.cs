@@ -134,6 +134,7 @@ namespace CityBuilder.Game.EditorTools
             byte[] pngData = texture.EncodeToPNG();
             Object.DestroyImmediate(texture);
 
+            Directory.CreateDirectory(Path.GetDirectoryName(pad));
             File.WriteAllBytes(pad, pngData);
             AssetDatabase.ImportAsset(pad);
 
