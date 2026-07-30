@@ -1,6 +1,7 @@
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using CityBuilder.Game.Ontwikkeling;
 
 namespace CityBuilder.Game.Kavellen
 {
@@ -40,12 +41,25 @@ namespace CityBuilder.Game.Kavellen
     /// Event-driven op GrondwaardeDirty, net als de andere systemen in dit cluster -- grondwaarde
     /// hoeft niet elk frame herrekend, alleen als status/bestemmingsplan/omgevingsfactoren
     /// veranderen (KavelOppervlakteSystem en OmgevingsfactorenSystem zetten deze tag zelf).
+    ///
+    /// Doc 07, sectie 2: "prijsmultiplier voedt direct de Opbrengstwaarde-stap". Bouwt een
+    /// (district, functie) -> prijsmultiplier-lookup op uit CityBuilder.Game.Ontwikkeling's
+    /// VraagAanbodIndexData, één keer per OnUpdate-aanroep. Ontbreekt die data (bijv. als doc 07
+    /// nog niet geladen/uitgevoerd is) dan blijft de multiplier neutraal 1.0 -- geen breaking
+    /// change voor de al bestaande doc 04-verificatie.
     public partial struct GrondwaardeSystem : ISystem
     {
         public void OnUpdate(ref SystemState state)
         {
             var functieAandelenLookup = SystemAPI.GetBufferLookup<FunctieAandeelBufferElement>(true);
             var bouwregelsLookup = SystemAPI.GetComponentLookup<BouwregelsData>(true);
+
+            var prijsMultiplierPerDistrictFunctie = new NativeHashMap<int, float>(16, Allocator.Temp);
+            foreach (var index in SystemAPI.Query<RefRO<VraagAanbodIndexData>>())
+            {
+                int key = EncodeeerDistrictFunctieSleutel(index.ValueRO.DistrictId, index.ValueRO.Functie);
+                prijsMultiplierPerDistrictFunctie[key] = index.ValueRO.PrijsMultiplier;
+            }
 
             var toClear = new NativeList<Entity>(Allocator.Temp);
 
@@ -60,7 +74,7 @@ namespace CityBuilder.Game.Kavellen
                 {
                     var functies = functieAandelenLookup[kavel.ValueRO.Bestemmingsplan];
                     var bouwregels = bouwregelsLookup[kavel.ValueRO.Bestemmingsplan];
-                    grondwaarde = BerekenGrondwaarde(kavel.ValueRO, omgeving.ValueRO, functies, bouwregels);
+                    grondwaarde = BerekenGrondwaarde(kavel.ValueRO, omgeving.ValueRO, functies, bouwregels, prijsMultiplierPerDistrictFunctie);
                 }
 
                 kavel.ValueRW.Marktwaarde = grondwaarde;
@@ -71,10 +85,14 @@ namespace CityBuilder.Game.Kavellen
                 state.EntityManager.RemoveComponent<GrondwaardeDirty>(e);
 
             toClear.Dispose();
+            prijsMultiplierPerDistrictFunctie.Dispose();
         }
 
+        static int EncodeeerDistrictFunctieSleutel(int districtId, FunctieType functie) => districtId * 1000 + (int)functie;
+
         static float BerekenGrondwaarde(in KavelCore kavel, in OmgevingsfactorenData omgeving,
-            DynamicBuffer<FunctieAandeelBufferElement> functies, in BouwregelsData bouwregels)
+            DynamicBuffer<FunctieAandeelBufferElement> functies, in BouwregelsData bouwregels,
+            NativeHashMap<int, float> prijsMultiplierPerDistrictFunctie)
         {
             float bebouwbaarOppervlak = kavel.Oppervlakte * (kavel.BebouwingspercentageMax / 100f);
             int aantalLagen = math.max(1, (int)math.floor(kavel.BouwhoogteMax / GrondwaardeConstanten.GemiddeldeVerdiepingshoogteMeter));
@@ -82,8 +100,9 @@ namespace CityBuilder.Game.Kavellen
 
             float gewogenPrijsPerM2 = GewogenPrijsPerM2(functies);
             float omgevingsfactor = OmgevingsfactorMultiplier(omgeving);
+            float marktMultiplier = GewogenPrijsMultiplier(kavel.DistrictId, functies, prijsMultiplierPerDistrictFunctie);
 
-            float opbrengstwaarde = vloeroppervlak * gewogenPrijsPerM2 * omgevingsfactor;
+            float opbrengstwaarde = vloeroppervlak * gewogenPrijsPerM2 * omgevingsfactor * marktMultiplier;
 
             float bouwkostenPerM2 = GrondwaardeConstanten.BouwkostenPerM2Basis
                 * (1f + aantalLagen * GrondwaardeConstanten.BouwkostenHoogtePremiePerLaag);
@@ -117,6 +136,30 @@ namespace CityBuilder.Game.Kavellen
             }
 
             return totaalGewicht > 0f ? totaalPrijs / totaalGewicht : GrondwaardeConstanten.BasisPrijsPerM2(FunctieType.Wonen);
+        }
+
+        /// Doc 07, sectie 2: dezelfde functie-gewogen aanpak als GewogenPrijsPerM2, maar dan voor
+        /// de prijsmultiplier. Functies zonder VraagAanbodIndex-data (nog) wegen neutraal mee (1.0).
+        static float GewogenPrijsMultiplier(int districtId, DynamicBuffer<FunctieAandeelBufferElement> functies,
+            NativeHashMap<int, float> prijsMultiplierPerDistrictFunctie)
+        {
+            if (functies.Length == 0)
+                return 1f;
+
+            float totaalGewicht = 0f;
+            float totaalMultiplier = 0f;
+            for (int i = 0; i < functies.Length; i++)
+            {
+                var f = functies[i];
+                float gewicht = (f.MinPercentage + f.MaxPercentage) * 0.5f;
+                int key = EncodeeerDistrictFunctieSleutel(districtId, f.Functie);
+                float multiplier = prijsMultiplierPerDistrictFunctie.TryGetValue(key, out var m) ? m : 1f;
+
+                totaalGewicht += gewicht;
+                totaalMultiplier += gewicht * multiplier;
+            }
+
+            return totaalGewicht > 0f ? totaalMultiplier / totaalGewicht : 1f;
         }
 
         /// Section 4: "een kavel met dezelfde bestemming is meer waard bij goede bereikbaarheid
