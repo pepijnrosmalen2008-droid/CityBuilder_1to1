@@ -45,12 +45,19 @@ namespace CityBuilder.Game.SpelerTools
         enum ToolActie { Bouwen, Upgraden }
         const float UpgradeSelectieAfstand = 6f;
 
-        /// Stap 4: hoogte-keuze voor het volgende segment. Vaste representatieve waarden i.p.v.
-        /// een aparte hoogte-editor -- past bij de rest van de tool (kies een type, teken een
-        /// segment) en is genoeg om bruggen/tunnels daadwerkelijk bruikbaar te maken.
-        enum HoogteKeuze { OpMaaiveld, Brug, Tunnel }
-        const float BrugHoogte = 6f;
-        const float TunnelDiepte = 5f;
+        // Paneel-geometrie, gedeeld tussen OnGUI (tekenen) en MuisBovenUI (wereld-klik blokkeren).
+        const float PaneelX = 10f;
+        const float PaneelBreedte = 340f;
+        const float PaneelTopVanaf = 330f; // afstand vanaf de onderkant van het scherm tot de bovenkant van het paneel
+        const float PaneelHoogte = 320f;
+
+        /// Stap 4/6: hoogte van het volgende segment als één doorlopende dial (PageUp/PageDown),
+        /// zoals in CS1/2 -- geen aparte "kies brug" of "kies tunnel"-tool. Niveau 0 = maaiveld,
+        /// positief = omhoog (brug/viaduct), negatief = omlaag (tunnel); het teken van het niveau
+        /// bepaalt de HoogteProfielModus, de grootte bepaalt HoogteOffset.
+        const int HoogteNiveauMin = -2;
+        const int HoogteNiveauMax = 2;
+        const float HoogteStapMeter = 4f;
         const float StandaardOvergangsLengte = 20f;
 
         static readonly WegTypeId[] kBeschikbareTypes =
@@ -64,8 +71,9 @@ namespace CityBuilder.Game.SpelerTools
 
         WegTypeId _actiefType = WegTypeId.Straat;
         TekenModus _modus = TekenModus.Recht;
-        HoogteKeuze _hoogteKeuze = HoogteKeuze.OpMaaiveld;
+        int _hoogteNiveau = 0; // 0 = maaiveld, >0 = brug, <0 = tunnel
         ToolActie _actie = ToolActie.Bouwen;
+        bool _toonTunnelOverzicht;
 
         // Recht-modus state.
         bool _bezigMetTekenen;
@@ -102,6 +110,15 @@ namespace CityBuilder.Game.SpelerTools
             HandleModusSelectie();
             HandleHoogteSelectie();
             HandleActieSelectie();
+            HandleTunnelOverzichtToggle();
+
+            // Klikken op het UI-paneel (OnGUI) mag niet ook als wereld-klik tellen -- anders start
+            // je per ongeluk een segment/upgrade onder een knop die je net indrukte.
+            if (MuisBovenUI())
+            {
+                _preview.enabled = false;
+                return;
+            }
 
             if (!RaycastNaarTerrein(out Vector3 hitPunt))
             {
@@ -156,20 +173,83 @@ namespace CityBuilder.Game.SpelerTools
 
         void HandleHoogteSelectie()
         {
-            if (Input.GetKeyDown(KeyCode.H))
-            {
-                _hoogteKeuze = (HoogteKeuze)(((int)_hoogteKeuze + 1) % 3);
-                AnnuleerTekenen();
-                _laatsteMelding = $"Hoogte: {_hoogteKeuze}.";
-            }
+            // Geen AnnuleerTekenen() hier -- net als in CS1/2 kun je de hoogte bijstellen terwijl
+            // je middenin het tekenen van een segment zit, zonder de klik-keten te verliezen.
+            if (Input.GetKeyDown(KeyCode.PageUp))
+                ZetHoogteNiveau(_hoogteNiveau + 1);
+            else if (Input.GetKeyDown(KeyCode.PageDown))
+                ZetHoogteNiveau(_hoogteNiveau - 1);
         }
 
-        HoogteProfielData BerekenHoogteProfiel() => _hoogteKeuze switch
+        void ZetHoogteNiveau(int niveau)
         {
-            HoogteKeuze.Brug => new HoogteProfielData { Modus = HoogteProfielModus.Verhoogd, HoogteOffset = BrugHoogte, OvergangsLengte = StandaardOvergangsLengte },
-            HoogteKeuze.Tunnel => new HoogteProfielData { Modus = HoogteProfielModus.Tunnel, HoogteOffset = TunnelDiepte, OvergangsLengte = StandaardOvergangsLengte },
-            _ => new HoogteProfielData { Modus = HoogteProfielModus.OpMaaiveld, HoogteOffset = 0f, OvergangsLengte = 0f },
-        };
+            _hoogteNiveau = Mathf.Clamp(niveau, HoogteNiveauMin, HoogteNiveauMax);
+            _laatsteMelding = $"Hoogte: {BeschrijfHoogteNiveau(_hoogteNiveau)}.";
+        }
+
+        static string BeschrijfHoogteNiveau(int niveau)
+        {
+            if (niveau == 0) return "maaiveld";
+            return niveau > 0 ? $"brug (niveau {niveau})" : $"tunnel (niveau {-niveau})";
+        }
+
+        HoogteProfielData BerekenHoogteProfiel()
+        {
+            if (_hoogteNiveau == 0)
+                return new HoogteProfielData { Modus = HoogteProfielModus.OpMaaiveld, HoogteOffset = 0f, OvergangsLengte = 0f };
+
+            var modus = _hoogteNiveau > 0 ? HoogteProfielModus.Verhoogd : HoogteProfielModus.Tunnel;
+            float offset = Mathf.Abs(_hoogteNiveau) * HoogteStapMeter;
+            return new HoogteProfielData { Modus = modus, HoogteOffset = offset, OvergangsLengte = StandaardOvergangsLengte };
+        }
+
+        void HandleTunnelOverzichtToggle()
+        {
+            if (Input.GetKeyDown(KeyCode.O))
+                ZetTunnelOverzichtActief(!_toonTunnelOverzicht);
+        }
+
+        /// Zoekt alle bestaande tunnelsegmenten op en toont/verbergt hun al aangemaakte (maar
+        /// standaard onzichtbare) "TunnelOverzicht"-kind (zie WegVisualisatieUtility). Een tunnel
+        /// die je bouwt terwijl dit al aanstaat, krijgt zijn overzicht pas zichtbaar bij de
+        /// volgende toggle -- acceptabel, je bouwt een tunnel meestal eerst af en bekijkt 'm
+        /// daarna pas van bovenaf.
+        void ZetTunnelOverzichtActief(bool actief)
+        {
+            _toonTunnelOverzicht = actief;
+            _laatsteMelding = actief ? "Tunneloverzicht aan." : "Tunneloverzicht uit.";
+
+            var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+            var query = em.CreateEntityQuery(typeof(WegSegmentData));
+            var entiteiten = query.ToEntityArray(Allocator.Temp);
+            var data = query.ToComponentDataArray<WegSegmentData>(Allocator.Temp);
+
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i].HoogteProfiel.Modus != HoogteProfielModus.Tunnel) continue;
+
+                var wegVisueel = GameObject.Find($"WegVisueel_{entiteiten[i].Index}");
+                if (wegVisueel == null) continue;
+
+                var overzicht = wegVisueel.transform.Find("TunnelOverzicht");
+                if (overzicht != null) overzicht.gameObject.SetActive(actief);
+            }
+
+            entiteiten.Dispose();
+            data.Dispose();
+        }
+
+        /// Screen-space check tegen het OnGUI-paneel (zie PaneelX/PaneelTopVanaf/etc in OnGUI) --
+        /// zodat een klik op een UI-knop niet ook als wereld-klik telt. Input.mousePosition is
+        /// bottom-left-georiënteerd, OnGUI-Rects zijn top-left-georiënteerd; hier omgerekend.
+        bool MuisBovenUI()
+        {
+            float muisYVanBoven = Screen.height - Input.mousePosition.y;
+            float paneelBovenkant = Screen.height - PaneelTopVanaf;
+            float paneelOnderkant = paneelBovenkant + PaneelHoogte;
+            return Input.mousePosition.x >= PaneelX && Input.mousePosition.x <= PaneelX + PaneelBreedte
+                && muisYVanBoven >= paneelBovenkant && muisYVanBoven <= paneelOnderkant;
+        }
 
         void AnnuleerTekenen()
         {
@@ -520,7 +600,7 @@ namespace CityBuilder.Game.SpelerTools
             }
             else
             {
-                _laatsteMelding = $"{_actiefType} aangelegd ({lengte:0}m) als {_hoogteKeuze}.";
+                _laatsteMelding = $"{_actiefType} aangelegd ({lengte:0}m) als {BeschrijfHoogteNiveau(_hoogteNiveau)}.";
             }
         }
 
@@ -619,39 +699,101 @@ namespace CityBuilder.Game.SpelerTools
             return segment;
         }
 
+        /// Klikbare knoppen i.p.v. alleen sneltoetsen, met een blauwe highlight op de actieve
+        /// keuze -- rechtstreeks antwoord op "een UI zoals bij CS1/2 zou fijn zijn en handiger om
+        /// te overzien". Geen aparte Action-parameter/lambda's: de aanroeper leest gewoon de
+        /// return-waarde, zelfde stijl als de rest van dit bestand.
+        static bool KnopMetHighlight(Rect rect, string label, bool actief, GUIStyle stijl)
+        {
+            var vorigeKleur = GUI.backgroundColor;
+            if (actief) GUI.backgroundColor = new Color(0.35f, 0.75f, 1f);
+            bool geklikt = GUI.Button(rect, label, stijl);
+            GUI.backgroundColor = vorigeKleur;
+            return geklikt;
+        }
+
         void OnGUI()
         {
-            var stijl = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.UpperLeft, normal = { textColor = Color.white } };
-            var knopStijl = new GUIStyle(GUI.skin.button) { fontSize = 14 };
+            var stijl = new GUIStyle(GUI.skin.box) { fontSize = 14, alignment = TextAnchor.UpperLeft, normal = { textColor = Color.white } };
+            var knopStijl = new GUIStyle(GUI.skin.button) { fontSize = 13 };
+            var kopStijl = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
 
-            GUI.Box(new Rect(10, Screen.height - 285, 320, 275), "", stijl);
-            GUI.Label(new Rect(20, Screen.height - 280, 300, 24), $"Wegtekentool -- {_actiefType} -- actie: {_actie}", stijl);
-            GUI.Label(new Rect(20, Screen.height - 260, 300, 20), $"modus: {_modus} -- hoogte: {_hoogteKeuze}", stijl);
+            float x = PaneelX + 10f;
+            float y = Screen.height - PaneelTopVanaf + 8f;
+            const float knopH = 26f;
+            const float rijGap = 4f;
+
+            GUI.Box(new Rect(PaneelX, Screen.height - PaneelTopVanaf, PaneelBreedte, PaneelHoogte), "", stijl);
+
+            GUI.Label(new Rect(x, y, PaneelBreedte - 20f, 22f), $"Wegtekentool -- {_actiefType}", kopStijl);
+            y += 26f;
+
+            if (KnopMetHighlight(new Rect(x, y, 155f, knopH), "Bouwen", _actie == ToolActie.Bouwen, knopStijl))
+            {
+                _actie = ToolActie.Bouwen;
+                AnnuleerTekenen();
+            }
+            if (KnopMetHighlight(new Rect(x + 165f, y, 155f, knopH), "Upgraden", _actie == ToolActie.Upgraden, knopStijl))
+            {
+                _actie = ToolActie.Upgraden;
+                AnnuleerTekenen();
+            }
+            y += knopH + rijGap;
 
             if (_actie == ToolActie.Bouwen)
             {
-                GUI.Label(new Rect(20, Screen.height - 240, 300, 65),
-                    "Recht: klik-sleep-los. Bocht: klik start, klik eind, beweeg\nvoor de bocht, klik om af te ronden.\n" +
-                    "C wisselt modus, H wisselt maaiveld/brug/tunnel,\nrechtermuisknop annuleert, 1-9 wegtype.", stijl);
+                if (KnopMetHighlight(new Rect(x, y, 155f, knopH), "Recht", _modus == TekenModus.Recht, knopStijl))
+                {
+                    _modus = TekenModus.Recht;
+                    AnnuleerTekenen();
+                }
+                if (KnopMetHighlight(new Rect(x + 165f, y, 155f, knopH), "Bocht", _modus == TekenModus.Bocht, knopStijl))
+                {
+                    _modus = TekenModus.Bocht;
+                    AnnuleerTekenen();
+                }
+                y += knopH + rijGap;
+
+                GUI.Label(new Rect(x, y, PaneelBreedte - 20f, 20f), $"Hoogte: {BeschrijfHoogteNiveau(_hoogteNiveau)}", stijl);
+                y += 20f;
+                if (GUI.Button(new Rect(x, y, 40f, knopH), "-", knopStijl)) ZetHoogteNiveau(_hoogteNiveau - 1);
+                GUI.Label(new Rect(x + 45f, y + 4f, PaneelBreedte - 130f, 20f), NiveauBalk(_hoogteNiveau), stijl);
+                if (GUI.Button(new Rect(x + PaneelBreedte - 60f, y, 40f, knopH), "+", knopStijl)) ZetHoogteNiveau(_hoogteNiveau + 1);
+                y += knopH + rijGap;
             }
             else
             {
-                GUI.Label(new Rect(20, Screen.height - 240, 300, 65),
-                    "Klik op een bestaande weg om 'm naar het\ngeselecteerde wegtype te upgraden.", stijl);
+                GUI.Label(new Rect(x, y, PaneelBreedte - 20f, 40f), "Klik op een bestaande weg om 'm naar\nhet geselecteerde wegtype te upgraden.", stijl);
+                y += 50f; // korter dan de Bouwen-tak (geen modus/hoogte-rijen) -- laat gewoon wat lege ruimte in het paneel
             }
-            GUI.Label(new Rect(20, Screen.height - 165, 300, 20), "U wisselt bouwen/upgraden.", stijl);
+
+            if (KnopMetHighlight(new Rect(x, y, PaneelBreedte - 20f, knopH), _toonTunnelOverzicht ? "Tunneloverzicht: AAN" : "Tunneloverzicht: uit", _toonTunnelOverzicht, knopStijl))
+                ZetTunnelOverzichtActief(!_toonTunnelOverzicht);
+            y += knopH + rijGap + 2f;
 
             for (int i = 0; i < kBeschikbareTypes.Length; i++)
             {
                 int kolom = i % 3;
                 int rij = i / 3;
-                var rect = new Rect(20 + kolom * 100, Screen.height - 145 + rij * 30, 95, 26);
-                if (GUI.Button(rect, kBeschikbareTypes[i].ToString(), knopStijl))
+                var rect = new Rect(x + kolom * 108f, y + rij * 30f, 100f, 26f);
+                if (KnopMetHighlight(rect, kBeschikbareTypes[i].ToString(), _actiefType == kBeschikbareTypes[i], knopStijl))
                     _actiefType = kBeschikbareTypes[i];
             }
+            y += 3 * 30f + 6f;
+
+            GUI.Label(new Rect(x, y, PaneelBreedte - 20f, 18f), "C/U/PgUp/PgDn/O: zelfde acties via toetsenbord.", stijl);
+            y += 22f;
 
             if (!string.IsNullOrEmpty(_laatsteMelding))
-                GUI.Label(new Rect(20, Screen.height - 30, 300, 24), _laatsteMelding, stijl);
+                GUI.Label(new Rect(x, y, PaneelBreedte - 20f, 22f), _laatsteMelding, stijl);
+        }
+
+        static string NiveauBalk(int huidig)
+        {
+            string resultaat = "";
+            for (int n = HoogteNiveauMin; n <= HoogteNiveauMax; n++)
+                resultaat += n == huidig ? $"[{n}]" : $" {n} ";
+            return resultaat;
         }
     }
 }
