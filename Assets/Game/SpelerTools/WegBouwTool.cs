@@ -37,6 +37,14 @@ namespace CityBuilder.Game.SpelerTools
         enum TekenModus { Recht, Bocht }
         enum TekenFase { Geen, WachtOpEindpunt, WachtOpBuiging }
 
+        /// Stap 4: hoogte-keuze voor het volgende segment. Vaste representatieve waarden i.p.v.
+        /// een aparte hoogte-editor -- past bij de rest van de tool (kies een type, teken een
+        /// segment) en is genoeg om bruggen/tunnels daadwerkelijk bruikbaar te maken.
+        enum HoogteKeuze { OpMaaiveld, Brug, Tunnel }
+        const float BrugHoogte = 6f;
+        const float TunnelDiepte = 5f;
+        const float StandaardOvergangsLengte = 20f;
+
         static readonly WegTypeId[] kBeschikbareTypes =
         {
             WegTypeId.Woonstraat, WegTypeId.Straat, WegTypeId.StraatMetBus, WegTypeId.Avenue,
@@ -48,6 +56,7 @@ namespace CityBuilder.Game.SpelerTools
 
         WegTypeId _actiefType = WegTypeId.Straat;
         TekenModus _modus = TekenModus.Recht;
+        HoogteKeuze _hoogteKeuze = HoogteKeuze.OpMaaiveld;
 
         // Recht-modus state.
         bool _bezigMetTekenen;
@@ -82,6 +91,7 @@ namespace CityBuilder.Game.SpelerTools
         {
             HandleTypeSelectie();
             HandleModusSelectie();
+            HandleHoogteSelectie();
 
             if (!RaycastNaarTerrein(out Vector3 hitPunt))
             {
@@ -104,6 +114,23 @@ namespace CityBuilder.Game.SpelerTools
                 _laatsteMelding = $"Modus: {(_modus == TekenModus.Recht ? "Recht" : "Bocht")}.";
             }
         }
+
+        void HandleHoogteSelectie()
+        {
+            if (Input.GetKeyDown(KeyCode.H))
+            {
+                _hoogteKeuze = (HoogteKeuze)(((int)_hoogteKeuze + 1) % 3);
+                AnnuleerTekenen();
+                _laatsteMelding = $"Hoogte: {_hoogteKeuze}.";
+            }
+        }
+
+        HoogteProfielData BerekenHoogteProfiel() => _hoogteKeuze switch
+        {
+            HoogteKeuze.Brug => new HoogteProfielData { Modus = HoogteProfielModus.Verhoogd, HoogteOffset = BrugHoogte, OvergangsLengte = StandaardOvergangsLengte },
+            HoogteKeuze.Tunnel => new HoogteProfielData { Modus = HoogteProfielModus.Tunnel, HoogteOffset = TunnelDiepte, OvergangsLengte = StandaardOvergangsLengte },
+            _ => new HoogteProfielData { Modus = HoogteProfielModus.OpMaaiveld, HoogteOffset = 0f, OvergangsLengte = 0f },
+        };
 
         void AnnuleerTekenen()
         {
@@ -354,6 +381,8 @@ namespace CityBuilder.Game.SpelerTools
             foreach (var spec in WegTypeCatalogus.GetLanes(_actiefType))
                 lanes.Add(new LaneBufferElement { Type = spec.Type, Richting = spec.Richting, BreedteMeter = spec.BreedteMeter });
 
+            HoogteProfielData hoogteProfiel = BerekenHoogteProfiel();
+
             em.SetComponentData(segment, new WegSegmentData
             {
                 Id = new Unity.Entities.Hash128((uint)segment.Index, 11, 0, 0),
@@ -363,19 +392,27 @@ namespace CityBuilder.Game.SpelerTools
                 Capaciteit = 0,
                 Snelheidslimiet = WegTypeCatalogus.GetSnelheidslimiet(_actiefType),
                 HuidigeBelasting = 0f,
-                HoogteProfiel = new HoogteProfielData { Modus = HoogteProfielModus.OpMaaiveld, HoogteOffset = 0f, OvergangsLengte = 0f },
+                HoogteProfiel = hoogteProfiel,
                 // Sluit aan bij WegTypeCatalogus' aanpak (zelfde lanes als Straat, alleen dit
                 // vlag verschilt) -- de speler-tool moet die keuze wel daadwerkelijk doorzetten.
                 HeeftBusoverlay = _actiefType == WegTypeId.StraatMetBus,
             });
 
-            var kavels = KavelGeneratieUtility.GenereerKavelsLangsWeg(em, segment, _kavelRegel, districtId: 0);
-
             float lengte = 0f;
             for (int i = 0; i < splinePunten.Count - 1; i++)
                 lengte += Vector3.Distance(ToVector3(splinePunten[i]), ToVector3(splinePunten[i + 1]));
 
-            _laatsteMelding = $"{_actiefType} aangelegd ({lengte:0}m), {kavels.Length} kavels erlangs gegenereerd.";
+            // Geen kavels langs een brug/tunnel -- die staan op maaiveld en zouden dwars door het
+            // viaduct/de op-/afrit heen komen te liggen, wat geen enkele geldige kavel oplevert.
+            if (hoogteProfiel.Modus == HoogteProfielModus.OpMaaiveld)
+            {
+                var kavels = KavelGeneratieUtility.GenereerKavelsLangsWeg(em, segment, _kavelRegel, districtId: 0);
+                _laatsteMelding = $"{_actiefType} aangelegd ({lengte:0}m), {kavels.Length} kavels erlangs gegenereerd.";
+            }
+            else
+            {
+                _laatsteMelding = $"{_actiefType} aangelegd ({lengte:0}m) als {_hoogteKeuze}.";
+            }
         }
 
         static Vector3 ToVector3(float3 f) => new Vector3(f.x, f.y, f.z);
@@ -478,11 +515,11 @@ namespace CityBuilder.Game.SpelerTools
             var stijl = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.UpperLeft, normal = { textColor = Color.white } };
             var knopStijl = new GUIStyle(GUI.skin.button) { fontSize = 14 };
 
-            GUI.Box(new Rect(10, Screen.height - 245, 320, 235), "", stijl);
-            GUI.Label(new Rect(20, Screen.height - 240, 300, 24), $"Wegtekentool -- {_actiefType} -- modus: {_modus}", stijl);
-            GUI.Label(new Rect(20, Screen.height - 220, 300, 55),
+            GUI.Box(new Rect(10, Screen.height - 265, 320, 255), "", stijl);
+            GUI.Label(new Rect(20, Screen.height - 260, 300, 24), $"Wegtekentool -- {_actiefType} -- modus: {_modus} -- hoogte: {_hoogteKeuze}", stijl);
+            GUI.Label(new Rect(20, Screen.height - 240, 300, 65),
                 "Recht: klik-sleep-los. Bocht: klik start, klik eind, beweeg\nvoor de bocht, klik om af te ronden.\n" +
-                "C wisselt modus, rechtermuisknop annuleert, 1-9 wegtype.", stijl);
+                "C wisselt modus, H wisselt maaiveld/brug/tunnel,\nrechtermuisknop annuleert, 1-9 wegtype.", stijl);
 
             for (int i = 0; i < kBeschikbareTypes.Length; i++)
             {

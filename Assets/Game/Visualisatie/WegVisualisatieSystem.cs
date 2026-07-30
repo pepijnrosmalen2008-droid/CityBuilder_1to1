@@ -22,6 +22,12 @@ namespace CityBuilder.Game.Visualisatie
     /// -- allemaal als kind-GameObjects onder hetzelfde WegVisueel_X-object, zodat
     /// WegBouwTool.SplitsSegmentOpPunt (dat het hele object destroyt bij een splitsing) ze
     /// automatisch meeneemt zonder zelf te hoeven weten dat ze bestaan.
+    ///
+    /// Stap 4: elke mesh-opbouwfunctie houdt nu ook rekening met HoogteProfielData (brug/tunnel),
+    /// met een lineaire op-/afrit binnen OvergangsLengte aan beide uiteinden. Bruggen krijgen
+    /// bovendien pijlers. Een tunnel is hier een verzonken trace (het terrein zelf wordt niet
+    /// doorboord -- dat vereist het terrein-heightmap zelf aanpassen, een aparte, grotere
+    /// vervolgstap) maar functioneert al wel als ongelijkvloerse kruising.
     public struct WegVisueelGemaakt : IComponentData { }
 
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -40,15 +46,16 @@ namespace CityBuilder.Game.Visualisatie
                 var spline = em.GetBuffer<WegSegmentSplinePunt>(entity);
                 var lanes = em.GetBuffer<LaneBufferElement>(entity);
                 float breedte = WegVisualisatieUtility.TotaalBreedte(lanes);
+                var profiel = segment.ValueRO.HoogteProfiel;
 
                 if (spline.Length >= 2 && breedte > 0f)
                 {
-                    Mesh mesh = WegVisualisatieUtility.BouwWegMesh(spline, breedte, terrain);
+                    Mesh mesh = WegVisualisatieUtility.BouwWegMesh(spline, breedte, terrain, profiel);
                     var go = new GameObject($"WegVisueel_{entity.Index}");
                     go.AddComponent<MeshFilter>().sharedMesh = mesh;
                     go.AddComponent<MeshRenderer>().sharedMaterial = materiaal;
 
-                    WegVisualisatieUtility.VoegBelijningEnOverlaysToe(go.transform, spline, lanes, terrain, segment.ValueRO.HeeftBusoverlay);
+                    WegVisualisatieUtility.VoegBelijningEnOverlaysToe(go.transform, spline, lanes, terrain, segment.ValueRO.HeeftBusoverlay, profiel);
                 }
 
                 toTag.Add(entity);
@@ -70,9 +77,13 @@ namespace CityBuilder.Game.Visualisatie
         static Material _tramrailMateriaal;
         static Material _busbaanMateriaal;
         static Material _bovenleidingMateriaal;
+        static Material _pijlerMateriaal;
 
         const float BovenleidingHoogte = 5.5f;
         const float MastTussenafstand = 30f;
+        const float PijlerTussenafstand = 15f;
+        const float PijlerDikte = 0.6f;
+        const float MinimumPijlerHoogte = 0.5f; // te dicht bij de op-/afrit -> pijler zou zinloos kort zijn
 
         public static Material GetOfMaakAsfaltMateriaal()
         {
@@ -113,6 +124,9 @@ namespace CityBuilder.Game.Visualisatie
         public static Material GetOfMaakBovenleidingMateriaal() =>
             _bovenleidingMateriaal ??= MaakPlaceholderMateriaal(new Color(0.25f, 0.25f, 0.26f), 0.7f, "Bovenleiding_Placeholder");
 
+        public static Material GetOfMaakPijlerMateriaal() =>
+            _pijlerMateriaal ??= MaakPlaceholderMateriaal(new Color(0.55f, 0.54f, 0.52f), 0.15f, "Brugpijler_Placeholder");
+
         public static float TotaalBreedte(DynamicBuffer<LaneBufferElement> lanes)
         {
             float totaal = 0f;
@@ -121,18 +135,64 @@ namespace CityBuilder.Game.Visualisatie
             return totaal;
         }
 
+        static float BerekenTotaleLengte(DynamicBuffer<WegSegmentSplinePunt> spline)
+        {
+            float totaal = 0f;
+            for (int i = 0; i < spline.Length - 1; i++)
+                totaal += Vector3.Distance(ToVector3(spline[i].Punt), ToVector3(spline[i + 1].Punt));
+            return totaal;
+        }
+
+        static Vector3 ToVector3(float3 p) => new Vector3(p.x, p.y, p.z);
+
+        /// Hoeveel van HoogteOffset op deze afstand vanaf het begin van het segment geldt: 0 aan
+        /// beide uiteinden, lineair oplopend/aflopend naar 1 binnen OvergangsLengte, daartussen
+        /// constant vol. Bij een segment korter dan 2x OvergangsLengte krimpt de overgang mee zodat
+        /// de twee hellingen elkaar niet voorbij schieten.
+        static float BerekenHoogteFactor(float afstandVanaf, float totaleLengte, float overgangsLengte)
+        {
+            if (totaleLengte < 0.01f) return 1f;
+            float overgang = Mathf.Clamp(overgangsLengte, 0.01f, totaleLengte * 0.5f);
+            float vanafStart = Mathf.Clamp01(afstandVanaf / overgang);
+            float totEind = Mathf.Clamp01((totaleLengte - afstandVanaf) / overgang);
+            return Mathf.Min(vanafStart, totEind);
+        }
+
+        static float BerekenProfielOffset(in HoogteProfielData profiel, float afstandVanaf, float totaleLengte)
+        {
+            if (profiel.Modus == HoogteProfielModus.OpMaaiveld) return 0f;
+            float factor = BerekenHoogteFactor(afstandVanaf, totaleLengte, profiel.OvergangsLengte);
+            float teken = profiel.Modus == HoogteProfielModus.Verhoogd ? 1f : -1f;
+            return teken * profiel.HoogteOffset * factor;
+        }
+
+        static Vector3 HoogteGecorrigeerd(float3 punt, Terrain terrain, float ophoging, float profielOffset = 0f)
+        {
+            var wereldPositieVoorSample = new Vector3(punt.x, 0f, punt.z);
+            float hoogte = terrain != null
+                ? terrain.SampleHeight(wereldPositieVoorSample) + terrain.transform.position.y
+                : punt.y;
+            return new Vector3(punt.x, hoogte + ophoging + profielOffset, punt.z);
+        }
+
         /// Same validated quad winding as Assets/Prototype's road quad (front face = +Y): for
         /// each spline segment, (a-side, a+side, b+side, b-side) with triangles (0,2,1)/(0,3,2).
-        public static Mesh BouwWegMesh(DynamicBuffer<WegSegmentSplinePunt> spline, float breedte, Terrain terrain)
+        public static Mesh BouwWegMesh(DynamicBuffer<WegSegmentSplinePunt> spline, float breedte, Terrain terrain, HoogteProfielData profiel)
         {
             var verts = new List<Vector3>();
             var tris = new List<int>();
             var uvs = new List<Vector2>();
+            float totaleLengte = BerekenTotaleLengte(spline);
+            float afgelegd = 0f;
 
             for (int i = 0; i < spline.Length - 1; i++)
             {
-                Vector3 a = HoogteGecorrigeerd(spline[i].Punt, terrain, 0.05f);
-                Vector3 b = HoogteGecorrigeerd(spline[i + 1].Punt, terrain, 0.05f);
+                float offsetA = BerekenProfielOffset(profiel, afgelegd, totaleLengte);
+                float segLengte = Vector3.Distance(ToVector3(spline[i].Punt), ToVector3(spline[i + 1].Punt));
+                float offsetB = BerekenProfielOffset(profiel, afgelegd + segLengte, totaleLengte);
+
+                Vector3 a = HoogteGecorrigeerd(spline[i].Punt, terrain, 0.05f, offsetA);
+                Vector3 b = HoogteGecorrigeerd(spline[i + 1].Punt, terrain, 0.05f, offsetB);
                 Vector3 dir = (b - a).normalized;
                 Vector3 zijkant = Vector3.Cross(Vector3.up, dir) * (breedte * 0.5f);
 
@@ -148,6 +208,8 @@ namespace CityBuilder.Game.Visualisatie
 
                 tris.Add(baseIdx); tris.Add(baseIdx + 2); tris.Add(baseIdx + 1);
                 tris.Add(baseIdx); tris.Add(baseIdx + 3); tris.Add(baseIdx + 2);
+
+                afgelegd += segLengte;
             }
 
             var mesh = new Mesh { name = "WegMesh" };
@@ -157,15 +219,6 @@ namespace CityBuilder.Game.Visualisatie
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
             return mesh;
-        }
-
-        static Vector3 HoogteGecorrigeerd(float3 punt, Terrain terrain, float ophoging)
-        {
-            var wereldPositieVoorSample = new Vector3(punt.x, 0f, punt.z);
-            float hoogte = terrain != null
-                ? terrain.SampleHeight(wereldPositieVoorSample) + terrain.transform.position.y
-                : punt.y;
-            return new Vector3(punt.x, hoogte + ophoging, punt.z);
         }
 
         /// Center-offset van elke lane t.o.v. de wegas, in dezelfde (ongenormaliseerde) eenheid
@@ -185,17 +238,25 @@ namespace CityBuilder.Game.Visualisatie
         }
 
         /// Doorlopende strook evenwijdig aan de weg-as, verschoven met `offset` t.o.v. het midden
-        /// -- voor belijning, fietspad/trottoir/tramrail/busbaan-overlays.
-        public static Mesh BouwOffsetStripMesh(DynamicBuffer<WegSegmentSplinePunt> spline, float offset, float breedte, Terrain terrain, float ophoging)
+        /// -- voor belijning, fietspad/trottoir/tramrail/busbaan-overlays. Volgt hetzelfde
+        /// hoogteprofiel (brug/tunnel) als de basis-asfaltstrook, zodat een lane-overlay niet los
+        /// van de weg in de lucht/grond komt te hangen.
+        public static Mesh BouwOffsetStripMesh(DynamicBuffer<WegSegmentSplinePunt> spline, float offset, float breedte, Terrain terrain, float ophoging, HoogteProfielData profiel = default)
         {
             var verts = new List<Vector3>();
             var tris = new List<int>();
             var uvs = new List<Vector2>();
+            float totaleLengte = BerekenTotaleLengte(spline);
+            float afgelegd = 0f;
 
             for (int i = 0; i < spline.Length - 1; i++)
             {
-                Vector3 a = HoogteGecorrigeerd(spline[i].Punt, terrain, ophoging);
-                Vector3 b = HoogteGecorrigeerd(spline[i + 1].Punt, terrain, ophoging);
+                float offsetA = BerekenProfielOffset(profiel, afgelegd, totaleLengte);
+                float segLengte = Vector3.Distance(ToVector3(spline[i].Punt), ToVector3(spline[i + 1].Punt));
+                float offsetB = BerekenProfielOffset(profiel, afgelegd + segLengte, totaleLengte);
+
+                Vector3 a = HoogteGecorrigeerd(spline[i].Punt, terrain, ophoging, offsetA);
+                Vector3 b = HoogteGecorrigeerd(spline[i + 1].Punt, terrain, ophoging, offsetB);
                 Vector3 dir = (b - a).normalized;
                 Vector3 zijkantEenheid = Vector3.Cross(Vector3.up, dir);
                 Vector3 aMidden = a + zijkantEenheid * offset;
@@ -214,6 +275,8 @@ namespace CityBuilder.Game.Visualisatie
 
                 tris.Add(baseIdx); tris.Add(baseIdx + 2); tris.Add(baseIdx + 1);
                 tris.Add(baseIdx); tris.Add(baseIdx + 3); tris.Add(baseIdx + 2);
+
+                afgelegd += segLengte;
             }
 
             var mesh = new Mesh { name = "WegOffsetStrip" };
@@ -229,20 +292,27 @@ namespace CityBuilder.Game.Visualisatie
         /// stippellijnen tussen rijstroken in dezelfde richting). De streep-fase loopt door over
         /// spline-subsegment-grenzen heen (via `afstandInCyclus`) zodat de streping over de hele
         /// bocht/rechte weg consistent blijft i.p.v. per subsegment opnieuw te beginnen.
-        public static Mesh BouwGestippeldeStripMesh(DynamicBuffer<WegSegmentSplinePunt> spline, float offset, float breedte, Terrain terrain, float ophoging, float streepLengte, float gatLengte)
+        public static Mesh BouwGestippeldeStripMesh(DynamicBuffer<WegSegmentSplinePunt> spline, float offset, float breedte, Terrain terrain, float ophoging, float streepLengte, float gatLengte, HoogteProfielData profiel = default)
         {
             var verts = new List<Vector3>();
             var tris = new List<int>();
             var uvs = new List<Vector2>();
             float cyclus = streepLengte + gatLengte;
             float afstandInCyclus = 0f;
+            float totaleLengte = BerekenTotaleLengte(spline);
+            float afgelegdVoorSegment = 0f;
 
             for (int i = 0; i < spline.Length - 1; i++)
             {
-                Vector3 a = HoogteGecorrigeerd(spline[i].Punt, terrain, ophoging);
-                Vector3 b = HoogteGecorrigeerd(spline[i + 1].Punt, terrain, ophoging);
-                float segLengte = Vector3.Distance(a, b);
+                Vector3 aRuw = ToVector3(spline[i].Punt);
+                Vector3 bRuw = ToVector3(spline[i + 1].Punt);
+                float segLengte = Vector3.Distance(aRuw, bRuw);
                 if (segLengte < 0.0001f) continue;
+
+                float offsetA = BerekenProfielOffset(profiel, afgelegdVoorSegment, totaleLengte);
+                float offsetB = BerekenProfielOffset(profiel, afgelegdVoorSegment + segLengte, totaleLengte);
+                Vector3 a = HoogteGecorrigeerd(spline[i].Punt, terrain, ophoging, offsetA);
+                Vector3 b = HoogteGecorrigeerd(spline[i + 1].Punt, terrain, ophoging, offsetB);
                 Vector3 dir = (b - a) / segLengte;
                 Vector3 zijkantEenheid = Vector3.Cross(Vector3.up, dir);
 
@@ -279,6 +349,8 @@ namespace CityBuilder.Game.Visualisatie
                     t += stap;
                     afstandInCyclus += stap;
                 }
+
+                afgelegdVoorSegment += segLengte;
             }
 
             var mesh = new Mesh { name = "WegGestippeldeStrip" };
@@ -301,9 +373,9 @@ namespace CityBuilder.Game.Visualisatie
         }
 
         /// Voegt per-lane kleurcontrast (fietspad/trottoir), belijning tussen rijstroken,
-        /// tramrails+bovenleiding en een busbaan-overlay toe als kind-objecten van het
-        /// basis-asfalt-GameObject.
-        public static void VoegBelijningEnOverlaysToe(Transform parent, DynamicBuffer<WegSegmentSplinePunt> spline, DynamicBuffer<LaneBufferElement> lanes, Terrain terrain, bool heeftBusoverlay)
+        /// tramrails+bovenleiding, een busbaan-overlay en (bij Verhoogd) brugpijlers toe als
+        /// kind-objecten van het basis-asfalt-GameObject.
+        public static void VoegBelijningEnOverlaysToe(Transform parent, DynamicBuffer<WegSegmentSplinePunt> spline, DynamicBuffer<LaneBufferElement> lanes, Terrain terrain, bool heeftBusoverlay, HoogteProfielData profiel)
         {
             if (lanes.Length == 0) return;
 
@@ -316,13 +388,13 @@ namespace CityBuilder.Game.Visualisatie
                 switch (lane.Type)
                 {
                     case LaneType.Fietspad:
-                        MaakVisueelKind(parent, "Fietspad", BouwOffsetStripMesh(spline, centers[i], lane.BreedteMeter, terrain, 0.015f), GetOfMaakFietspadMateriaal());
+                        MaakVisueelKind(parent, "Fietspad", BouwOffsetStripMesh(spline, centers[i], lane.BreedteMeter, terrain, 0.015f, profiel), GetOfMaakFietspadMateriaal());
                         break;
                     case LaneType.Trottoir:
-                        MaakVisueelKind(parent, "Trottoir", BouwOffsetStripMesh(spline, centers[i], lane.BreedteMeter, terrain, 0.015f), GetOfMaakTrottoirMateriaal());
+                        MaakVisueelKind(parent, "Trottoir", BouwOffsetStripMesh(spline, centers[i], lane.BreedteMeter, terrain, 0.015f, profiel), GetOfMaakTrottoirMateriaal());
                         break;
                     case LaneType.Tramrail:
-                        MaakTramrails(parent, spline, centers[i], terrain);
+                        MaakTramrails(parent, spline, centers[i], terrain, profiel);
                         break;
                     case LaneType.Autorijbaan:
                         // Vereenvoudiging: de busbaan-overlay kleurt beide rijrichtingen i.p.v.
@@ -331,7 +403,7 @@ namespace CityBuilder.Game.Visualisatie
                         // "geen aparte lane nodig, wel een vlag"), dus dit is het dichtstbijzijnde
                         // zichtbare signaal zonder dat datamodel uit te breiden.
                         if (heeftBusoverlay)
-                            MaakVisueelKind(parent, "Busbaan", BouwOffsetStripMesh(spline, centers[i], lane.BreedteMeter, terrain, 0.02f), GetOfMaakBusbaanMateriaal());
+                            MaakVisueelKind(parent, "Busbaan", BouwOffsetStripMesh(spline, centers[i], lane.BreedteMeter, terrain, 0.02f, profiel), GetOfMaakBusbaanMateriaal());
                         break;
                 }
 
@@ -346,8 +418,8 @@ namespace CityBuilder.Game.Visualisatie
                             && volgende.Richting != LaneRichting.Tweerichting;
 
                         Mesh lijnMesh = tegengesteldeRichting
-                            ? BouwOffsetStripMesh(spline, grensOffset, 0.15f, terrain, 0.02f)
-                            : BouwGestippeldeStripMesh(spline, grensOffset, 0.15f, terrain, 0.02f, 3f, 3f);
+                            ? BouwOffsetStripMesh(spline, grensOffset, 0.15f, terrain, 0.02f, profiel)
+                            : BouwGestippeldeStripMesh(spline, grensOffset, 0.15f, terrain, 0.02f, 3f, 3f, profiel);
 
                         MaakVisueelKind(parent, "Belijning", lijnMesh, GetOfMaakMarkeringMateriaal());
                     }
@@ -366,16 +438,19 @@ namespace CityBuilder.Game.Visualisatie
             }
 
             if (tramCount > 0)
-                MaakBovenleiding(parent, spline, tramCenterSom / tramCount, terrain);
+                MaakBovenleiding(parent, spline, tramCenterSom / tramCount, terrain, profiel);
+
+            if (profiel.Modus == HoogteProfielModus.Verhoogd)
+                MaakBrugPijlers(parent, spline, terrain, profiel);
         }
 
         /// Twee dunne railstroken op standaard spoorwijdte (1.435m) binnen de tramrail-laan.
-        static void MaakTramrails(Transform parent, DynamicBuffer<WegSegmentSplinePunt> spline, float laneCenterOffset, Terrain terrain)
+        static void MaakTramrails(Transform parent, DynamicBuffer<WegSegmentSplinePunt> spline, float laneCenterOffset, Terrain terrain, HoogteProfielData profiel)
         {
             const float spoorwijdte = 1.435f;
             const float railBreedte = 0.12f;
-            Mesh railA = BouwOffsetStripMesh(spline, laneCenterOffset - spoorwijdte * 0.5f, railBreedte, terrain, 0.02f);
-            Mesh railB = BouwOffsetStripMesh(spline, laneCenterOffset + spoorwijdte * 0.5f, railBreedte, terrain, 0.02f);
+            Mesh railA = BouwOffsetStripMesh(spline, laneCenterOffset - spoorwijdte * 0.5f, railBreedte, terrain, 0.02f, profiel);
+            Mesh railB = BouwOffsetStripMesh(spline, laneCenterOffset + spoorwijdte * 0.5f, railBreedte, terrain, 0.02f, profiel);
             MaakVisueelKind(parent, "Tramrail_A", railA, GetOfMaakTramrailMateriaal());
             MaakVisueelKind(parent, "Tramrail_B", railB, GetOfMaakTramrailMateriaal());
         }
@@ -384,20 +459,26 @@ namespace CityBuilder.Game.Visualisatie
         /// tussenafstand. Vereenvoudiging t.o.v. echte bovenleiding (geen zigzag, geen
         /// afzonderlijke draagkabel/rijdraad) -- voldoende om "een tramlijn hoort de benodigde
         /// rails en bovenleiding te hebben" zichtbaar te maken zonder een aparte spike.
-        static void MaakBovenleiding(Transform parent, DynamicBuffer<WegSegmentSplinePunt> spline, float laneCenterOffset, Terrain terrain)
+        static void MaakBovenleiding(Transform parent, DynamicBuffer<WegSegmentSplinePunt> spline, float laneCenterOffset, Terrain terrain, HoogteProfielData profiel)
         {
-            Mesh draad = BouwOffsetStripMesh(spline, laneCenterOffset, 0.05f, terrain, BovenleidingHoogte);
+            Mesh draad = BouwOffsetStripMesh(spline, laneCenterOffset, 0.05f, terrain, BovenleidingHoogte, profiel);
             MaakVisueelKind(parent, "Bovenleiding_Draad", draad, GetOfMaakBovenleidingMateriaal());
 
             var masten = PuntenOpAfstand(spline, MastTussenafstand, terrain);
-            foreach (var (positie, dir) in masten)
+            float totaleLengte = BerekenTotaleLengte(spline);
+            foreach (var (grondPositie, dir, afstand) in masten)
             {
+                // Mastbasis op het wegdek zelf (grondpositie + hetzelfde brug/tunnel-offset als de
+                // draad op datzelfde punt), zodat de mast altijd exact BovenleidingHoogte onder de
+                // draad eindigt -- ook midden op een brug of in een tunnel-afrit.
+                float profielOffset = BerekenProfielOffset(profiel, afstand, totaleLengte);
                 Vector3 zijkant = Vector3.Cross(Vector3.up, dir);
-                Vector3 mastPositie = positie + zijkant * (laneCenterOffset + 0.4f); // net naast de rail, niet erop
+                Vector3 wegOppervlak = grondPositie + Vector3.up * profielOffset;
+                Vector3 mastBasis = wegOppervlak + zijkant * (laneCenterOffset + 0.4f); // net naast de rail, niet erop
 
                 var mast = new GameObject("Bovenleidingmast");
                 mast.transform.SetParent(parent, false);
-                mast.transform.position = mastPositie + Vector3.up * (BovenleidingHoogte * 0.5f);
+                mast.transform.position = mastBasis + Vector3.up * (BovenleidingHoogte * 0.5f);
                 // Unity's ingebouwde cilinder is 2 lokale eenheden hoog (van -1 tot +1) -- schaal
                 // de Y-as dus op de helft van de gewenste hoogte, niet op de hoogte zelf.
                 mast.transform.localScale = new Vector3(0.15f, BovenleidingHoogte * 0.5f, 0.15f);
@@ -406,11 +487,38 @@ namespace CityBuilder.Game.Visualisatie
             }
         }
 
-        /// Bemonstert de spline op vaste boog-afstand (i.p.v. per spline-subsegment, waarvan de
-        /// lengte varieert) -- voor mastplaatsing. Retourneert (positie, richting) per sample.
-        static List<(Vector3 pos, Vector3 dir)> PuntenOpAfstand(DynamicBuffer<WegSegmentSplinePunt> spline, float interval, Terrain terrain)
+        /// Pijlers vanaf maaiveld tot aan de onderkant van het brugdek, op vaste tussenafstand.
+        /// Vlak bij de op-/afrit (waar het dek nog nauwelijks boven het maaiveld uitkomt) wordt
+        /// geen pijler geplaatst -- die zou toch geen zichtbare hoogte hebben.
+        static void MaakBrugPijlers(Transform parent, DynamicBuffer<WegSegmentSplinePunt> spline, Terrain terrain, HoogteProfielData profiel)
         {
-            var resultaat = new List<(Vector3, Vector3)>();
+            float totaleLengte = BerekenTotaleLengte(spline);
+            if (totaleLengte < 0.01f) return;
+
+            var materiaal = GetOfMaakPijlerMateriaal();
+            var punten = PuntenOpAfstand(spline, PijlerTussenafstand, terrain);
+
+            foreach (var (grondPositie, _, afstand) in punten)
+            {
+                float dekHoogte = BerekenProfielOffset(profiel, afstand, totaleLengte);
+                if (dekHoogte < MinimumPijlerHoogte) continue;
+
+                var pijler = new GameObject("Brugpijler");
+                pijler.transform.SetParent(parent, false);
+                pijler.transform.position = grondPositie + Vector3.up * (dekHoogte * 0.5f);
+                pijler.transform.localScale = new Vector3(PijlerDikte, dekHoogte * 0.5f, PijlerDikte);
+                pijler.AddComponent<MeshFilter>().sharedMesh = Resources.GetBuiltinResource<Mesh>("Cylinder.fbx");
+                pijler.AddComponent<MeshRenderer>().sharedMaterial = materiaal;
+            }
+        }
+
+        /// Bemonstert de spline op vaste boog-afstand (i.p.v. per spline-subsegment, waarvan de
+        /// lengte varieert) -- voor mast-/pijlerplaatsing. Retourneert (grondpositie, richting,
+        /// afstand-vanaf-segmentbegin) per sample; de afstand is nodig om op diezelfde plek het
+        /// hoogteprofiel (brug/tunnel-offset) te kunnen berekenen.
+        static List<(Vector3 pos, Vector3 dir, float afstand)> PuntenOpAfstand(DynamicBuffer<WegSegmentSplinePunt> spline, float interval, Terrain terrain)
+        {
+            var resultaat = new List<(Vector3, Vector3, float)>();
             if (spline.Length < 2 || interval <= 0.01f) return resultaat;
 
             float volgendeMastBij = interval * 0.5f;
@@ -427,7 +535,7 @@ namespace CityBuilder.Game.Visualisatie
                 while (afgelegd + segLengte >= volgendeMastBij)
                 {
                     float tBinnenSegment = volgendeMastBij - afgelegd;
-                    resultaat.Add((a + dir * tBinnenSegment, dir));
+                    resultaat.Add((a + dir * tBinnenSegment, dir, volgendeMastBij));
                     volgendeMastBij += interval;
                 }
 
