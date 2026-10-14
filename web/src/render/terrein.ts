@@ -59,11 +59,11 @@ export class TerreinWeergave {
     const n = (w.normalMap ?? w.map).clone();
     n.repeat.set(1 / 24, 1 / 24); n.needsUpdate = true;
     this.waterNormaal = n;
-    const g = new THREE.PlaneGeometry(this.t.grootte * 3, this.t.grootte * 3, 1, 1);
+    const g = new THREE.PlaneGeometry(this.t.grootte * 12, this.t.grootte * 12, 1, 1);
     g.rotateX(-Math.PI / 2);
     // UV in meters zodat de golven op schaal zijn.
     const uv = g.getAttribute('uv') as THREE.BufferAttribute;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * this.t.grootte * 3, uv.getY(i) * this.t.grootte * 3);
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * this.t.grootte * 12, uv.getY(i) * this.t.grootte * 12);
     const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x1d4250), roughness: 0.06, metalness: 0.0, transparent: true, opacity: 0.82, normalMap: n, normalScale: new THREE.Vector2(0.35, 0.35), envMapIntensity: 1.2 });
     this.water = new THREE.Mesh(g, m);
     this.water.position.y = ZEENIVEAU;

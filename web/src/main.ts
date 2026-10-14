@@ -3,6 +3,7 @@ import { Wereld } from './core/wereld';
 import { Gereedschap } from './core/gereedschap';
 import { bouwVoorbeeldstad, bouwTestKruisingen, TEST_PLEKKEN } from './core/demo';
 import { Sfeer } from './render/sfeer';
+import { KwaliteitRegelaar, Keuze } from './render/kwaliteit';
 import { StadCamera } from './render/camera';
 import { TextuurBron } from './render/texturen';
 import { Materialen } from './render/materialen';
@@ -18,12 +19,11 @@ const laadTekst = document.getElementById('laad-tekst')!, laadBalk = document.ge
 const voortgang = (t: string, f: number) => { laadTekst.textContent = t; laadBalk.style.width = `${Math.round(f * 100)}%`; return new Promise(r => setTimeout(r, 0)); };
 
 async function start() {
-  const kwaliteit = param.get('kwaliteit') ?? 'hoog';
-  const sfeer = new Sfeer(document.getElementById('beeld') as HTMLCanvasElement, {
-    schaduw: kwaliteit === 'laag' ? 2048 : 4096,
-    ao: kwaliteit !== 'laag',
-    pixelRatio: Math.min(devicePixelRatio, kwaliteit === 'laag' ? 1 : 1.5),
-  });
+  let opgeslagen: string | null = null;
+  try { opgeslagen = localStorage.getItem('stad_kwaliteit'); } catch { /* geen opslag */ }
+  const keuze = (param.get('kwaliteit') ?? opgeslagen ?? 'auto') as Keuze;
+  const sfeer = new Sfeer(document.getElementById('beeld') as HTMLCanvasElement, KwaliteitRegelaar.startNiveau(keuze));
+  const regelaar = new KwaliteitRegelaar(sfeer, keuze);
   const bron = new TextuurBron();
   bron.anisotropie = sfeer.renderer.capabilities.getMaxAnisotropy();
   const mats = new Materialen(bron);
@@ -54,7 +54,7 @@ async function start() {
   const gereedschap = new Gereedschap(wereld);
   const voorbeeld = new VoorbeeldLaag(wereld);
   sfeer.scene.add(voorbeeld.groep);
-  const hud = new Hud(wereld);
+  const hud = new Hud(wereld, regelaar);
   const labels = new StraatLabels(wereld, sfeer.camera);
   new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; });
 
@@ -104,13 +104,19 @@ async function start() {
     if (verberg.includes('zones')) stad.zones.mesh.visible = false;
     if (verberg.includes('ao') && sfeer.ao) sfeer.ao.enabled = false;
     if (verberg.includes('ui')) for (const id of ['hud', 'werkbalk']) document.getElementById(id)!.style.display = 'none';
-    if (verberg.includes('ui')) hulp.style.display = 'none';
+    if (verberg.includes('ui')) { hulp.style.display = 'none'; document.getElementById('nieuws')?.remove(); }
     sfeer.volg(camera.doel, camera.afstand);
     const t0 = performance.now();
     sfeer.render();
     if (!verberg.includes('labels')) labels.werkBij(1, camera.afstand);
+    // Statistiek van alleen de scène (zonder nabewerking), incl. schaduwpass.
+    sfeer.renderer.info.autoReset = false; sfeer.renderer.info.reset();
+    sfeer.renderer.shadowMap.needsUpdate = true;
+    sfeer.renderer.render(sfeer.scene, sfeer.camera);
     const i = sfeer.renderer.info.render;
-    console.log(`frame ${Math.round(performance.now() - t0)} ms, ${i.triangles} driehoeken, ${i.calls} draw calls`);
+    console.log(`frame ${Math.round(performance.now() - t0)} ms, ${i.triangles} driehoeken, ${i.calls} draw calls (scène + schaduw)`);
+    sfeer.renderer.info.autoReset = true;
+    sfeer.render();
     document.body.dataset.klaar = '1';
     return;
   }
@@ -124,10 +130,13 @@ async function start() {
     const grond = grondOnder();
     gereedschap.beweeg(grond);
     gereedschap.stap(dt);
+    const voor = stad.bezig;
     stad.werkBij(8);
+    if (voor || stad.bezig) sfeer.schaduwVuil();
+    regelaar.tik(dt);
     terrein.werkBij();
     terrein.tik(tijd);
-    stad.props.werkBij(sfeer.camera.position, dt);
+    if (stad.props.werkBij(sfeer.camera.position, dt)) sfeer.schaduwVuil();
     const vb = gereedschap.voorbeeld();
     voorbeeld.toon(vb);
     const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' ? vb.tekst : '';
@@ -138,7 +147,7 @@ async function start() {
     melding.style.display = gereedschap.melding ? 'block' : 'none';
     melding.textContent = gereedschap.melding;
     hudKlok += dt;
-    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); }
+    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); }
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.render();
     labels.werkBij(dt, camera.afstand);

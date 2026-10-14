@@ -40,10 +40,14 @@ function kaart(mb: MeshBouwer, mat: string, c: V3, as1: V3, as2: V3, r: number, 
   const hoek = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   const pts = hoek.map(([a, b]) => ({ x: c.x + (as1.x * a + as2.x * b) * r, y: c.y + (as1.y * a + as2.y * b) * r, z: c.z + (as1.z * a + as2.z * b) * r }));
   const nrm = pts.map(p => norm3({ x: (p.x - midden.x), y: (p.y - midden.y) * 1.4 + 0.6, z: (p.z - midden.z) }));
-  mb.ruw(mat, pts, nrm, [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]);
+  // Het bladmateriaal is dubbelzijdig: één keer tekenen is genoeg.
+  mb.ruw(mat, pts, nrm, [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 1, 2, 0, 2, 3]);
 }
 
-export function boomMesh(soort: string, variant: number, laag = false): MeshData {
+/** niveau 0 = vol detail, 1 = middel, 2 = ver weg (heel eenvoudig). */
+export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
+  const laag = niveau > 0, ver = niveau > 1;
+  if (ver) return boomVer(soort);
   const v = VORM[soort] ?? VORM.eik;
   const r = new Rng(soort.length * 977 + variant * 31 + 5);
   const mb = new MeshBouwer();
@@ -51,18 +55,18 @@ export function boomMesh(soort: string, variant: number, laag = false): MeshData
   const blad = `blad:${soort}`;
   // Stam met lichte buiging.
   const top: V3 = { x: r.range(-0.3, 0.3), y: v.kroonY - (v.naald ? 0 : v.kroonH * 0.35), z: r.range(-0.3, 0.3) };
-  cilinder(mb, schors, { x: 0, y: -0.3, z: 0 }, { x: top.x * 0.4, y: v.stam, z: top.z * 0.4 }, v.stamR * 1.15, v.stamR * 0.8);
-  cilinder(mb, schors, { x: top.x * 0.4, y: v.stam, z: top.z * 0.4 }, top, v.stamR * 0.8, v.stamR * 0.35, 6);
+  cilinder(mb, schors, { x: 0, y: -0.3, z: 0 }, { x: top.x * 0.4, y: v.stam, z: top.z * 0.4 }, v.stamR * 1.15, v.stamR * 0.8, ver ? 4 : 7);
+  if (!ver) cilinder(mb, schors, { x: top.x * 0.4, y: v.stam, z: top.z * 0.4 }, top, v.stamR * 0.8, v.stamR * 0.35, 6);
   const midden: V3 = { x: top.x, y: v.kroonY, z: top.z };
 
   if (v.naald) {
     // Den: lagen van hangende takkaarten rond de stam, kegelvormig.
-    const lagen = laag ? 4 : 7;
+    const lagen = ver ? 3 : laag ? 4 : 7;
     for (let l = 0; l < lagen; l++) {
       const f = l / (lagen - 1);
       const y = v.stam - 1 + f * (v.kroonY + v.kroonH * 0.5 - v.stam);
       const straal = v.kroonR * (1 - f * 0.85);
-      const n = laag ? 5 : Math.max(4, Math.round(9 * (1 - f * 0.5)));
+      const n = ver ? 4 : laag ? 5 : Math.max(4, Math.round(9 * (1 - f * 0.5)));
       for (let i = 0; i < n; i++) {
         const h = (i / n) * Math.PI * 2 + l * 0.7 + r.range(-0.2, 0.2);
         const d = { x: Math.cos(h), y: 0, z: Math.sin(h) };
@@ -86,7 +90,7 @@ export function boomMesh(soort: string, variant: number, laag = false): MeshData
   }
   // Donkere kern zodat de kroon niet doorzichtig oogt.
   const kern = `bladkern:${soort}`;
-  const nU = laag ? 6 : 8, nV = laag ? 4 : 5;
+  const nU = ver ? 5 : laag ? 6 : 8, nV = ver ? 3 : laag ? 4 : 5;
   const pts: V3[] = [], nrm: V3[] = [], uv: [number, number][] = [], idx: number[] = [];
   for (let j = 0; j <= nV; j++) for (let i = 0; i <= nU; i++) {
     const th = (j / nV) * Math.PI, ph = (i / nU) * Math.PI * 2;
@@ -101,7 +105,7 @@ export function boomMesh(soort: string, variant: number, laag = false): MeshData
   }
   mb.ruw(kern, pts, nrm, uv, idx);
   // Bladtrossen: drie kruisende kaarten per tros, verdeeld over een ellipsoïde.
-  for (let t = 0; t < (laag ? Math.ceil(v.trossen / 3) : v.trossen); t++) {
+  for (let t = 0; t < (ver ? 3 : laag ? Math.ceil(v.trossen / 3) : v.trossen); t++) {
     const th = Math.acos(r.range(-0.55, 0.95)), ph = r.range(0, Math.PI * 2);
     const c = { x: midden.x + Math.sin(th) * Math.cos(ph) * v.kroonR * 0.72, y: midden.y + Math.cos(th) * v.kroonH * 0.5, z: midden.z + Math.sin(th) * Math.sin(ph) * v.kroonR * 0.72 };
     const s = v.kaart * r.range(0.8, 1.15);
@@ -111,7 +115,23 @@ export function boomMesh(soort: string, variant: number, laag = false): MeshData
       [{ x: -Math.sin(a), y: 0, z: Math.cos(a) }, { x: 0, y: 1, z: 0 }],
       [{ x: Math.cos(a), y: 0, z: Math.sin(a) }, { x: -Math.sin(a), y: 0, z: Math.cos(a) }],
     ];
-    for (const [p, q] of laag ? assen.slice(0, 2) : assen) kaart(mb, blad, c, p, q, (laag ? s * 1.25 : s) / 2, midden);
+    for (const [p, q] of ver ? assen.slice(0, 1) : laag ? assen.slice(0, 2) : assen) kaart(mb, blad, c, p, q, (ver ? s * 1.7 : laag ? s * 1.25 : s) / 2, midden);
+  }
+  return mb.bouw();
+}
+
+/** Heel eenvoudige boom voor ver weg: drie kruisende bladkaarten (6 driehoeken). */
+function boomVer(soort: string): MeshData {
+  const v = VORM[soort] ?? VORM.eik;
+  const mb = new MeshBouwer();
+  const blad = `blad:${soort}`;
+  const yMid = v.naald ? (v.stam + v.kroonY + v.kroonH * 0.5) / 2 : v.kroonY - v.kroonH * 0.05;
+  const h = v.naald ? (v.kroonY + v.kroonH * 0.5) / 2 + 0.5 : v.kroonH * 0.85 + (v.kroonY - v.stam) * 0.5;
+  const r = v.kroonR * 1.05;
+  const midden: V3 = { x: 0, y: yMid, z: 0 };
+  for (let i = 0; i < 3; i++) {
+    const a = i / 3 * Math.PI;
+    kaart(mb, blad, midden, { x: Math.cos(a) * r / h, y: 0, z: Math.sin(a) * r / h }, { x: 0, y: 1, z: 0 }, h, { x: 0, y: yMid - 3, z: 0 });
   }
   return mb.bouw();
 }
@@ -129,8 +149,8 @@ export function lantaarnMesh(dubbel: boolean): MeshData {
 
 export const isBoom = (soort: string) => soort in VORM;
 
-export function propMesh(soort: string, variant: number, laag = false): MeshData {
+export function propMesh(soort: string, variant: number, niveau = 0): MeshData {
   if (soort === 'lantaarn') return lantaarnMesh(false);
   if (soort === 'lantaarnDubbel') return lantaarnMesh(true);
-  return boomMesh(soort, variant, laag);
+  return boomMesh(soort, variant, niveau);
 }

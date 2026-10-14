@@ -8,24 +8,68 @@ import { zoneKleur } from '../core/zones';
 import { driehoeken, verfijn, afstandTotLijn } from '../core/poly';
 import { Materialen } from './materialen';
 import { naarMesh, weg } from './meshes';
+import { samenvoegen, MeshData } from '../core/geom/mesh';
 import { PropLaag } from './props';
+
+const TEGEL = 256;
+const tegelVan = (x: number, z: number) => (Math.floor(x / TEGEL) + 100) * 1000 + (Math.floor(z / TEGEL) + 100);
+
+/**
+ * Alle wegen, kruispunten en gebouwen van één vak van 256 m samengevoegd tot één mesh met één
+ * groep per materiaal. Duizenden losse meshes kosten duizenden tekenopdrachten; zo blijven er
+ * per vak een paar tientallen over.
+ */
+class TegelLaag {
+  groep = new THREE.Group();
+  private bron = new Map<string, { tegel: number; data: MeshData }>();
+  private inhoud = new Map<number, Set<string>>();
+  private meshes = new Map<number, THREE.Mesh>();
+  vuil = new Set<number>();
+  constructor(private mats: Materialen) {}
+
+  zet(sleutel: string, x: number, z: number, data: MeshData | null) {
+    this.wis(sleutel);
+    if (!data || !data.groepen.length) return;
+    const t = tegelVan(x, z);
+    this.bron.set(sleutel, { tegel: t, data });
+    let s = this.inhoud.get(t); if (!s) this.inhoud.set(t, s = new Set()); s.add(sleutel);
+    this.vuil.add(t);
+  }
+  wis(sleutel: string) {
+    const b = this.bron.get(sleutel);
+    if (!b) return;
+    this.bron.delete(sleutel); this.inhoud.get(b.tegel)?.delete(sleutel); this.vuil.add(b.tegel);
+  }
+  /** Vuile vakken samenvoegen; `max` vakken per keer. */
+  bouw(max = 3) {
+    let n = 0;
+    for (const t of this.vuil) {
+      if (n++ >= max) break;
+      this.vuil.delete(t);
+      weg(this.meshes.get(t)); this.meshes.delete(t);
+      const delen = [...(this.inhoud.get(t) ?? [])].map(k => this.bron.get(k)!.data);
+      if (!delen.length) continue;
+      const m = naarMesh(samenvoegen(delen), this.mats, true, `vak ${t}`);
+      if (m) { this.meshes.set(t, m); this.groep.add(m); }
+    }
+  }
+}
 
 /** Houdt de three.js-scène gelijk met de wereld (luistert naar de wereld-events). */
 export class StadWeergave {
   groep = new THREE.Group();
-  wegen = new Map<number, THREE.Mesh>();
-  kruispunten = new Map<number, THREE.Mesh>();
-  gebouwen = new Map<number, THREE.Mesh>();
+  tegels: TegelLaag;
   props: PropLaag;
   zones: ZoneLaag;
   private bouwRij = new Set<number>();
   private segRij = new Set<number>();
   private knoopRij = new Set<number>();
 
-  constructor(private w: Wereld, private mats: Materialen) {
+  constructor(private w: Wereld, mats: Materialen) {
     this.props = new PropLaag(mats);
     this.zones = new ZoneLaag(w);
-    this.groep.add(this.props.groep, this.zones.mesh);
+    this.tegels = new TegelLaag(mats);
+    this.groep.add(this.props.groep, this.zones.mesh, this.tegels.groep);
     for (const v of w.bomen.alleVakken()) this.natuur(v);
   }
 
@@ -40,11 +84,11 @@ export class StadWeergave {
     for (const e of this.w.haalEvents()) {
       switch (e.soort) {
         case 'seg+': this.segRij.add(e.id); break;
-        case 'seg-': weg(this.wegen.get(e.id)); this.wegen.delete(e.id); this.props.wis(`weg:${e.id}`); this.segRij.delete(e.id); break;
+        case 'seg-': this.tegels.wis(`weg:${e.id}`); this.props.wis(`weg:${e.id}`); this.segRij.delete(e.id); break;
         case 'knoop~': this.knoopRij.add(e.id); break;
         case 'kavel+': case 'kavel-': case 'kavel~': this.zones.vuil = true; break;
         case 'gebouw+': case 'gebouw~': this.bouwRij.add(e.id); break;
-        case 'gebouw-': weg(this.gebouwen.get(e.id)); this.gebouwen.delete(e.id); this.props.wis(`geb:${e.id}`); this.bouwRij.delete(e.id); break;
+        case 'gebouw-': this.tegels.wis(`geb:${e.id}`); this.props.wis(`geb:${e.id}`); this.bouwRij.delete(e.id); break;
       }
     }
     for (const v of this.w.bomen.haalVuileVakken()) this.natuur(v);
@@ -53,35 +97,32 @@ export class StadWeergave {
     for (const id of this.segRij) {
       this.segRij.delete(id);
       const seg = this.w.net.segmenten.get(id);
-      weg(this.wegen.get(id)); this.wegen.delete(id);
-      if (!seg) continue;
+      if (!seg) { this.tegels.wis(`weg:${id}`); continue; }
       const r = bouwSegment(this.w.net, seg);
-      const m = naarMesh(r.mesh, this.mats, true, `weg ${id}`);
-      if (m) { this.wegen.set(id, m); this.groep.add(m); }
+      const m = seg.pad[Math.floor(seg.pad.length / 2)];
+      this.tegels.zet(`weg:${id}`, m.x, m.z, r.mesh);
       this.props.zet(`weg:${id}`, r.props);
     }
     for (const id of this.knoopRij) {
       this.knoopRij.delete(id);
-      weg(this.kruispunten.get(id)); this.kruispunten.delete(id);
-      if (!this.w.net.knopen.has(id)) continue;
-      const m = naarMesh(bouwKruispunt(this.w.net, id), this.mats, true, `kruispunt ${id}`);
-      if (m) { this.kruispunten.set(id, m); this.groep.add(m); }
+      const k = this.w.net.knopen.get(id);
+      if (!k) { this.tegels.wis(`kp:${id}`); continue; }
+      this.tegels.zet(`kp:${id}`, k.p.x, k.p.z, bouwKruispunt(this.w.net, id));
     }
     for (const id of this.bouwRij) {
       if (performance.now() - start > budgetMs) break;
       this.bouwRij.delete(id);
       const g = this.w.gebouwen.get(id);
-      weg(this.gebouwen.get(id)); this.gebouwen.delete(id);
-      if (!g) continue;
+      if (!g) { this.tegels.wis(`geb:${id}`); continue; }
       const r = bouwGebouw(g, (x, z) => this.w.terrein.hoogte(x, z));
-      const m = naarMesh(r.mesh, this.mats, true, `gebouw ${id} ${g.vorm}`);
-      if (m) { this.gebouwen.set(id, m); this.groep.add(m); }
+      this.tegels.zet(`geb:${id}`, g.centrum.x, g.centrum.z, r.mesh);
       this.props.zet(`geb:${id}`, r.props);
     }
+    this.tegels.bouw(budgetMs > 100 ? 1e9 : 3);
     this.zones.werkBij();
   }
 
-  get bezig() { return this.bouwRij.size + this.segRij.size; }
+  get bezig() { return this.bouwRij.size + this.segRij.size + this.tegels.vuil.size; }
 }
 
 /** Zonekleuren op de kavels: zacht getint op lege gezoneerde kavels, met raster in de zonemodus. */

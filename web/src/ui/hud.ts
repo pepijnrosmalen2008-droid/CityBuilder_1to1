@@ -1,5 +1,6 @@
 import { Wereld } from '../core/wereld';
 import { ICOON, gezicht, wapen } from './iconen';
+import type { KwaliteitRegelaar, Keuze } from '../render/kwaliteit';
 
 const fmt = (n: number) => Math.round(n).toLocaleString('nl-NL');
 const geldFmt = (n: number) => Math.abs(n) >= 1e6 ? `€ ${(n / 1e6).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} mln` : `€ ${fmt(n)}`;
@@ -13,7 +14,10 @@ export class Hud {
   private nieuwsEl: HTMLElement;
   private laatsteNieuws = 0;
 
-  constructor(private w: Wereld) {
+  private fpsEl!: HTMLElement;
+  private menu!: HTMLElement;
+
+  constructor(private w: Wereld, private regelaar: KwaliteitRegelaar) {
     this.el.innerHTML = `
       <div class="kaart stadskaart paneel">
         <div class="wapen">${wapen(w.seed + 11)}</div>
@@ -29,6 +33,7 @@ export class Hud {
       </div>
       <div class="kaart bediening paneel">
         <div class="snelheid">${[0, 1, 2, 4].map(s => `<button class="knop rond" data-s="${s}" title="${s ? s + '× snelheid' : 'Pauze (spatie)'}">${s === 0 ? ICOON.pauze : '<span class="snel">' + '›'.repeat(s === 4 ? 3 : s) + '</span>'}</button>`).join('')}</div>
+        <button class="knop rond" data-instel title="Grafische kwaliteit">${ICOON.tandwiel}</button>
         <div class="vraag" title="Vraag naar wonen, winkels, kantoren en industrie">
           ${[['W', 'wonen', '#69db7c', 'Wonen'], ['D', 'detailhandel', '#4dabf7', 'Winkels'], ['K', 'kantoor', '#b197fc', 'Kantoren'], ['I', 'industrie', '#ffd43b', 'Industrie']].map(([l, k, c, n]) =>
             `<div class="vraag-kolom" title="${n}"><div class="vraag-staaf"><div data-q="${k}" style="background:${c}"></div></div><div class="vraag-letter">${l}</div></div>`).join('')}
@@ -42,9 +47,27 @@ export class Hud {
       if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') { e.preventDefault(); this.w.snelheid = this.w.snelheid ? 0 : 1; this.werkBij(); }
     });
+    this.menu = document.createElement('div');
+    this.menu.className = 'instellingen paneel';
+    document.body.appendChild(this.menu);
+    const tekenMenu = () => {
+      const opties: [Keuze, string, string][] = [['auto', 'Automatisch', 'Past zich aan je apparaat aan'], ['laag', 'Laag', 'Snel, ook op oudere laptops'], ['midden', 'Midden', 'Zachte schaduwen, gloed'], ['hoog', 'Hoog', 'Ambient occlusion, scherpste schaduw']];
+      this.menu.innerHTML = `<div class="menu-kop">Grafische kwaliteit</div>` + opties.map(([k, n, u]) =>
+        `<button class="optie ${this.regelaar.keuze === k ? 'aan' : ''}" data-k="${k}"><b>${n}</b><span>${u}</span></button>`).join('') +
+        `<div class="fps">Nu: <b data-fps>–</b></div>`;
+      this.fpsEl = this.menu.querySelector('[data-fps]')!;
+      this.menu.querySelectorAll<HTMLElement>('[data-k]').forEach(b => (b.onclick = () => { this.regelaar.kies(b.dataset.k as Keuze); tekenMenu(); }));
+    };
+    tekenMenu();
+    this.el.querySelector<HTMLElement>('[data-instel]')!.onclick = e => { e.stopPropagation(); this.menu.classList.toggle('open'); };
+    addEventListener('pointerdown', e => { if (!this.menu.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-instel]')) this.menu.classList.remove('open'); });
     this.nieuwsEl = document.createElement('div');
     this.nieuwsEl.id = 'nieuws';
     document.body.appendChild(this.nieuwsEl);
+  }
+
+  fps(r: KwaliteitRegelaar) {
+    if (this.fpsEl) this.fpsEl.textContent = `${Math.round(r.fps)} fps · ${r.keuze === 'auto' ? 'auto, ' : ''}${r.sfeer.niveau}`;
   }
 
   werkBij() {

@@ -123,3 +123,23 @@ export class MeshBouwer {
     return { groepen };
   }
 }
+
+/** Meerdere meshes samenvoegen tot één, met één groep per materiaal (minder tekenopdrachten). */
+export function samenvoegen(lijst: MeshData[]): MeshData {
+  const per = new Map<string, MeshGroep[]>();
+  for (const m of lijst) for (const g of m.groepen) { let l = per.get(g.materiaal); if (!l) per.set(g.materiaal, l = []); l.push(g); }
+  const groepen: MeshGroep[] = [];
+  for (const [materiaal, gs] of per) {
+    let nv = 0, ni = 0;
+    for (const g of gs) { nv += g.posities.length / 3; ni += g.indices.length; }
+    const posities = new Float32Array(nv * 3), normalen = new Float32Array(nv * 3), uvs = new Float32Array(nv * 2), indices = new Uint32Array(ni);
+    let ov = 0, oi = 0;
+    for (const g of gs) {
+      posities.set(g.posities, ov * 3); normalen.set(g.normalen, ov * 3); uvs.set(g.uvs, ov * 2);
+      for (let i = 0; i < g.indices.length; i++) indices[oi + i] = g.indices[i] + ov;
+      ov += g.posities.length / 3; oi += g.indices.length;
+    }
+    groepen.push({ materiaal, posities, normalen, uvs, indices });
+  }
+  return { groepen };
+}
