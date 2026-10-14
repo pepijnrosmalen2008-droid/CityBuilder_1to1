@@ -230,11 +230,14 @@ export class Wegennet {
     const q0 = lerp2(A.p, seg.c, t), q1 = lerp2(seg.c, B.p, t), m = lerp2(q0, q1, t);
     if (dist2(m, A.p) < MIN_SEGMENT || dist2(m, B.p) < MIN_SEGMENT) return null;
     const type = seg.type;
+    // Hoogte van het wegdek op het splitspunt (niet rechtlijnig tussen de uiteinden).
+    let yM = this.knoopHoogte(m), bd = Infinity;
+    for (const p of seg.pad) { const d = Math.hypot(p.x - m.x, p.z - m.z); if (d < bd) { bd = d; yM = p.y; } }
     this.verwijderSegment(segId);
     // verwijderSegment kan A/B opruimen als ze los kwamen te liggen: opnieuw aanmaken met dezelfde id.
     for (const k of [A, B]) if (!this.knopen.has(k.id)) { k.segs = []; this.knopen.set(k.id, k); }
     const M = this.nieuweKnoop(m);
-    M.y = lerp(A.y, B.y, t);
+    M.y = yM;
     const d1 = this.nieuwSegment(A, q0, M, type);
     const d2 = this.nieuwSegment(M, q1, B, type);
     return { knoop: M, delen: [d1, d2] };

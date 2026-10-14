@@ -50,7 +50,8 @@ export function snijLijnstukken(a: V2, b: V2, c: V2, d: V2): number | null {
   if (Math.abs(den) < 1e-9) return null;
   const t = cross2(sub2(c, a), s) / den;
   const u = cross2(sub2(c, a), r) / den;
-  return t > 1e-4 && t < 1 - 1e-4 && u > 1e-4 && u < 1 - 1e-4 ? t : null;
+  // Half-open: een kruising precies op een tussenpunt telt één keer.
+  return t >= 0 && t < 1 && u >= 0 && u < 1 ? t : null;
 }
 
 /** Overlappen twee convexe polygonen (SAT)? */

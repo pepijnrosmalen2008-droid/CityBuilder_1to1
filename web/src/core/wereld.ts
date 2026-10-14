@@ -1,30 +1,42 @@
-import { V2, add2, dist2, dot2, mul2, perp2, polygonenOverlappen, puntInPolygoon, sub2, lerp2, norm2, saturate } from './math';
-import { Terrein, ZEENIVEAU } from './terrain';
+import { V2, dist2, saturate } from './math';
+import { Terrein } from './terrain';
 import { Wegennet, Segment } from './wegen/netwerk';
 import { WEGTYPEN, WegTypeId, halveBreedte } from './wegen/typen';
 import { Bomen } from './bomen';
 import { Rng } from './rng';
 import { Capaciteit, Functie, GebouwVorm, Zone, berekenCapaciteit, verdiepingHoogte, KENGETALLEN } from './zones';
+import { Strook, maakStrook, band, opStrook, verdeel, stroomSleutel, STROOK_DIEPTE } from './percelen';
+import { afstandTotLijn, getekendOppervlak, zwaartepunt } from './poly';
+import { puntInPolygoon } from './math';
 
+/** Perceel op een gevelstrook: van booglengte s0 tot s1 langs de straat, zo diep als de strook. */
 export interface Kavel {
-  id: number; seg: number; zijde: 1 | -1;
-  /** p0,p1 = voorkant langs de weg, p2,p3 = achterkant. */
+  id: number;
+  strook: string; seg: number; zijde: 1 | -1;
+  s0: number; s1: number;
+  /** Hoekpunten van de voorkant (om het perceel na een wegsplitsing terug te vinden). */
+  voorA: V2; voorB: V2;
   poly: V2[];
-  voor: V2; langs: V2; binnen: V2;
-  breedte: number; diepte: number;
+  /** Midden van de voorkant, richting naar binnen, richting langs de straat. */
+  voor: V2; binnen: V2; langs: V2;
+  breedte: number; diepte: number; oppervlak: number;
   zone: Zone; gebouw: number;
 }
 
 export interface Laag { functie: Functie; hoogte: number }
-
-/** Het perceel waarop een gebouw staat: één kavel of een paar samengevoegde kavels langs dezelfde straat. */
-export interface Perceel { poly: V2[]; voor: V2; langs: V2; binnen: V2; breedte: number; diepte: number }
+export interface Anker { p: V2; n: V2; t: V2; d: number }
 
 export interface Gebouw {
-  id: number; kavel: number; kavels: number[]; perceel: Perceel; zone: Zone; vorm: GebouwVorm;
-  /** Middelpunt van de footprint; `voor` wijst naar de straat; `breedte` loopt langs de straat. */
-  centrum: V2; voor: V2; breedte: number; diepte: number;
-  /** Vloerpeil (net boven het hoogste maaiveldpunt) en het laagste maaiveldpunt eronder. */
+  id: number; kavel: number; kavels: number[]; zone: Zone; vorm: GebouwVorm;
+  /** Footprint (vorm van het perceel), de gevellijn (rand van de stoep) en de maat van de bebouwing. */
+  voet: V2[]; voorLijn: V2[]; terug: number; diepte: number;
+  /** Zadeldak: voor- en achterhelft. */
+  dak?: { voor: V2[]; achter: V2[] };
+  /** Middens van de woningen (rijwoningen) op de voorgevel en de grenzen ertussen op de stoeprand. */
+  ankers: Anker[]; grenzen: Anker[];
+  /** Hele perceel (voor tuin en bestrating). */
+  perceel: V2[];
+  centrum: V2; voor: V2; breedte: number;
   y: number; yGrond: number;
   lagen: Laag[]; eenheden: number; seed: number;
   voortgang: number; klaar: boolean; bezetting: number;
@@ -43,16 +55,22 @@ export type WereldEvent =
   | { soort: 'kavel+' | 'kavel-' | 'kavel~'; id: number }
   | { soort: 'gebouw+' | 'gebouw-' | 'gebouw~'; id: number };
 
-export const KAVEL_BREEDTE = 16;
-export const KAVEL_DIEPTE = 32;
 export const SECONDEN_PER_DAG = 4;
-
 export const totaleHoogte = (lagen: Laag[]) => lagen.reduce((s, l) => s + l.hoogte, 0);
+
+type Box = { x0: number; z0: number; x1: number; z1: number };
+const boxVan = (pts: { x: number; z: number }[], m = 0): Box => {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const p of pts) { x0 = Math.min(x0, p.x); z0 = Math.min(z0, p.z); x1 = Math.max(x1, p.x); z1 = Math.max(z1, p.z); }
+  return { x0: x0 - m, z0: z0 - m, x1: x1 + m, z1: z1 + m };
+};
+const raken = (a: Box, b: Box) => a.x0 <= b.x1 && b.x0 <= a.x1 && a.z0 <= b.z1 && b.z0 <= a.z1;
 
 export class Wereld {
   terrein: Terrein;
   net: Wegennet;
   bomen: Bomen;
+  stroken = new Map<string, Strook>();
   kavels = new Map<number, Kavel>();
   gebouwen = new Map<number, Gebouw>();
   events: WereldEvent[] = [];
@@ -65,6 +83,7 @@ export class Wereld {
   private rng: Rng;
   private bouwKlok = 0;
   private statKlok = 0;
+  private segBox = new Map<number, Box>();
 
   constructor(readonly seed = 1) {
     this.terrein = new Terrein(2048, 4, seed);
@@ -85,12 +104,8 @@ export class Wereld {
     const nieuw = this.net.leg(a, c, b, type);
     if (!nieuw.length) return { ok: false, fout: 'Kan hier geen weg leggen' };
     this.geld -= kosten;
+    for (const seg of nieuw) this.wisBomenLangs(seg);
     this.verwerkNet();
-    for (const seg of nieuw) {
-      this.ruimOpLangs(seg);
-      this.wisBomenLangs(seg);
-    }
-    for (const seg of nieuw) this.genereerKavels(seg);
     return { ok: true };
   }
 
@@ -98,8 +113,8 @@ export class Wereld {
     const seg = this.net.segmenten.get(id);
     if (!seg) return;
     this.net.verwijderSegment(id);
-    this.verwerkNet();
     this.geld += WEGTYPEN[seg.type].kosten * seg.lengte * 0.25;
+    this.verwerkNet();
   }
 
   wijzigWeg(id: number, type: WegTypeId) {
@@ -109,156 +124,159 @@ export class Wereld {
     if (extra > this.geld) return false;
     this.net.wijzigType(id, type);
     this.geld -= Math.max(0, extra);
-    this.verwerkNet();
-    // Breder profiel: kavels die nu op de weg liggen gaan weg; nieuwe kavels als het type erftoegang heeft.
-    this.ruimOpLangs(seg);
     this.wisBomenLangs(seg);
-    for (const k of [...this.kavels.values()]) if (k.seg === id && !this.kavelPastBijWeg(k, seg)) this.verwijderKavel(k.id);
-    if (WEGTYPEN[type].erf && ![...this.kavels.values()].some(k => k.seg === id)) this.genereerKavels(seg);
-    if (!WEGTYPEN[type].erf) for (const k of [...this.kavels.values()]) if (k.seg === id) this.verwijderKavel(k.id);
+    this.verwerkNet();
     return true;
   }
 
-  /** Netwerk-events doorgeven en kavels van gesplitste/verwijderde segmenten herverdelen. */
+  /** Netwerk-events doorgeven en de gevelstroken in de buurt opnieuw berekenen. */
   private verwerkNet() {
     const ev = this.net.haalEvents();
-    const weg = new Set<number>();
+    const gewijzigd = new Set<number>();
+    const gebieden: Box[] = [];
     for (const e of ev) {
       this.events.push(e);
-      if (e.soort === 'seg-') weg.add(e.id);
-      if (e.soort === 'seg+') weg.delete(e.id);
+      if (e.soort === 'seg+') gewijzigd.add(e.id);
+      if (e.soort === 'seg-') { const b = this.segBox.get(e.id); if (b) gebieden.push(b); this.segBox.delete(e.id); }
     }
-    if (!weg.size) return;
-    for (const k of [...this.kavels.values()]) {
-      if (!weg.has(k.seg)) continue;
-      // Zoek het segment waar de voorkant van de kavel nu langs ligt.
-      let best: Segment | null = null, bd = Infinity;
-      for (const s of this.net.segmenten.values()) {
-        if (!WEGTYPEN[s.type].erf) continue;
-        const d = this.afstandTotAs(k.voor, s);
-        const doel = halveBreedte(s.type);
-        if (Math.abs(d - doel) < 2.5 && Math.abs(d - doel) < bd) { bd = Math.abs(d - doel); best = s; }
-      }
-      if (best) k.seg = best.id; else this.verwijderKavel(k.id);
+    for (const id of gewijzigd) {
+      const s = this.net.segmenten.get(id);
+      if (!s) continue;
+      const b = boxVan(s.pad, halveBreedte(s.type));
+      this.segBox.set(id, b); gebieden.push(b);
     }
+    if (!gebieden.length) return;
+    // Alles binnen twee strookdieptes van een wijziging kan een andere vorm krijgen.
+    const marge = STROOK_DIEPTE * 2 + 20;
+    const groot = gebieden.map(b => ({ x0: b.x0 - marge, z0: b.z0 - marge, x1: b.x1 + marge, z1: b.z1 + marge }));
+    const te = new Set<number>();
+    for (const [id, b] of this.segBox) if (groot.some(g => raken(g, b))) te.add(id);
+    this.herbouwStroken(te, gebieden);
   }
 
-  private afstandTotAs(p: V2, seg: Segment): number {
-    let best = Infinity;
-    const pad = seg.pad;
-    for (let i = 0; i < pad.length - 1; i++) {
-      const a = pad[i], b = pad[i + 1];
-      const ab = { x: b.x - a.x, z: b.z - a.z };
-      const l2 = ab.x * ab.x + ab.z * ab.z;
-      const t = l2 > 0 ? saturate(((p.x - a.x) * ab.x + (p.z - a.z) * ab.z) / l2) : 0;
-      best = Math.min(best, Math.hypot(p.x - (a.x + ab.x * t), p.z - (a.z + ab.z * t)));
-    }
-    return best;
+  private wisBomenLangs(seg: Segment) {
+    const hb = halveBreedte(seg.type) + 2.5;
+    const b = boxVan(seg.pad, hb);
+    this.bomen.wis(b.x0, b.z0, b.x1, b.z1, (x, z) => afstandTotLijn({ x, z }, seg.pad).d < hb);
   }
 
-  /** Raakt een weg dit polygoon? (punt-tot-polygoon-afstand kleiner dan de halve wegbreedte) */
-  private wegRaakt(poly: V2[], alleen?: Segment): boolean {
-    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
-    for (const p of poly) { x0 = Math.min(x0, p.x); z0 = Math.min(z0, p.z); x1 = Math.max(x1, p.x); z1 = Math.max(z1, p.z); }
-    const lijst = alleen ? [alleen] : this.net.segmenten.values();
-    for (const seg of lijst) {
-      const hb = halveBreedte(seg.type) - 0.2;
+  /** Raakt een weg dit polygoon? */
+  private wegRaakt(poly: V2[], marge = -0.2): boolean {
+    const pb = boxVan(poly);
+    for (const seg of this.net.segmenten.values()) {
+      const hb = halveBreedte(seg.type) + marge;
+      const sb = this.segBox.get(seg.id);
+      if (sb && !raken(sb, pb)) continue;
       for (let i = 0; i < seg.pad.length - 1; i++) {
         const a = seg.pad[i], b = seg.pad[i + 1];
-        if (Math.max(a.x, b.x) < x0 - hb || Math.min(a.x, b.x) > x1 + hb || Math.max(a.z, b.z) < z0 - hb || Math.min(a.z, b.z) > z1 + hb) continue;
         for (let t = 0; t <= 1; t += 0.25) {
           const p = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
-          if (puntInPolygoon(p, poly) || afstandTotPolygoon(p, poly) < hb) return true;
+          if (p.x < pb.x0 - hb || p.x > pb.x1 + hb || p.z < pb.z0 - hb || p.z > pb.z1 + hb) continue;
+          if (puntInPolygoon(p, poly) || afstandTotRand(p, poly) < hb) return true;
         }
       }
     }
     return false;
   }
 
-  private kavelPastBijWeg(k: Kavel, seg: Segment) { return !this.wegRaakt(k.poly, seg); }
+  // ─── Gevelstroken en percelen ───────────────────────────────────────────────
 
-  /** Kavels (ook bebouwde, zoals in Cities: Skylines) die de nieuwe weg raakt, gaan weg. */
-  private ruimOpLangs(seg: Segment) {
-    for (const k of [...this.kavels.values()]) if (this.wegRaakt(k.poly, seg)) this.verwijderKavel(k.id);
-  }
-
-  private wisBomenLangs(seg: Segment) {
-    const hb = halveBreedte(seg.type) + 2.5;
-    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
-    for (const p of seg.pad) { x0 = Math.min(x0, p.x); z0 = Math.min(z0, p.z); x1 = Math.max(x1, p.x); z1 = Math.max(z1, p.z); }
-    this.bomen.wis(x0 - hb, z0 - hb, x1 + hb, z1 + hb, (x, z) => this.afstandTotAs({ x, z }, seg) < hb);
-  }
-
-  // ─── Kavels ─────────────────────────────────────────────────────────────────
-
-  /** Punt en richting op booglengte s langs het pad. */
-  static opPad(seg: Segment, s: number): { p: V2; d: V2 } {
-    const pad = seg.pad;
-    for (let i = 0; i < pad.length - 1; i++) {
-      if (s <= pad[i + 1].s || i === pad.length - 2) {
-        const a = pad[i], b = pad[i + 1];
-        const t = saturate((s - a.s) / Math.max(1e-6, b.s - a.s));
-        return { p: { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }, d: norm2({ x: b.x - a.x, z: b.z - a.z }) };
+  private herbouwStroken(segIds: Set<number>, gebieden: Box[]) {
+    // Oude stroken van deze segmenten (en van verdwenen segmenten) weg; de kavels erop zoeken een nieuw thuis.
+    const zwervers: Kavel[] = [];
+    for (const [sleutel, st] of this.stroken) {
+      if (segIds.has(st.seg) || !this.net.segmenten.has(st.seg)) {
+        this.stroken.delete(sleutel);
+        for (const k of this.kavels.values()) if (k.strook === sleutel) zwervers.push(k);
       }
     }
-    return { p: { x: pad[0].x, z: pad[0].z }, d: { x: 1, z: 0 } };
-  }
-
-  genereerKavels(seg: Segment) {
-    const type = WEGTYPEN[seg.type];
-    if (!type.erf) return;
-    const hb = halveBreedte(seg.type);
-    const s0 = 1, s1 = seg.lengte - 1;
-    const n = Math.floor((s1 - s0) / KAVEL_BREEDTE);
-    if (n < 1) return;
-    const w = (s1 - s0) / n;
-    for (let i = 0; i < n; i++) {
-      const sm = s0 + (i + 0.5) * w;
-      const { p, d } = Wereld.opPad(seg, sm);
-      const midden = seg.pad[Math.min(seg.pad.length - 1, Math.round(sm / Math.max(1e-6, seg.lengte) * (seg.pad.length - 1)))];
-      if (midden?.brug) continue;
-      for (const zijde of [1, -1] as const) {
-        const binnen = mul2(perp2(d), zijde);
-        let voor = add2(p, mul2(binnen, hb));
-        // In een bocht snijdt de rechte voorkant in de weg: schuif de kavel naar buiten.
-        let indringing = 0;
-        for (const q of seg.pad) {
-          if (q.s < sm - w / 2 - 2 || q.s > sm + w / 2 + 2) continue;
-          const nq = mul2(perp2({ x: q.dx, z: q.dz }), zijde);
-          const rand = { x: q.x + nq.x * hb, z: q.z + nq.z * hb };
-          indringing = Math.max(indringing, dot2(sub2(rand, voor), binnen));
+    const nieuweStroken: Strook[] = [];
+    for (const id of segIds) {
+      const seg = this.net.segmenten.get(id);
+      if (!seg) continue;
+      for (const z of [1, -1] as const) {
+        const st = maakStrook(this.net, this.terrein, seg, z);
+        if (st) { this.stroken.set(stroomSleutel(id, z), st); nieuweStroken.push(st); }
+      }
+    }
+    // Bestaande kavels terugzetten op de nieuwe strook waar hun voorkant op ligt.
+    const bezet = new Map<string, [number, number][]>();
+    for (const k of zwervers) {
+      let thuis: Strook | null = null, s0 = 0, s1 = 0;
+      for (const st of nieuweStroken) {
+        if (st.zijde !== k.zijde && this.net.segmenten.get(st.seg)?.id === k.seg) continue;
+        const a = afstandTotLijn(k.voorA, st.voor, st.s), b = afstandTotLijn(k.voorB, st.voor, st.s);
+        if (a.d < 0.8 && b.d < 0.8) {
+          // Zelfde kant van de weg?
+          const q = opStrook(st, (a.s + b.s) / 2);
+          if (q.n.x * k.binnen.x + q.n.z * k.binnen.z < 0.7) continue;
+          thuis = st; s0 = Math.min(a.s, b.s); s1 = Math.max(a.s, b.s); break;
         }
-        voor = add2(voor, mul2(binnen, indringing + 0.05));
-        const half = mul2(d, w / 2);
-        const p0 = sub2(voor, half), p1 = add2(voor, half);
-        const p2 = add2(p1, mul2(binnen, KAVEL_DIEPTE)), p3 = add2(p0, mul2(binnen, KAVEL_DIEPTE));
-        const poly = [p0, p1, p2, p3];
-        if (!this.kavelGeldig(poly)) continue;
-        const k: Kavel = { id: this.volgende++, seg: seg.id, zijde, poly, voor, langs: d, binnen, breedte: w, diepte: KAVEL_DIEPTE, zone: 'geen', gebouw: 0 };
-        this.kavels.set(k.id, k);
-        this.events.push({ soort: 'kavel+', id: k.id });
+      }
+      if (!thuis || s1 - s0 < 3) { this.verwijderKavel(k.id); continue; }
+      s0 = Math.max(s0, thuis.s0); s1 = Math.min(s1, thuis.s1);
+      const poly = band(thuis, s0, s1, 0, STROOK_DIEPTE);
+      const opp = Math.abs(getekendOppervlak(poly));
+      // Te veel veranderd (bijv. een weg erdoorheen): opnieuw verdelen.
+      if (poly.length < 3 || opp < k.oppervlak * 0.85 || this.wegRaakt(poly)) { this.verwijderKavel(k.id); continue; }
+      this.zetKavel(k, thuis, s0, s1, poly);
+      const sl = stroomSleutel(thuis.seg, thuis.zijde);
+      (bezet.get(sl) ?? bezet.set(sl, []).get(sl)!).push([s0, s1]);
+      this.events.push({ soort: 'kavel~', id: k.id });
+    }
+    // Kavels van andere stroken in het gebied die nu op een weg liggen (nieuwe weg erdoorheen).
+    for (const k of [...this.kavels.values()]) {
+      if (bezet.has(k.strook) && this.stroken.has(k.strook)) continue;
+      if (!gebieden.some(g => raken(g, boxVan(k.poly)))) continue;
+      if (this.wegRaakt(k.poly)) this.verwijderKavel(k.id);
+    }
+    // Lege stukken van de nieuwe stroken opvullen met nieuwe percelen.
+    for (const st of nieuweStroken) {
+      const sl = stroomSleutel(st.seg, st.zijde);
+      const vol = (bezet.get(sl) ?? []).sort((a, b) => a[0] - b[0]);
+      const gaten: [number, number][] = [];
+      let c = st.s0;
+      for (const [a, b] of vol) { if (a - c > 0.5) gaten.push([c, a]); c = Math.max(c, b); }
+      if (st.s1 - c > 0.5) gaten.push([c, st.s1]);
+      for (const [a, b] of gaten) {
+        if (b - a < 4) {
+          // Klein restje: bij een onbebouwde buur voegen.
+          const buur = [...this.kavels.values()].find(k => k.strook === sl && !k.gebouw && (Math.abs(k.s1 - a) < 0.6 || Math.abs(k.s0 - b) < 0.6));
+          if (buur) {
+            const n0 = Math.min(buur.s0, a), n1 = Math.max(buur.s1, b);
+            const poly = band(st, n0, n1, 0, STROOK_DIEPTE);
+            if (poly.length >= 3) { this.zetKavel(buur, st, n0, n1, poly); this.events.push({ soort: 'kavel~', id: buur.id }); }
+          }
+          continue;
+        }
+        for (const [p0, p1] of verdeel(a, b)) this.nieuweKavel(st, p0, p1);
       }
     }
   }
 
-  private kavelGeldig(poly: V2[]): boolean {
-    const t = this.terrein;
+  private zetKavel(k: Kavel, st: Strook, s0: number, s1: number, poly: V2[]) {
+    const m = opStrook(st, (s0 + s1) / 2);
+    k.strook = stroomSleutel(st.seg, st.zijde); k.seg = st.seg; k.zijde = st.zijde;
+    k.s0 = s0; k.s1 = s1; k.poly = poly;
+    k.voorA = opStrook(st, s0).p; k.voorB = opStrook(st, s1).p;
+    k.voor = m.p; k.binnen = m.n; k.langs = m.t;
+    k.breedte = s1 - s0; k.diepte = m.d; k.oppervlak = Math.abs(getekendOppervlak(poly));
+  }
+
+  private nieuweKavel(st: Strook, s0: number, s1: number) {
+    const poly = band(st, s0, s1, 0, STROOK_DIEPTE);
+    if (poly.length < 3) return;
+    const opp = Math.abs(getekendOppervlak(poly));
+    if (opp < 50) return;
+    // Niet te steil.
     let lo = Infinity, hi = -Infinity;
-    const c = lerp2(lerp2(poly[0], poly[1], 0.5), lerp2(poly[2], poly[3], 0.5), 0.5);
-    for (const p of [...poly, c]) {
-      if (!t.binnen(p.x, p.z, 8)) return false;
-      const h = t.hoogte(p.x, p.z);
-      if (h < ZEENIVEAU + 0.6) return false;
-      lo = Math.min(lo, h); hi = Math.max(hi, h);
-    }
-    if (hi - lo > 6) return false;
-    if (this.wegRaakt(poly)) return false;
-    const krimp = krimpPolygoon(poly, 0.3);
-    for (const k of this.kavels.values()) {
-      if (Math.abs(k.voor.x - c.x) > 60 || Math.abs(k.voor.z - c.z) > 60) continue;
-      if (polygonenOverlappen(krimp, k.poly)) return false;
-    }
-    return true;
+    for (const p of poly) { const h = this.terrein.hoogte(p.x, p.z); lo = Math.min(lo, h); hi = Math.max(hi, h); }
+    if (hi - lo > 7) return;
+    if (this.wegRaakt(poly)) return;
+    const k = { id: this.volgende++, zone: 'geen', gebouw: 0 } as Kavel;
+    this.zetKavel(k, st, s0, s1, poly);
+    this.kavels.set(k.id, k);
+    this.events.push({ soort: 'kavel+', id: k.id });
   }
 
   verwijderKavel(id: number) {
@@ -269,13 +287,13 @@ export class Wereld {
     this.events.push({ soort: 'kavel-', id });
   }
 
-  /** Zoneer alle kavels waarvan het middelpunt binnen de straal ligt. */
+  /** Zoneer alle percelen die het penseel raakt. */
   zoneer(m: V2, straal: number, zone: Zone): number {
     let n = 0;
     for (const k of this.kavels.values()) {
-      const c = kavelMidden(k);
-      if (dist2(c, m) > straal + 4) continue;
-      if (k.zone === zone) continue;
+      const c = zwaartepunt(k.poly);
+      const raak = dist2(c, m) <= straal || dist2(k.voor, m) <= straal || puntInPolygoon(m, k.poly);
+      if (!raak || k.zone === zone) continue;
       if (k.gebouw) {
         if (zone !== 'geen') continue;
         this.verwijderGebouw(k.gebouw);
@@ -288,21 +306,28 @@ export class Wereld {
 
   // ─── Gebouwen ───────────────────────────────────────────────────────────────
 
-  private ontwerp(k: Perceel, zoneVan: Zone, seed: number, kavels: number[]): Gebouw | null {
+  private ontwerp(reeks: Kavel[], seed: number): Gebouw | null {
     const r = new Rng(seed);
-    let vorm: GebouwVorm, lagen: number, eenheden = 1, breedte: number, diepte: number, terug: number;
-    switch (zoneVan) {
-      case 'wonenLaag': vorm = 'rijwoningen'; lagen = r.next() < 0.65 ? 2 : 3; eenheden = Math.max(2, Math.round(k.breedte / 5.4));
-        breedte = k.breedte - 0.1; diepte = r.range(9, 10.5); terug = r.range(3, 5); break;
-      case 'wonenHoog': vorm = 'appartementen'; lagen = r.int(4, 9); breedte = k.breedte - 3; diepte = r.range(12, 15); terug = r.range(4, 6);
-        if (kavels.length > 1) { lagen = r.int(5, 12); breedte = Math.min(breedte, r.range(24, 40)); } break;
-      case 'gemengd': vorm = 'winkelsMetWonen'; lagen = r.int(3, 5); breedte = k.breedte - 0.1; diepte = r.range(12, 15); terug = 0.3; break;
-      case 'kantoor': vorm = 'kantoortoren'; lagen = kavels.length > 1 ? r.int(6, 18) : r.int(4, 8); breedte = k.breedte - 3; diepte = r.range(17, 22); terug = r.range(4, 6); break;
-      case 'industrie': vorm = 'bedrijfshal'; lagen = 1; breedte = k.breedte - 3; diepte = r.range(24, 32); terug = r.range(6, 9); break;
+    const k = reeks[0], zone = k.zone;
+    const st = this.stroken.get(k.strook);
+    if (!st) return null;
+    const s0 = Math.min(...reeks.map(x => x.s0)), s1 = Math.max(...reeks.map(x => x.s1));
+    const lengte = s1 - s0;
+    let vorm: GebouwVorm, lagen: number, diepte: number, terug: number, eenheden = 1;
+    switch (zone) {
+      case 'wonenLaag': vorm = 'rijwoningen'; lagen = r.next() < 0.65 ? 2 : 3; eenheden = Math.max(1, Math.round(lengte / 5.4));
+        diepte = r.range(9, 10.5); terug = r.range(3, 5); break;
+      case 'wonenHoog': vorm = 'appartementen'; lagen = reeks.length > 1 ? r.int(5, 11) : r.int(4, 7); diepte = r.range(12, 15); terug = r.range(2.5, 5); break;
+      case 'gemengd': vorm = 'winkelsMetWonen'; lagen = r.int(3, 5); diepte = r.range(12, 16); terug = 0.2; break;
+      case 'kantoor': vorm = 'kantoortoren'; lagen = reeks.length > 1 ? r.int(6, 18) : r.int(4, 8); diepte = r.range(16, 22); terug = r.range(3, 5); break;
+      case 'industrie': vorm = 'bedrijfshal'; lagen = 1; diepte = r.range(20, 30); terug = r.range(5, 8); break;
       default: return null;
     }
-    diepte = Math.min(diepte, k.diepte - terug - 2);
+    const mid = opStrook(st, (s0 + s1) / 2);
+    diepte = Math.min(diepte, mid.d - terug - 1.5);
     if (diepte < 6) return null;
+    const voet = band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte, d - 1));
+    if (voet.length < 3 || Math.abs(getekendOppervlak(voet)) < 30) return null;
     const ls: Laag[] = [];
     for (let i = 0; i < lagen; i++) {
       const bg = i === 0;
@@ -310,37 +335,45 @@ export class Wereld {
         : vorm === 'kantoortoren' ? 'kantoor' : vorm === 'bedrijfshal' ? 'industrie' : 'wonen';
       ls.push({ functie: f, hoogte: verdiepingHoogte(f, bg) });
     }
-    const centrum = add2(k.voor, mul2(k.binnen, terug + diepte / 2));
-    const voor = mul2(k.binnen, -1);
-    // Vloerpeil: laagste punt onder de footprint, zodat het gebouw nergens zweeft.
-    const ax = k.langs, az = k.binnen;
-    let y = -Infinity, yGrond = Infinity;
-    for (const [u, v] of [[-.5, -.5], [.5, -.5], [.5, .5], [-.5, .5], [0, 0], [0, -.5], [0, .5]]) {
-      const p = add2(centrum, add2(mul2(ax, u * breedte), mul2(az, v * diepte)));
-      const h = this.terrein.hoogte(p.x, p.z);
-      y = Math.max(y, h); yGrond = Math.min(yGrond, h);
+    // Gevellijn (stoeprand) iets voorbij het perceel, voor het herkennen van voor- en achtergevels.
+    const voorLijn: V2[] = [];
+    for (let s = s0 - 6; s <= s1 + 6.01; s += Math.min(2, (lengte + 12) / 4)) voorLijn.push(opStrook(st, s).p);
+    const dak = vorm === 'rijwoningen' ? {
+      voor: band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte / 2, d - 1)),
+      achter: band(st, s0, s1, terug + diepte / 2, (d: number) => Math.min(terug + diepte, d - 1)),
+    } : undefined;
+    const ankers: Anker[] = [], grenzen: Anker[] = [];
+    for (let i = 0; i < eenheden; i++) {
+      const q = opStrook(st, s0 + (i + 0.5) * lengte / eenheden);
+      ankers.push({ p: { x: q.p.x + q.n.x * terug, z: q.p.z + q.n.z * terug }, n: q.n, t: q.t, d: q.d });
     }
-    y += 0.15;
+    for (let i = 1; i < eenheden; i++) { const q = opStrook(st, s0 + i * lengte / eenheden); grenzen.push({ p: q.p, n: q.n, t: q.t, d: q.d }); }
+    const perceel = band(st, s0, s1, 0, STROOK_DIEPTE);
+    let y = -Infinity, yGrond = Infinity;
+    for (const p of [...voet, zwaartepunt(voet)]) { const h = this.terrein.hoogte(p.x, p.z); y = Math.max(y, h); yGrond = Math.min(yGrond, h); }
+    const opp = Math.abs(getekendOppervlak(voet));
     return {
-      id: this.volgende++, kavel: kavels[0], kavels, perceel: k, zone: zoneVan, vorm, centrum, voor, breedte, diepte, y, yGrond,
-      lagen: ls, eenheden, seed: Math.floor(r.next() * 2 ** 31), voortgang: 0, klaar: false, bezetting: 0,
-      cap: berekenCapaciteit(vorm, breedte * diepte, ls.map(l => l.functie), eenheden),
+      id: this.volgende++, kavel: k.id, kavels: reeks.map(x => x.id), zone, vorm,
+      voet, voorLijn, terug, diepte, dak, ankers, grenzen, perceel,
+      centrum: zwaartepunt(voet), voor: { x: -mid.n.x, z: -mid.n.z }, breedte: lengte,
+      y: y + 0.15, yGrond, lagen: ls, eenheden, seed: Math.floor(r.next() * 2 ** 31),
+      voortgang: 0, klaar: false, bezetting: 0,
+      cap: berekenCapaciteit(vorm, opp, ls.map(l => l.functie), eenheden),
     };
   }
 
-  /** Lege buurkavel met dezelfde zone, direct naast deze kavel langs dezelfde straat. */
+  /** Lege buurkavel met dezelfde zone, direct ernaast op dezelfde strook. */
   private buur(k: Kavel, rechts: boolean): Kavel | null {
     for (const n of this.kavels.values()) {
-      if (n === k || n.seg !== k.seg || n.zijde !== k.zijde || n.zone !== k.zone || n.gebouw) continue;
-      if (rechts ? dist2(k.poly[1], n.poly[0]) < 0.8 : dist2(k.poly[0], n.poly[1]) < 0.8) return n;
+      if (n === k || n.strook !== k.strook || n.zone !== k.zone || n.gebouw) continue;
+      if (rechts ? Math.abs(n.s0 - k.s1) < 0.6 : Math.abs(n.s1 - k.s0) < 0.6) return n;
     }
     return null;
   }
 
   private startBouw(k: Kavel) {
-    // Grote gebouwen nemen vaak meerdere kavels in (zoals een ontwikkelaar die percelen samenvoegt).
-    const kans: Partial<Record<Zone, number>> = { kantoor: 0.75, wonenHoog: 0.5, industrie: 0.65 };
-    const max: Partial<Record<Zone, number>> = { kantoor: 3, wonenHoog: 2, industrie: 3 };
+    const kans: Partial<Record<Zone, number>> = { kantoor: 0.75, wonenHoog: 0.55, industrie: 0.65, wonenLaag: 0.35, gemengd: 0.25 };
+    const max: Partial<Record<Zone, number>> = { kantoor: 3, wonenHoog: 3, industrie: 3, wonenLaag: 2, gemengd: 2 };
     const reeks = [k];
     if (this.rng.next() < (kans[k.zone] ?? 0)) {
       const doel = 2 + (this.rng.next() < 0.4 ? 1 : 0);
@@ -349,14 +382,11 @@ export class Wereld {
         if (r) reeks.push(r); else if (l) reeks.unshift(l); else break;
       }
     }
-    const a = reeks[0], b = reeks[reeks.length - 1];
-    const poly = [a.poly[0], b.poly[1], b.poly[2], a.poly[3]];
-    const perceel: Perceel = { poly, voor: lerp2(a.poly[0], b.poly[1], 0.5), langs: k.langs, binnen: k.binnen, breedte: dist2(a.poly[0], b.poly[1]), diepte: k.diepte };
-    const g = this.ontwerp(perceel, k.zone, Math.floor(this.rng.next() * 2 ** 31), reeks.map(x => x.id));
+    const g = this.ontwerp(reeks, Math.floor(this.rng.next() * 2 ** 31));
     if (!g) return;
     this.gebouwen.set(g.id, g);
     for (const x of reeks) { x.gebouw = g.id; this.events.push({ soort: 'kavel~', id: x.id }); }
-    this.bomen.wisInPolygoon(poly, 2);
+    this.bomen.wisInPolygoon(g.perceel, 1);
     this.events.push({ soort: 'gebouw+', id: g.id });
   }
 
@@ -371,13 +401,8 @@ export class Wereld {
     this.events.push({ soort: 'gebouw-', id });
   }
 
-  /** Wat staat er op dit punt? (voor de sloophamer en info) */
   gebouwOp(p: V2): Gebouw | null {
-    for (const g of this.gebouwen.values()) {
-      const d = sub2(p, g.centrum);
-      const u = Math.abs(dot2(d, perp2(g.voor))), v = Math.abs(dot2(d, g.voor));
-      if (u <= g.breedte / 2 + 0.5 && v <= g.diepte / 2 + 0.5) return g;
-    }
+    for (const g of this.gebouwen.values()) if (puntInPolygoon(p, g.voet)) return g;
     return null;
   }
 
@@ -414,7 +439,7 @@ export class Wereld {
     this.bouwKlok += dt;
     if (this.bouwKlok >= 0.3) {
       this.bouwKlok = 0;
-      // Per zonesoort: met een kans gelijk aan de vraag start een projectontwikkelaar één project.
+      // Per zonesoort: met een kans gelijk aan de vraag start een projectontwikkelaar een project.
       const perZone = new Map<Zone, Kavel[]>();
       for (const k of this.kavels.values()) {
         if (k.zone === 'geen' || k.gebouw) continue;
@@ -422,7 +447,6 @@ export class Wereld {
       }
       for (const [zone, lijst] of perZone) {
         const v = this.vraagVoor(zone);
-        // Grotere vraag: meerdere projecten tegelijk.
         const pogingen = 1 + Math.floor(v * 2);
         for (let p = 0; p < pogingen && lijst.length; p++) {
           if (this.rng.next() > v) continue;
@@ -465,7 +489,7 @@ export class Wereld {
 
   naarJson() {
     return {
-      versie: 1, seed: this.seed, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
+      versie: 2, seed: this.seed, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
       net: this.net.naarJson(),
       kavels: [...this.kavels.values()],
       gebouwen: [...this.gebouwen.values()],
@@ -473,23 +497,8 @@ export class Wereld {
   }
 }
 
-export function kavelMidden(k: Kavel): V2 {
-  return { x: (k.poly[0].x + k.poly[1].x + k.poly[2].x + k.poly[3].x) / 4, z: (k.poly[0].z + k.poly[1].z + k.poly[2].z + k.poly[3].z) / 4 };
-}
+export function kavelMidden(k: Kavel): V2 { return zwaartepunt(k.poly); }
 
-function afstandTotPolygoon(p: V2, poly: V2[]): number {
-  let best = Infinity;
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length];
-    const ab = sub2(b, a), l2 = dot2(ab, ab);
-    const t = l2 > 0 ? saturate(dot2(sub2(p, a), ab) / l2) : 0;
-    best = Math.min(best, dist2(p, add2(a, mul2(ab, t))));
-  }
-  return best;
-}
-
-function krimpPolygoon(poly: V2[], m: number): V2[] {
-  const c = poly.reduce((s, p) => add2(s, p), { x: 0, z: 0 });
-  const cm = mul2(c, 1 / poly.length);
-  return poly.map(p => { const d = sub2(cm, p); const l = Math.hypot(d.x, d.z) || 1; return add2(p, mul2(d, m / l)); });
+function afstandTotRand(p: V2, poly: V2[]): number {
+  return afstandTotLijn(p, [...poly, poly[0]]).d;
 }

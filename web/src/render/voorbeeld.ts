@@ -83,16 +83,13 @@ export class VoorbeeldLaag {
         if (v.gebouw !== undefined) {
           const g = this.w.gebouwen.get(v.gebouw);
           if (g) {
-            const ax = { x: -g.voor.z, z: g.voor.x }, az = g.voor;
-            const h = g.lagen.reduce((s, l) => s + l.hoogte, 0) + 2;
-            const P = (u: number, vv: number, y: number) => [g.centrum.x + ax.x * u + az.x * vv, g.y + y, g.centrum.z + ax.z * u + az.z * vv];
-            const B = g.breedte / 2 + 0.5, D = g.diepte / 2 + 0.5;
-            const hoeken = [[-B, -D], [B, -D], [B, D], [-B, D]];
+            const h = g.y + g.lagen.reduce((s, l) => s + l.hoogte, 0) + 2;
             const pos: number[] = [];
-            for (let i = 0; i < 4; i++) {
-              const [u0, v0] = hoeken[i], [u1, v1] = hoeken[(i + 1) % 4];
-              for (const y of [0, h]) pos.push(...P(u0, v0, y), ...P(u1, v1, y));
-              pos.push(...P(u0, v0, 0), ...P(u0, v0, h));
+            const n = g.voet.length;
+            for (let i = 0; i < n; i++) {
+              const a = g.voet[i], b = g.voet[(i + 1) % n];
+              for (const y of [g.y, h]) pos.push(a.x, y, a.z, b.x, y, b.z);
+              pos.push(a.x, g.y, a.z, a.x, h, a.z);
             }
             const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
             this.kader.geometry.dispose(); this.kader.geometry = geo;

@@ -1,4 +1,4 @@
-import { Wereld } from './wereld';
+import { Wereld, kavelMidden } from './wereld';
 import { WegTypeId } from './wegen/typen';
 import { Zone } from './zones';
 import { V2, lerp2 } from './math';
@@ -24,8 +24,8 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
   weg({ x: -620, z: 140 }, { x: -620, z: 340 }, 'woonstraat', { x: -700, z: 240 });
 
   // Zones.
-  for (const k of w.kavels.values()) {
-    const c = { x: (k.poly[0].x + k.poly[2].x) / 2, z: (k.poly[0].z + k.poly[2].z) / 2 };
+  for (const k of [...w.kavels.values()]) {
+    const c = kavelMidden(k);
     const seg = w.net.segmenten.get(k.seg)!;
     let zone: Zone;
     if (seg.type === 'laan') zone = Math.abs(c.x + 220) < 170 ? 'kantoor' : 'gemengd';
@@ -34,7 +34,7 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
     else if (c.z > 260) zone = c.x < -330 ? 'industrie' : 'wonenHoog';
     else if (seg.type === 'straat' && c.z > 40) zone = c.z < 140 ? 'gemengd' : 'wonenHoog';
     else zone = 'wonenLaag';
-    w.zoneer(c, 1, zone);
+    w.zoneer(c, 0.1, zone);
   }
   // Groeien: de simulatie een tijd laten lopen.
   w.snelheid = 4;

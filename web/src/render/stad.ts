@@ -5,6 +5,7 @@ import { bouwGebouw } from '../core/geom/gebouwmesh';
 import { BOOMSOORTEN } from '../core/bomen';
 import type { Prop } from '../core/geom/mesh';
 import { zoneKleur } from '../core/zones';
+import { driehoeken, verfijn, afstandTotLijn } from '../core/poly';
 import { Materialen } from './materialen';
 import { naarMesh, weg } from './meshes';
 import { PropLaag } from './props';
@@ -92,15 +93,14 @@ export class ZoneLaag {
 
   constructor(private w: Wereld) {
     this.mat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
       polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8,
       uniforms: { uAlles: { value: 0 } },
       vertexShader: `attribute vec4 kleur; varying vec4 vK; varying vec2 vUv;
         void main(){ vK = kleur; vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `uniform float uAlles; varying vec4 vK; varying vec2 vUv;
         void main(){
-          vec2 c = fract(vUv / 8.0) * 8.0; vec2 e = min(c, 8.0 - c);
-          float lijn = 1.0 - smoothstep(0.08, 0.22, min(e.x, e.y));
+          float lijn = 1.0 - smoothstep(0.25, 0.7, vUv.y);
           float a = vK.a * mix(0.2, 0.42, uAlles) + lijn * mix(0.12, 0.5, uAlles) * step(0.001, vK.a);
           gl_FragColor = vec4(mix(vK.rgb, vec3(1.0), lijn * 0.5), a);
           #include <colorspace_fragment>
@@ -124,20 +124,15 @@ export class ZoneLaag {
       if (k.zone === 'geen' && !this.toonAlles) continue;
       if (k.zone === 'geen') c.set('#ffffff'); else c.set(zoneKleur(k.zone));
       const alfa = k.zone === 'geen' ? 0.25 : 1;
-      const [p0, p1, , p3] = k.poly;
-      const na = Math.max(1, Math.round(k.breedte / 4)), nb = Math.max(1, Math.round(k.diepte / 4));
+      const v = verfijn(k.poly, driehoeken(k.poly), 4);
       const o = pos.length / 3;
-      for (let j = 0; j <= nb; j++) for (let i = 0; i <= na; i++) {
-        const a = i / na, b = j / nb;
-        const x = p0.x + (p1.x - p0.x) * a + (p3.x - p0.x) * b, z = p0.z + (p1.z - p0.z) * a + (p3.z - p0.z) * b;
-        pos.push(x, t.hoogte(x, z) + 0.12, z);
-        uv.push(a * k.breedte, b * k.diepte);
+      for (const p of v.p) {
+        pos.push(p.x, t.hoogte(p.x, p.z) + 0.12, p.z);
+        // UV.y: afstand tot de perceelgrens (voor de omlijning).
+        uv.push(0, afstandTotLijn(p, [...k.poly, k.poly[0]]).d);
         kl.push(c.r, c.g, c.b, alfa);
       }
-      for (let j = 0; j < nb; j++) for (let i = 0; i < na; i++) {
-        const a = o + j * (na + 1) + i, b = a + 1, d = a + na + 1, e = d + 1;
-        idx.push(a, d, b, b, d, e, a, b, d, b, e, d);
-      }
+      for (let i = 0; i < v.tri.length; i += 3) idx.push(o + v.tri[i], o + v.tri[i + 1], o + v.tri[i + 2]);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

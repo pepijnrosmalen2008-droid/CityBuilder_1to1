@@ -1,0 +1,10 @@
+import { Wereld } from '../../src/core/wereld';
+import { bouwVoorbeeldstad } from '../../src/core/demo';
+import { maakStrook } from '../../src/core/percelen';
+const w = new Wereld(1);
+bouwVoorbeeldstad(w, 0);
+const id = Number(process.argv[2] ?? 52);
+const seg = w.net.segmenten.get(id)!;
+const st = maakStrook(w.net, w.terrein, seg, 1)!;
+console.log('vers:', st.diepte.map(d => d.toFixed(0)).join(','));
+console.log('opgeslagen:', w.stroken.get(`${id}:1`)?.diepte.map(d => d.toFixed(0)).join(','));
