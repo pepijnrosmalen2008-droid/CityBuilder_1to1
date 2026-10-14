@@ -1,6 +1,6 @@
 import { V2, bezier2, dist2, lerp2, norm2, sub2, snijLijnstukken, puntTotLijnstuk , lerp } from '../math';
 import { Terrein, ZEENIVEAU } from '../terrain';
-import { WegTypeId, halveBreedte } from './typen';
+import { WegTypeId, halveBreedte, randen, WEGTYPEN, HOEKSTRAAL, totaleBreedte } from './typen';
 
 export interface Knoop { id: number; p: V2; y: number; segs: number[] }
 
@@ -136,27 +136,65 @@ export class Wegennet {
     return m + 1.5;
   }
 
-  /** Hoeveel meter het segment aan dit uiteinde wordt ingekort voor het kruispunt. */
-  inkorting(seg: Segment, eind: 'a' | 'b'): number {
+  /** Is deze knoop een kruispunt met een eigen vlak (graad 3+, of een overgang tussen wegtypen)? */
+  isKruispunt(knoopId: number): boolean {
+    const k = this.knopen.get(knoopId);
+    if (!k) return false;
+    if (k.segs.length >= 3) return true;
+    if (k.segs.length === 2) { const [a, b] = k.segs.map(s => this.segmenten.get(s)!); return !!a && !!b && a.type !== b.type; }
+    return false;
+  }
+
+  /**
+   * Inkorting per wegrand aan één uiteinde (links/rechts t.o.v. de tekenrichting), in meters langs de as.
+   * Elke rand wordt afgesneden waar hij de rand van de buurweg aan die kant raakt; op een kruispunt
+   * komt daar de hoekstraal bij. Bij een knik in dezelfde weg kan de buitenrand negatief zijn
+   * (verlengen): zo sluiten de stukken precies in verstek aan.
+   */
+  eindKnip(seg: Segment, eind: 'a' | 'b'): { links: number; rechts: number } {
     const id = eind === 'a' ? seg.a : seg.b;
     const k = this.knopen.get(id);
-    if (!k || k.segs.length < 3 || !seg.pad.length) return 0;
-    // Zover inkorten dat de rijbaan van elke kruisende weg (plus stoep) er net naast past:
-    // hb_ander / sin(hoek) + hb_eigen / tan(hoek). Haaks: precies de halve breedte van de ander.
-    const eigen = this.wegVan(seg, id), hbE = halveBreedte(seg.type) + 1.2;
-    let t = 3;
-    for (const sid of k.segs) {
-      if (sid === seg.id) continue;
-      const o = this.segmenten.get(sid);
-      if (!o || !o.pad.length) continue;
-      const r = this.wegVan(o, id);
-      const cos = eigen.x * r.x + eigen.z * r.z;
-      const sin = Math.sqrt(Math.max(0, 1 - cos * cos));
-      if (sin < 0.17) continue; // (bijna) in elkaars verlengde: geen inkorting nodig
-      // Waar de rand van deze weg de rand van de andere weg snijdt.
-      t = Math.max(t, (halveBreedte(o.type) + 1.2 + hbE * cos) / sin);
+    if (!k || k.segs.length < 2 || !seg.pad.length) return { links: 0, rechts: 0 };
+    const kruis = this.isKruispunt(id);
+    const a = this.wegVan(seg, id);
+    const rdA = randen(WEGTYPEN[seg.type].stroken);
+    const hoek = (v: V2) => Math.atan2(v.z, v.x);
+    const r: { links: number; rechts: number } = { links: 0, rechts: 0 };
+    for (const kantVanWeg of [1, -1] as const) { // 1 = rechts van "weg-van-de-knoop"
+      // Buur aan die kant: eerstvolgende in hoekvolgorde.
+      let best: Segment | null = null, bh = Infinity;
+      for (const sid of k.segs) {
+        if (sid === seg.id) continue;
+        const o = this.segmenten.get(sid);
+        if (!o || !o.pad.length) continue;
+        let d = (hoek(this.wegVan(o, id)) - hoek(a)) * kantVanWeg;
+        d = ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        if (d > 1e-3 && d < bh) { bh = d; best = o; }
+      }
+      // Kant van de tekenrichting: bij uiteinde a is "rechts van weg-van-knoop" ook rechts.
+      const tekenRechts = (eind === 'a') === (kantVanWeg === 1);
+      let t = 0;
+      if (best) {
+        const b = this.wegVan(best, id);
+        const rdB = randen(WEGTYPEN[best.type].stroken);
+        const eA = tekenRechts ? rdA.binnenR : -rdA.binnenL;
+        // De buur ziet ons aan zijn andere kant.
+        const buurTekenRechts = (best.a === id) === (kantVanWeg === -1);
+        const eB = buurTekenRechts ? rdB.binnenR : -rdB.binnenL;
+        const rA = { x: -a.z * kantVanWeg, z: a.x * kantVanWeg };
+        const rB = { x: b.z * kantVanWeg, z: -b.x * kantVanWeg };
+        const pa = { x: k.p.x + rA.x * eA, z: k.p.z + rA.z * eA }, pb = { x: k.p.x + rB.x * eB, z: k.p.z + rB.z * eB };
+        const den = a.x * b.z - a.z * b.x;
+        if (Math.abs(den) > 0.03) t = ((pb.x - pa.x) * b.z - (pb.z - pa.z) * b.x) / den;
+        if (kruis) t = Math.max(1.5, t + HOEKSTRAAL[seg.type]);
+        else t = Math.max(-eA * 3, t);
+      }
+      r[tekenRechts ? 'rechts' : 'links'] = Math.min(t, seg.lengte * 0.45);
     }
-    return Math.min(t, seg.lengte * 0.45);
+    // Berekend op de rijbaanranden; lineair doortrekken naar de buitenranden (stoep, berm).
+    const W = totaleBreedte(WEGTYPEN[seg.type].stroken);
+    const m = (r.rechts - r.links) / Math.max(0.1, rdA.binnenR - rdA.binnenL);
+    return { links: r.links + m * (-W / 2 - rdA.binnenL), rechts: r.rechts + m * (W / 2 - rdA.binnenR) };
   }
 
   /** Richting weg van knoop k langs het segment. */
@@ -257,16 +295,29 @@ export class Wegennet {
     return this.nieuweKnoop(p);
   }
 
+  /** Kleinste kromtestraal van de kwadratische Bézier. */
+  static minStraal(a: V2, c: V2, b: V2): number {
+    const dd = { x: 2 * (b.x - 2 * c.x + a.x), z: 2 * (b.z - 2 * c.z + a.z) };
+    let min = Infinity;
+    for (let i = 0; i <= 24; i++) {
+      const t = i / 24;
+      const d = { x: 2 * ((1 - t) * (c.x - a.x) + t * (b.x - c.x)), z: 2 * ((1 - t) * (c.z - a.z) + t * (b.z - c.z)) };
+      const k = Math.abs(d.x * dd.z - d.z * dd.x);
+      if (k > 1e-9) min = Math.min(min, Math.hypot(d.x, d.z) ** 3 / k);
+    }
+    return min;
+  }
+
   /** Mag deze weg hier? Geeft een foutmelding of null. */
   controleer(a: V2, c: V2, b: V2, type: WegTypeId): string | null {
     const L = dist2(a, c) + dist2(c, b);
     if (L < MIN_SEGMENT * 1.5) return 'Te kort';
     const g = this.terrein;
     for (const p of Wegennet.curve(a, c, b, 24)) if (!g.binnen(p.x, p.z, 20)) return 'Buiten de kaart';
-    // Te scherpe bocht.
+    // Te krappe bocht: de binnenrand zou over zichzelf vouwen.
+    if (Wegennet.minStraal(a, c, b) < halveBreedte(type) + 3) return 'Bocht te krap';
     const d1 = norm2(sub2(c, a)), d2 = norm2(sub2(b, c));
-    if (d1.x * d2.x + d1.z * d2.z < -0.2) return 'Bocht te scherp';
-    void type;
+    if (d1.x * d2.x + d1.z * d2.z < -0.5) return 'Bocht te krap';
     return null;
   }
 

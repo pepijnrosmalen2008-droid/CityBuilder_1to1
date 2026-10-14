@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Wereld } from './core/wereld';
 import { Gereedschap } from './core/gereedschap';
-import { bouwVoorbeeldstad } from './core/demo';
+import { bouwVoorbeeldstad, bouwTestKruisingen, TEST_PLEKKEN } from './core/demo';
 import { Sfeer } from './render/sfeer';
 import { StadCamera } from './render/camera';
 import { TextuurBron } from './render/texturen';
@@ -35,13 +35,16 @@ async function start() {
   sfeer.scene.add(terrein.groep);
 
   const demo = param.has('demo');
+  const test = param.get('test');
+  if (test) { bouwTestKruisingen(wereld); wereld.snelheid = 0; }
   if (demo) { await voortgang('Voorbeeldstad bouwen…', 0.55); bouwVoorbeeldstad(wereld, Number(param.get('groei') ?? 1800)); }
 
   await voortgang('Bossen planten…', 0.7);
   const stad = new StadWeergave(wereld, mats);
   sfeer.scene.add(stad.groep);
   const camera = new StadCamera(sfeer.camera, sfeer.renderer.domElement, wereld.terrein);
-  const c = (param.get('cam') ?? (demo ? '-260,-60,420,215,38' : '-150,0,520,30,48')).split(',').map(Number);
+  const plek = test && TEST_PLEKKEN[test];
+  const c = (param.get('cam') ?? (plek ? `${plek[0]},${plek[1]},95,0,88` : demo ? '-260,-60,420,215,38' : '-150,0,520,30,48')).split(',').map(Number);
   camera.zet(c[0], c[1], c[2], c[3], c[4]);
   stad.werkBij(1e9);
   terrein.werkBij();
@@ -87,7 +90,7 @@ async function start() {
   await voortgang('Klaar', 1);
   await bron.wacht();
   document.getElementById('laden')!.classList.add('weg');
-  (window as unknown as Record<string, unknown>).__stad = { wereld, stad, sfeer, camera, gereedschap, bron };
+  (window as unknown as Record<string, unknown>).__stad = { wereld, stad, sfeer, camera, gereedschap, bron, THREE };
 
   if (param.has('shot')) {
     // Fotomodus (voor geautomatiseerde screenshots zonder GPU): alles opbouwen, één frame renderen.

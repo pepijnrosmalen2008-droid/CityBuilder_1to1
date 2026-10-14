@@ -42,3 +42,36 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
   w.snelheid = 1;
   w.geld = 2_500_000;
 }
+
+/** Testscène met allerlei kruisingen en bochten (voor controle van de wegmeshes). */
+export const TEST_PLEKKEN: Record<string, [number, number]> = {
+  haaks: [-300, -200], t: [-100, -200], y: [100, -200], vijf: [-300, 0], schuin: [-100, 0],
+  bochtIn: [100, 0], breedte: [-300, 200], knik: [-100, 200], s: [100, 200],
+};
+export function bouwTestKruisingen(w: Wereld) {
+  w.geld = 1e9;
+  const weg = (a: V2, b: V2, type: WegTypeId, c?: V2) => { const r = w.legWeg(a, c ?? lerp2(a, b, 0.5), b, type); if (!r.ok) console.warn('test', r.fout, a, b); };
+  const P = TEST_PLEKKEN;
+  const o = (k: string, dx: number, dz: number): V2 => ({ x: P[k][0] + dx, z: P[k][1] + dz });
+  // Haaks: straat x straat.
+  weg(o('haaks', -60, 0), o('haaks', 60, 0), 'straat'); weg(o('haaks', 0, -60), o('haaks', 0, 60), 'straat');
+  // T: laan met een zijstraat.
+  weg(o('t', -70, 0), o('t', 70, 0), 'laan'); weg(o('t', 0, 0), o('t', 0, 60), 'straat');
+  // Y: scherpe hoek (30°).
+  weg(o('y', 0, 60), o('y', 0, 0), 'straat');
+  weg(o('y', 0, 0), o('y', -30, -55), 'straat'); weg(o('y', 0, 0), o('y', 30, -55), 'woonstraat');
+  // Vijfsprong.
+  for (let i = 0; i < 5; i++) { const h = i / 5 * Math.PI * 2 + 0.3; weg(o('vijf', 0, 0), o('vijf', Math.cos(h) * 60, Math.sin(h) * 60), i % 2 ? 'straat' : 'woonstraat'); }
+  // Schuin: ontsluitingsweg kruist een straat onder 45°.
+  weg(o('schuin', -50, -50), o('schuin', 50, 50), 'gow'); weg(o('schuin', -60, 0), o('schuin', 60, 0), 'straat');
+  // Bocht die op een kruising uitkomt.
+  weg(o('bochtIn', -60, 0), o('bochtIn', 60, 0), 'straat'); weg(o('bochtIn', 0, 0), o('bochtIn', 50, 55), 'woonstraat', o('bochtIn', 0, 45));
+  // Breedteovergang: laan gaat over in een straat.
+  weg(o('breedte', -70, 0), o('breedte', 0, 0), 'laan'); weg(o('breedte', 0, 0), o('breedte', 70, 0), 'straat');
+  // Knik van 60° in een straat.
+  weg(o('knik', -60, 20), o('knik', 0, 20), 'straat'); weg(o('knik', 0, 20), o('knik', 30, -32), 'straat');
+  // S-bocht.
+  weg(o('s', -70, 30), o('s', 0, 0), 'straat', o('s', -35, -30)); weg(o('s', 0, 0), o('s', 70, -30), 'straat', o('s', 35, 30));
+  // Zones zodat de percelen zichtbaar zijn.
+  for (const k of [...w.kavels.values()]) w.zoneer(kavelMidden(k), 0.1, 'wonenLaag');
+}

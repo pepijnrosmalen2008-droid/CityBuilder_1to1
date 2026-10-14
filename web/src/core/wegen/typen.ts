@@ -73,3 +73,22 @@ export function strookGrenzen(stroken: Strook[]): { a: number; b: number; s: Str
 
 /** Rijdt er gemotoriseerd verkeer? (bepaalt verhoogde stoep langs de rijbaan, markering, enz.) */
 export const isRijbaan = (s: StrookSoort) => s === 'auto' || s === 'bus' || s === 'tram' || s === 'gedeeld' || s === 'vluchtstrook' || s === 'fiets';
+
+/** Randen van de rijbaan voor gemotoriseerd verkeer en de buitenranden, als offsets vanaf de as.
+ *  Stoepen, fietspaden en bermen aan de buitenkant liggen daarbuiten (en lopen op een kruispunt
+ *  door als afgeronde hoek). */
+export function randen(stroken: Strook[]) {
+  const g = strookGrenzen(stroken);
+  const W = totaleBreedte(stroken);
+  const motor = (x: Strook) => x.soort === 'auto' || x.soort === 'bus' || x.soort === 'tram' || x.soort === 'gedeeld' || x.soort === 'vluchtstrook';
+  const i0 = g.findIndex(x => motor(x.s)), i1 = g.length - 1 - [...g].reverse().findIndex(x => motor(x.s));
+  const heeft = i0 >= 0;
+  return {
+    binnenL: heeft ? g[i0].a : -W / 2, binnenR: heeft ? g[i1].b : W / 2,
+    buitenL: -W / 2, buitenR: W / 2,
+    stoep: heeft && i0 > 0 && g.slice(0, i0).some(x => x.s.soort === 'stoep'),
+  };
+}
+
+/** Straal van de stoeprandhoek op een kruispunt, naar wegtype. */
+export const HOEKSTRAAL: Record<WegTypeId, number> = { voetpad: 1, fietspad: 2, woonstraat: 3.5, straat: 4.5, straatBus: 6, laan: 7, tramstraat: 6, gow: 9, snelweg: 14 };

@@ -4,8 +4,9 @@ import { Materialen } from './materialen';
 import { materiaal } from '../core/materialen';
 
 /** MeshData (één groep per materiaal) → één three.js-mesh met materiaalgroepen. */
-export function naarMesh(data: MeshData, mats: Materialen, schaduw = true): THREE.Mesh | null {
+export function naarMesh(data: MeshData, mats: Materialen, schaduw = true, bron = ''): THREE.Mesh | null {
   if (!data.groepen.length) return null;
+  for (const g of data.groepen) if (g.posities.some(v => !Number.isFinite(v))) { console.warn(`NaN in mesh ${bron} (${g.materiaal})`); return null; }
   let nv = 0, ni = 0;
   for (const g of data.groepen) { nv += g.posities.length / 3; ni += g.indices.length; }
   const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), uv = new Float32Array(nv * 2);

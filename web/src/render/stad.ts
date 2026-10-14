@@ -56,7 +56,7 @@ export class StadWeergave {
       weg(this.wegen.get(id)); this.wegen.delete(id);
       if (!seg) continue;
       const r = bouwSegment(this.w.net, seg);
-      const m = naarMesh(r.mesh, this.mats);
+      const m = naarMesh(r.mesh, this.mats, true, `weg ${id}`);
       if (m) { this.wegen.set(id, m); this.groep.add(m); }
       this.props.zet(`weg:${id}`, r.props);
     }
@@ -64,7 +64,7 @@ export class StadWeergave {
       this.knoopRij.delete(id);
       weg(this.kruispunten.get(id)); this.kruispunten.delete(id);
       if (!this.w.net.knopen.has(id)) continue;
-      const m = naarMesh(bouwKruispunt(this.w.net, id), this.mats);
+      const m = naarMesh(bouwKruispunt(this.w.net, id), this.mats, true, `kruispunt ${id}`);
       if (m) { this.kruispunten.set(id, m); this.groep.add(m); }
     }
     for (const id of this.bouwRij) {
@@ -74,7 +74,7 @@ export class StadWeergave {
       weg(this.gebouwen.get(id)); this.gebouwen.delete(id);
       if (!g) continue;
       const r = bouwGebouw(g, (x, z) => this.w.terrein.hoogte(x, z));
-      const m = naarMesh(r.mesh, this.mats);
+      const m = naarMesh(r.mesh, this.mats, true, `gebouw ${id} ${g.vorm}`);
       if (m) { this.gebouwen.set(id, m); this.groep.add(m); }
       this.props.zet(`geb:${id}`, r.props);
     }
