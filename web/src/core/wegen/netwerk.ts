@@ -13,6 +13,7 @@ export interface Segment {
   /** Controlepunt van de kwadratische Bézier (rechte weg: midden). */
   c: V2;
   type: WegTypeId;
+  naam: string;
   lengte: number;
   pad: PadPunt[];
 }
@@ -27,6 +28,8 @@ export class Wegennet {
   segmenten = new Map<number, Segment>();
   private volgende = 1;
   events: NetEvent[] = [];
+  /** Geeft een nieuwe straatnaam voor een type (ingesteld door de wereld). */
+  naamGever: (type: WegTypeId) => string = t => t;
 
   constructor(public terrein: Terrein) {}
 
@@ -229,8 +232,8 @@ export class Wegennet {
     return k;
   }
 
-  private nieuwSegment(a: Knoop, c: V2, b: Knoop, type: WegTypeId): Segment {
-    const seg: Segment = { id: this.volgende++, a: a.id, b: b.id, c: { ...c }, type, lengte: 0, pad: [] };
+  private nieuwSegment(a: Knoop, c: V2, b: Knoop, type: WegTypeId, naam = ''): Segment {
+    const seg: Segment = { id: this.volgende++, a: a.id, b: b.id, c: { ...c }, type, naam, lengte: 0, pad: [] };
     this.segmenten.set(seg.id, seg);
     a.segs.push(seg.id); b.segs.push(seg.id);
     this.berekenPad(seg);
@@ -267,7 +270,7 @@ export class Wegennet {
     const A = this.knopen.get(seg.a)!, B = this.knopen.get(seg.b)!;
     const q0 = lerp2(A.p, seg.c, t), q1 = lerp2(seg.c, B.p, t), m = lerp2(q0, q1, t);
     if (dist2(m, A.p) < MIN_SEGMENT || dist2(m, B.p) < MIN_SEGMENT) return null;
-    const type = seg.type;
+    const type = seg.type, naam = seg.naam;
     // Hoogte van het wegdek op het splitspunt (niet rechtlijnig tussen de uiteinden).
     let yM = this.knoopHoogte(m), bd = Infinity;
     for (const p of seg.pad) { const d = Math.hypot(p.x - m.x, p.z - m.z); if (d < bd) { bd = d; yM = p.y; } }
@@ -276,8 +279,8 @@ export class Wegennet {
     for (const k of [A, B]) if (!this.knopen.has(k.id)) { k.segs = []; this.knopen.set(k.id, k); }
     const M = this.nieuweKnoop(m);
     M.y = yM;
-    const d1 = this.nieuwSegment(A, q0, M, type);
-    const d2 = this.nieuwSegment(M, q1, B, type);
+    const d1 = this.nieuwSegment(A, q0, M, type, naam);
+    const d2 = this.nieuwSegment(M, q1, B, type, naam);
     return { knoop: M, delen: [d1, d2] };
   }
 
@@ -331,6 +334,16 @@ export class Wegennet {
     const recht = Math.abs((c.x - (a.x + b.x) / 2)) < 1e-6 && Math.abs((c.z - (a.z + b.z) / 2)) < 1e-6;
     const ctrl = recht ? lerp2(KA.p, KB.p, 0.5) : { x: c.x + ((KA.p.x - a.x) + (KB.p.x - b.x)) / 2, z: c.z + ((KA.p.z - a.z) + (KB.p.z - b.z)) / 2 };
 
+    // Straatnaam: een weg die rechtdoor doorloopt op een weg van hetzelfde type krijgt diens naam.
+    let naam = '';
+    for (const K of [KA, KB]) for (const sid of K.segs) {
+      const o = this.segmenten.get(sid)!;
+      if (naam || o.type !== type || K.segs.length !== 1) continue;
+      const w = this.wegVan(o, K.id), d = norm2(sub2(K === KA ? ctrl : ctrl, K.p));
+      if (w.x * d.x + w.z * d.z < -0.85) naam = o.naam;
+    }
+    if (!naam) naam = this.naamGever(type);
+
     // Kruisingen met bestaande wegen zoeken.
     const nieuw = Wegennet.curve(KA.p, ctrl, KB.p, 64);
     const kruis: { tNieuw: number; seg: number; tOud: number }[] = [];
@@ -369,7 +382,7 @@ export class Wegennet {
       const t = i === knopen.length - 1 ? 1 : (tAbs - tPrev) / (1 - tPrev);
       const q0 = lerp2(P0, C, t), q1 = lerp2(C, P1, t);
       const van = knopen[i - 1], naar = knopen[i];
-      if (van.id !== naar.id && !this.bestaatVerbinding(van.id, naar.id)) res.push(this.nieuwSegment(van, t >= 1 ? C : q0, naar, type));
+      if (van.id !== naar.id && !this.bestaatVerbinding(van.id, naar.id)) res.push(this.nieuwSegment(van, t >= 1 ? C : q0, naar, type, naam));
       P0 = naar.p; C = q1; tPrev = tAbs;
     }
     return res;
@@ -397,7 +410,7 @@ export class Wegennet {
   naarJson() {
     return {
       knopen: [...this.knopen.values()].map(k => ({ id: k.id, x: k.p.x, z: k.p.z, y: k.y })),
-      segmenten: [...this.segmenten.values()].map(s => ({ id: s.id, a: s.a, b: s.b, cx: s.c.x, cz: s.c.z, type: s.type })),
+      segmenten: [...this.segmenten.values()].map(s => ({ id: s.id, a: s.a, b: s.b, cx: s.c.x, cz: s.c.z, type: s.type, naam: s.naam })),
       volgende: this.volgende,
     };
   }
@@ -405,7 +418,7 @@ export class Wegennet {
     this.knopen.clear(); this.segmenten.clear();
     for (const k of j.knopen) this.knopen.set(k.id, { id: k.id, p: { x: k.x, z: k.z }, y: k.y, segs: [] });
     for (const s of j.segmenten) {
-      const seg: Segment = { id: s.id, a: s.a, b: s.b, c: { x: s.cx, z: s.cz }, type: s.type, lengte: 0, pad: [] };
+      const seg: Segment = { id: s.id, a: s.a, b: s.b, c: { x: s.cx, z: s.cz }, type: s.type, naam: s.naam ?? '', lengte: 0, pad: [] };
       this.segmenten.set(seg.id, seg);
       this.knopen.get(s.a)!.segs.push(seg.id); this.knopen.get(s.b)!.segs.push(seg.id);
       this.berekenPad(seg); this.egaliseer(seg);

@@ -1,6 +1,7 @@
 import { Gereedschap, Modus } from '../core/gereedschap';
 import { WEGTYPEN, WEGTYPE_VOLGORDE, WegTypeId, strookGrenzen, totaleBreedte } from '../core/wegen/typen';
 import { ZONES, Zone } from '../core/zones';
+import { ICOON } from './iconen';
 
 const STROOKKLEUR: Record<string, string> = { stoep: '#9aa0a6', fiets: '#a8473b', auto: '#3b3f45', gedeeld: '#7b4a3a', bus: '#7a3f35', tram: '#55575c', berm: '#5f8d3e', middenberm: '#5f8d3e', vluchtstrook: '#4a4e55' };
 
@@ -58,7 +59,8 @@ export class Werkbalk {
 
   teken() {
     const g = this.g;
-    const tab = (m: Modus, naam: string, toets: string) => `<button class="knop tab ${g.modus === m ? 'aan' : ''}" data-m="${m}">${naam}<span class="toets">${toets}</span></button>`;
+    const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog };
+    const tab = (m: Modus, naam: string, toets: string) => `<button class="knop tab ${g.modus === m ? 'aan' : ''}" data-m="${m}"><span class="ic">${ic[m]}</span>${naam}<span class="toets">${toets}</span></button>`;
     let items = '', opties = '';
     if (g.modus === 'weg' || g.modus === 'opwaarderen') {
       items = WEGTYPE_VOLGORDE.map((id, i) => `<div class="item ${g.wegtype === id ? 'aan' : ''}" data-w="${id}">${dwarsprofiel(id)}<div class="item-naam">${WEGTYPEN[id].naam}</div><div class="item-sub">${i + 1} · € ${WEGTYPEN[id].kosten}/m</div></div>`).join('');
@@ -81,6 +83,6 @@ export class Werkbalk {
 
   /** Ligt de muis boven de werkbalk of de HUD? */
   static boven(x: number, y: number) {
-    return ['werkbalk', 'hud'].some(id => { const r = document.getElementById(id)!.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; });
+    return [document.getElementById('werkbalk')!, ...document.querySelectorAll('.kaart')].some(el => { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; });
   }
 }

@@ -28,7 +28,9 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
     const c = kavelMidden(k);
     const seg = w.net.segmenten.get(k.seg)!;
     let zone: Zone;
-    if (seg.type === 'laan') zone = Math.abs(c.x + 220) < 170 ? 'kantoor' : 'gemengd';
+    if (seg.type === 'gow') continue;
+    if (c.z < -250) zone = c.x > -200 ? 'industrie' : 'kantoor';
+    else if (seg.type === 'laan') zone = Math.abs(c.x + 220) < 260 ? 'kantoor' : 'gemengd';
     else if (seg.type === 'tramstraat') zone = 'gemengd';
     else if (seg.type === 'straatBus') zone = 'wonenHoog';
     else if (c.z > 260) zone = c.x < -330 ? 'industrie' : 'wonenHoog';

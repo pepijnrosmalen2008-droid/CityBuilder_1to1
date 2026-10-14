@@ -6,11 +6,11 @@ import { MeshBouwer, MeshData } from './mesh';
 
 interface BoomVorm { stam: number; stamR: number; kroonY: number; kroonR: number; kroonH: number; trossen: number; kaart: number; naald: boolean; berk: boolean }
 const VORM: Record<string, BoomVorm> = {
-  eik: { stam: 5.5, stamR: 0.38, kroonY: 9.5, kroonR: 5.2, kroonH: 5.2, trossen: 16, kaart: 3.6, naald: false, berk: false },
-  linde: { stam: 5, stamR: 0.32, kroonY: 10, kroonR: 4.2, kroonH: 6.2, trossen: 15, kaart: 3.3, naald: false, berk: false },
-  berk: { stam: 6, stamR: 0.2, kroonY: 10, kroonR: 2.9, kroonH: 5.5, trossen: 12, kaart: 2.6, naald: false, berk: true },
+  eik: { stam: 5.5, stamR: 0.38, kroonY: 9.5, kroonR: 5.2, kroonH: 5.2, trossen: 26, kaart: 3.6, naald: false, berk: false },
+  linde: { stam: 5, stamR: 0.32, kroonY: 10, kroonR: 4.2, kroonH: 6.2, trossen: 24, kaart: 3.3, naald: false, berk: false },
+  berk: { stam: 6, stamR: 0.2, kroonY: 10, kroonR: 2.9, kroonH: 5.5, trossen: 18, kaart: 2.6, naald: false, berk: true },
   den: { stam: 7, stamR: 0.3, kroonY: 11, kroonR: 3.2, kroonH: 7.5, trossen: 0, kaart: 0, naald: true, berk: false },
-  plataan: { stam: 5.5, stamR: 0.42, kroonY: 11, kroonR: 5.8, kroonH: 5.8, trossen: 18, kaart: 3.8, naald: false, berk: false },
+  plataan: { stam: 5.5, stamR: 0.42, kroonY: 11, kroonR: 5.8, kroonH: 5.8, trossen: 28, kaart: 3.8, naald: false, berk: false },
 };
 
 function cilinder(mb: MeshBouwer, mat: string, a: V3, b: V3, ra: number, rb: number, zijden = 7) {

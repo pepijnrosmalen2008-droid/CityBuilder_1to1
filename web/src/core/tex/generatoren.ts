@@ -73,7 +73,16 @@ export function asfalt(soort: 'grijs' | 'rood' | 'bus'): TexData {
     if (h2 > 0.82) k = mix(k, steen, 0.6); else if (h2 < 0.12) k = mul(k, 0.72);
     k = mul(k, 0.92 + 0.12 * h);
     if (!rood) k = mix(k, mul(k, 0.72), teer * 0.6);
-    d.zet(x, y, k, h2 * 0.6 + h * 0.4, 0.10 + 0.20 * teer + 0.05 * slijt);
+    let hoogte = h2 * 0.6 + h * 0.4;
+    if (!rood) {
+      // Reparatievlak (iets donkerder, rechte randen) en haarscheurtjes.
+      const vx = Math.floor(u * 3), vy = Math.floor(v * 3);
+      if (hash01(vx, vy, s + 6) > 0.8) { const fx = frac(u * 3), fy = frac(v * 3); if (fx > 0.15 && fx < 0.75 && fy > 0.2 && fy < 0.6) k = mul(k, 0.8); }
+      const w = worley(u, v, 7, s + 7);
+      const scheur = 1 - glad01(0, 0.012, w.f2 - w.f1);
+      if (hash01(Math.floor(u * 7), Math.floor(v * 7), s + 8) > 0.55) { k = mul(k, 1 - 0.45 * scheur); hoogte -= scheur * 0.5; }
+    }
+    d.zet(x, y, k, hoogte, 0.10 + 0.20 * teer + 0.05 * slijt);
   });
   return d.naarTex(2.5);
 }
@@ -175,7 +184,7 @@ function glas(u: number, v: number, lx: number, ly: number, rb: number, rh: numb
 
 /** Gevel van 2 traveeën × 2 verdiepingen (6 × 6 m); `ramen=false` geeft hetzelfde muurwerk zonder ramen. */
 export function gevel(stijl: string, ramen: boolean): TexData {
-  const d = new Doek(512, 512);
+  const d = new Doek(ramen ? 1024 : 512, ramen ? 1024 : 512);
   const p = gevelP(stijl);
   const s = 100 + stijl.length * 13;
   loop(d, (x, y, u, v) => {
@@ -440,13 +449,13 @@ const BLADKLEUR: Record<string, [C, C]> = {
 
 /** Bladtros met alfa: honderden losse blaadjes (of naaldtakjes) in een ronde wolk. */
 export function bladkaart(soort: string): TexData {
-  const N = 256, d = new Doek(N, N, true);
+  const N = 512, d = new Doek(N, N, true);
   const [donker, licht] = BLADKLEUR[soort] ?? BLADKLEUR.eik;
   const s = 800 + soort.length * 17;
   // Achtergrond leeg.
   for (let i = 0; i < N * N; i++) d.alfa![i] = 0;
   const naald = soort === 'den';
-  const aantal = naald ? 140 : 420;
+  const aantal = naald ? 260 : 900;
   for (let b = 0; b < aantal; b++) {
     // Verdeling: dichter in het midden van de tros.
     const r = Math.sqrt(hash01(b, 1, s)) * 0.44, a = hash01(b, 2, s) * Math.PI * 2;

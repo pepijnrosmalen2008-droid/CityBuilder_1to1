@@ -14,9 +14,10 @@ export class Materialen {
     m = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...d.kleur, THREE.SRGBColorSpace), roughness: d.ruwheid, metalness: d.metaal });
     m.name = sleutel;
     if (d.dubbelzijdig) m.side = THREE.DoubleSide;
-    if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; }
+    if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; m.alphaToCoverage = true; }
     if (d.alfa === 'mengen') { m.transparent = true; m.depthWrite = false; }
     if (d.emissie) { m.emissive = new THREE.Color(...d.emissie); m.emissiveIntensity = 2.5; }
+    if (sleutel.startsWith('blad')) { m.emissive = new THREE.Color(0x0b1a06); m.emissiveIntensity = 1; m.envMapIntensity = 0.6; }
     if (d.bovenop) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -4; }
     if (d.tex) {
       // Zolang de textuur er niet is: een rustige grijswaarde in plaats van wit.
@@ -28,7 +29,7 @@ export class Materialen {
         const kloon = (x: THREE.DataTexture) => { if (herhaal === 1) return x; const c = x.clone(); c.repeat.set(herhaal, herhaal); c.needsUpdate = true; return c; };
         mat.map = kloon(t.map);
         if (t.normalMap && d.normaal) { mat.normalMap = kloon(t.normalMap); mat.normalScale.set(d.normaal, d.normaal); }
-        if (t.ormMap) { mat.roughnessMap = kloon(t.ormMap); mat.metalnessMap = mat.roughnessMap; mat.aoMap = null; mat.roughness = 1; mat.metalness = d.metaal > 0 ? 1 : 1; }
+        if (t.ormMap) { mat.roughnessMap = kloon(t.ormMap); mat.metalnessMap = mat.roughnessMap; mat.roughness = 1; mat.metalness = 1; }
         mat.color.setRGB(...d.kleur, THREE.SRGBColorSpace);
         mat.visible = true;
         mat.needsUpdate = true;

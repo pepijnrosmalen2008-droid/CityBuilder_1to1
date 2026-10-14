@@ -8,6 +8,7 @@ import { Capaciteit, Functie, GebouwVorm, Zone, berekenCapaciteit, verdiepingHoo
 import { Strook, maakStrook, band, opStrook, verdeel, stroomSleutel, STROOK_DIEPTE } from './percelen';
 import { afstandTotLijn, getekendOppervlak, zwaartepunt } from './poly';
 import { puntInPolygoon } from './math';
+import { Namen, stadsnaam } from './namen';
 
 /** Perceel op een gevelstrook: van booglengte s0 tot s1 langs de straat, zo diep als de strook. */
 export interface Kavel {
@@ -56,6 +57,9 @@ export type WereldEvent =
   | { soort: 'gebouw+' | 'gebouw-' | 'gebouw~'; id: number };
 
 export const SECONDEN_PER_DAG = 4;
+
+export interface Nieuws { id: number; dag: number; tekst: string; soort: 'weg' | 'bouw' | 'mijlpaal' | 'waarschuwing' }
+const MIJLPALEN = [100, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
 export const totaleHoogte = (lagen: Laag[]) => lagen.reduce((s, l) => s + l.hoogte, 0);
 
 type Box = { x0: number; z0: number; x1: number; z1: number };
@@ -84,12 +88,34 @@ export class Wereld {
   private bouwKlok = 0;
   private statKlok = 0;
   private segBox = new Map<number, Box>();
+  naam: string;
+  namen: Namen;
+  nieuws: Nieuws[] = [];
+  private nieuwsId = 1;
+  private gemeld = new Set<string>();
+  private opgeleverd = new Map<string, { woningen: number; banen: number; n: number; vorm: string }>();
+  private nieuwsKlok = 0;
+  private mijlpaal = 0;
+  private waarschuwKlok = 0;
 
   constructor(readonly seed = 1) {
     this.terrein = new Terrein(2048, 4, seed);
     this.net = new Wegennet(this.terrein);
     this.bomen = new Bomen(this.terrein, seed * 7 + 4242);
     this.rng = new Rng(seed * 977 + 13);
+    this.naam = stadsnaam(seed);
+    this.namen = new Namen(seed);
+    this.net.naamGever = t => this.namen.straat(t);
+  }
+
+  meld(tekst: string, soort: Nieuws['soort']) {
+    this.nieuws.push({ id: this.nieuwsId++, dag: this.dagen, tekst, soort });
+    if (this.nieuws.length > 40) this.nieuws.shift();
+  }
+
+  straatVan(g: Gebouw): string {
+    const k = this.kavels.get(g.kavel);
+    return (k && this.net.segmenten.get(k.seg)?.naam) || '';
   }
 
   haalEvents() { const e = this.events; this.events = []; return e; }
@@ -106,6 +132,11 @@ export class Wereld {
     this.geld -= kosten;
     for (const seg of nieuw) this.wisBomenLangs(seg);
     this.verwerkNet();
+    const naam = nieuw[0].naam;
+    if (naam && !this.gemeld.has(naam)) {
+      this.gemeld.add(naam);
+      this.meld(type === 'snelweg' ? `De ${naam} is aangesloten op ${this.naam}` : `De ${naam} is aangelegd`, 'weg');
+    }
     return { ok: true };
   }
 
@@ -429,7 +460,13 @@ export class Wereld {
         const duur = 8 + 1.6 * g.lagen.length;
         const oud = Math.floor(g.voortgang * g.lagen.length * 2);
         g.voortgang = Math.min(1, g.voortgang + dt / duur);
-        if (g.voortgang >= 1) { g.klaar = true; this.events.push({ soort: 'gebouw~', id: g.id }); }
+        if (g.voortgang >= 1) {
+          g.klaar = true; this.events.push({ soort: 'gebouw~', id: g.id });
+          const straat = this.straatVan(g);
+          const o = this.opgeleverd.get(straat) ?? { woningen: 0, banen: 0, n: 0, vorm: g.vorm };
+          o.woningen += g.cap.woningen; o.banen += g.cap.banen.detailhandel + g.cap.banen.horeca + g.cap.banen.kantoor + g.cap.banen.industrie + g.cap.banen.overig; o.n++;
+          this.opgeleverd.set(straat, o);
+        }
         else if (Math.floor(g.voortgang * g.lagen.length * 2) !== oud) this.events.push({ soort: 'gebouw~', id: g.id });
       } else if (g.bezetting < 1) {
         g.bezetting = Math.min(1, g.bezetting + dt * 0.035 * (0.35 + this.vraagVoor(g.zone)));
@@ -459,6 +496,37 @@ export class Wereld {
 
     this.statKlok += dtEcht;
     if (this.statKlok >= 0.5) { this.statKlok = 0; this.berekenStatistiek(); }
+
+    // Nieuws: opleveringen per straat bundelen, mijlpalen, waarschuwingen.
+    this.nieuwsKlok += dt;
+    if (this.nieuwsKlok > 30) {
+      this.nieuwsKlok = 0;
+      const lijst = [...this.opgeleverd.entries()].sort((a, b) => (b[1].woningen + b[1].banen) - (a[1].woningen + a[1].banen)).slice(0, 2);
+      for (const [straat, o] of lijst) {
+        const aan = straat ? ` aan de ${straat}` : '';
+        if (o.woningen && o.banen) this.meld(`${o.woningen} woningen en ${o.banen} banen opgeleverd${aan}`, 'bouw');
+        else if (o.woningen) this.meld(`${o.woningen} ${o.woningen === 1 ? 'woning' : 'nieuwe woningen'} opgeleverd${aan}`, 'bouw');
+        else if (o.banen) this.meld(`${o.vorm === 'bedrijfshal' ? 'Nieuw bedrijf' : o.vorm === 'kantoortoren' ? 'Nieuw kantoor' : 'Nieuwe winkels'}${aan}: ${o.banen} banen`, 'bouw');
+      }
+      this.opgeleverd.clear();
+    }
+    while (this.mijlpaal < MIJLPALEN.length && this.stat.inwoners >= MIJLPALEN[this.mijlpaal]) {
+      this.meld(`${this.naam} telt nu ${MIJLPALEN[this.mijlpaal].toLocaleString('nl-NL')} inwoners!`, 'mijlpaal');
+      this.mijlpaal++;
+    }
+    this.waarschuwKlok += dt;
+    if (this.waarschuwKlok > 240 && this.stat.inwoners > 200) {
+      if (this.stat.werkloosheid > 0.15) { this.meld(`Werkloosheid ${Math.round(this.stat.werkloosheid * 100)}%: er is vraag naar kantoren en bedrijven`, 'waarschuwing'); this.waarschuwKlok = 0; }
+      else if (this.vraag.wonen > 0.8 && ![...this.kavels.values()].some(k => (k.zone === 'wonenLaag' || k.zone === 'wonenHoog') && !k.gebouw)) { this.meld('Er is vraag naar woningen: wijs meer woonzones aan', 'waarschuwing'); this.waarschuwKlok = 0; }
+    }
+  }
+
+  /** Tevredenheid 0-100: werk, woonruimte en voorzieningen. */
+  get tevredenheid(): number {
+    const s = this.stat, v = this.vraag;
+    if (s.inwoners < 1) return 75;
+    let t = 82 - s.werkloosheid * 160 - Math.max(0, v.detailhandel - 0.6) * 25 - Math.max(0, v.wonen - 0.85) * 10;
+    return Math.round(Math.max(5, Math.min(100, t)));
   }
 
   berekenStatistiek() {

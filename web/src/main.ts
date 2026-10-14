@@ -11,6 +11,7 @@ import { StadWeergave } from './render/stad';
 import { VoorbeeldLaag } from './render/voorbeeld';
 import { Hud } from './ui/hud';
 import { Werkbalk } from './ui/werkbalk';
+import { StraatLabels } from './ui/labels';
 
 const param = new URLSearchParams(location.search);
 const laadTekst = document.getElementById('laad-tekst')!, laadBalk = document.getElementById('laad-voortgang')!;
@@ -54,6 +55,7 @@ async function start() {
   const voorbeeld = new VoorbeeldLaag(wereld);
   sfeer.scene.add(voorbeeld.groep);
   const hud = new Hud(wereld);
+  const labels = new StraatLabels(wereld, sfeer.camera);
   new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; });
 
   // Muis → grondpunt.
@@ -106,6 +108,7 @@ async function start() {
     sfeer.volg(camera.doel, camera.afstand);
     const t0 = performance.now();
     sfeer.render();
+    if (!verberg.includes('labels')) labels.werkBij(1, camera.afstand);
     const i = sfeer.renderer.info.render;
     console.log(`frame ${Math.round(performance.now() - t0)} ms, ${i.triangles} driehoeken, ${i.calls} draw calls`);
     document.body.dataset.klaar = '1';
@@ -138,6 +141,7 @@ async function start() {
     if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); }
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.render();
+    labels.werkBij(dt, camera.afstand);
     requestAnimationFrame(lus);
   };
   requestAnimationFrame(lus);
