@@ -60,7 +60,7 @@ export class Werkbalk {
   teken() {
     const g = this.g;
     const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog };
-    const tab = (m: Modus, naam: string, toets: string) => `<button class="knop tab ${g.modus === m ? 'aan' : ''}" data-m="${m}"><span class="ic">${ic[m]}</span>${naam}<span class="toets">${toets}</span></button>`;
+    const tab = (m: Modus, naam: string, toets: string) => `<button class="knop tab ${g.modus === m ? 'aan' : ''}" data-m="${m}"><span class="ic">${ic[m]}</span><span class="tab-tekst">${naam}</span><span class="toets">${toets}</span></button>`;
     let items = '', opties = '';
     if (g.modus === 'weg' || g.modus === 'opwaarderen') {
       items = WEGTYPE_VOLGORDE.map((id, i) => `<div class="item ${g.wegtype === id ? 'aan' : ''}" data-w="${id}">${dwarsprofiel(id)}<div class="item-naam">${WEGTYPEN[id].naam}</div><div class="item-sub">${i + 1} · € ${WEGTYPEN[id].kosten}/m</div></div>`).join('');

@@ -35,6 +35,9 @@ export class Gereedschap {
 
   constructor(private wereld: Wereld) {}
 
+  /** Wordt er een weg getekend (startpunt gezet)? */
+  get tekent() { return this.modus === 'weg' && !!this.start; }
+
   zetModus(m: Modus) { this.modus = m; this.annuleer(); this.melding = ''; }
   annuleer() { this.start = null; this.ctrl = null; this.raak = null; this.ref = null; this.schilderen = false; }
 

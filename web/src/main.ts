@@ -70,17 +70,46 @@ async function start() {
     return wereld.terrein.straal({ x: o.x, y: o.y, z: o.z }, { x: d.x, y: d.y, z: d.z });
   };
   const doek = sfeer.renderer.domElement;
-  doek.addEventListener('pointermove', e => { muis = { x: e.clientX, y: e.clientY }; });
-  doek.addEventListener('pointerleave', () => { muis = { x: -1, y: -1 }; });
+  // Muis: links = gereedschap, rechts klikken = stoppen. Aanraken: tikken = klikken, slepen = schuiven
+  // (in de zonemodus: schilderen), twee vingers = camera.
+  camera.eenVingerPannen = () => gereedschap.modus !== 'zone';
+  let tik: { x: number; y: number; t: number; id: number } | null = null;
+  doek.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch' && camera.aantalVingers > 1) return;
+    muis = { x: e.clientX, y: e.clientY };
+    if (tik && Math.hypot(e.clientX - tik.x, e.clientY - tik.y) > 12) tik = null;
+  });
+  doek.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') muis = { x: -1, y: -1 }; });
   doek.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'touch') {
+      muis = { x: e.clientX, y: e.clientY };
+      if (camera.aantalVingers > 1) { tik = null; gereedschap.los(); return; }
+      tik = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+      if (gereedschap.modus === 'zone') gereedschap.klik(grondOnder());
+      return;
+    }
     if (e.button === 0) gereedschap.klik(grondOnder());
     if (e.button === 2) rechtsStart = { x: e.clientX, y: e.clientY };
   });
   addEventListener('pointerup', e => {
+    if (e.pointerType === 'touch') {
+      gereedschap.los();
+      if (tik && tik.id === e.pointerId && performance.now() - tik.t < 400 && gereedschap.modus !== 'zone') {
+        muis = { x: tik.x, y: tik.y };
+        gereedschap.klik(grondOnder());
+      }
+      tik = null;
+      return;
+    }
     if (e.button === 0) gereedschap.los();
     if (e.button === 2 && rechtsStart && Math.hypot(e.clientX - rechtsStart.x, e.clientY - rechtsStart.y) < 5) gereedschap.terug();
     rechtsStart = null;
   });
+  // Knop "Klaar" tijdens het tekenen van een weg (vooral voor aanraakschermen).
+  const klaar = document.createElement('button');
+  klaar.id = 'klaarknop'; klaar.className = 'knop'; klaar.textContent = 'Klaar met tekenen';
+  klaar.onclick = () => gereedschap.terug();
+  document.body.appendChild(klaar);
 
   // Hulp en voorbeeldstad.
   const hulp = document.createElement('div');
@@ -145,6 +174,7 @@ async function start() {
     tip.className = vb.soort === 'weg' && !vb.geldig ? 'fout' : '';
     tip.style.left = muis.x + 'px'; tip.style.top = muis.y + 'px';
     melding.style.display = gereedschap.melding ? 'block' : 'none';
+    klaar.style.display = gereedschap.tekent ? 'block' : 'none';
     melding.textContent = gereedschap.melding;
     hudKlok += dt;
     if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); }

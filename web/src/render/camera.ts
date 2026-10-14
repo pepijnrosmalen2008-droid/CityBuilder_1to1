@@ -13,14 +13,25 @@ export class StadCamera {
   private toetsen = new Set<string>();
   private sleep: { knop: number; x: number; y: number } | null = null;
   minAfstand = 10; maxAfstand = 2200;
+  /** Mag één vinger de kaart schuiven? (niet tijdens zones schilderen) */
+  eenVingerPannen: () => boolean = () => true;
+  private vingers = new Map<number, { x: number; y: number }>();
+  /** Aantal vingers op het scherm (voor het gereedschap). */
+  get aantalVingers() { return this.vingers.size; }
 
   constructor(private cam: THREE.PerspectiveCamera, dom: HTMLElement, private t: Terrein) {
     addEventListener('keydown', e => { if (!(e.target instanceof HTMLInputElement)) this.toetsen.add(e.key.toLowerCase()); });
     addEventListener('keyup', e => this.toetsen.delete(e.key.toLowerCase()));
     addEventListener('blur', () => this.toetsen.clear());
-    dom.addEventListener('pointerdown', e => { if (e.button === 1 || e.button === 2) { this.sleep = { knop: e.button, x: e.clientX, y: e.clientY }; dom.setPointerCapture(e.pointerId); } });
-    dom.addEventListener('pointerup', e => { if (this.sleep && e.button === this.sleep.knop) this.sleep = null; });
+    dom.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'touch') { this.vingers.set(e.pointerId, { x: e.clientX, y: e.clientY }); dom.setPointerCapture(e.pointerId); return; }
+      if (e.button === 1 || e.button === 2) { this.sleep = { knop: e.button, x: e.clientX, y: e.clientY }; dom.setPointerCapture(e.pointerId); }
+    });
+    const los = (e: PointerEvent) => { if (e.pointerType === 'touch') { this.vingers.delete(e.pointerId); return; } if (this.sleep && e.button === this.sleep.knop) this.sleep = null; };
+    dom.addEventListener('pointerup', los);
+    dom.addEventListener('pointercancel', los);
     dom.addEventListener('pointermove', e => {
+      if (e.pointerType === 'touch') { this.aanraak(e); return; }
       if (!this.sleep) return;
       const dx = e.clientX - this.sleep.x, dy = e.clientY - this.sleep.y;
       this.sleep.x = e.clientX; this.sleep.y = e.clientY;
@@ -38,6 +49,37 @@ export class StadCamera {
       e.preventDefault();
       this.doelAfstand = THREE.MathUtils.clamp(this.doelAfstand * Math.pow(1.0015, e.deltaY), this.minAfstand, this.maxAfstand);
     }, { passive: false });
+  }
+
+  /** Aanraakgebaren: één vinger schuift, twee vingers knijpen (zoom), draaien, kantelen en schuiven. */
+  private aanraak(e: PointerEvent) {
+    const oud = this.vingers.get(e.pointerId);
+    if (!oud) return;
+    const nieuw = { x: e.clientX, y: e.clientY };
+    const lijst = [...this.vingers.entries()];
+    if (lijst.length === 1) {
+      if (this.eenVingerPannen()) this.schuif(nieuw.x - oud.x, nieuw.y - oud.y);
+    } else if (lijst.length >= 2) {
+      const [a, b] = lijst;
+      const andere = a[0] === e.pointerId ? b[1] : a[1];
+      const dOud = Math.hypot(oud.x - andere.x, oud.y - andere.y), dNieuw = Math.hypot(nieuw.x - andere.x, nieuw.y - andere.y);
+      if (dOud > 10 && dNieuw > 10) this.doelAfstand = THREE.MathUtils.clamp(this.doelAfstand * dOud / dNieuw, this.minAfstand, this.maxAfstand);
+      const hOud = Math.atan2(oud.y - andere.y, oud.x - andere.x), hNieuw = Math.atan2(nieuw.y - andere.y, nieuw.x - andere.x);
+      let dh = hNieuw - hOud; if (dh > Math.PI) dh -= 2 * Math.PI; if (dh < -Math.PI) dh += 2 * Math.PI;
+      this.yaw += dh;
+      // Beide vingers dezelfde kant op: kantelen (verticaal) of schuiven (half, per vinger).
+      const dx = (nieuw.x - oud.x) / 2, dy = (nieuw.y - oud.y) / 2;
+      const sameV = Math.abs(dy) > Math.abs(dx) * 1.5;
+      if (sameV) this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.004, THREE.MathUtils.degToRad(10), THREE.MathUtils.degToRad(88));
+      else this.schuif(dx, dy);
+    }
+    this.vingers.set(e.pointerId, nieuw);
+  }
+
+  private schuif(dx: number, dy: number) {
+    const s = this.afstand / Math.max(400, innerHeight) * 1.3;
+    const f = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), r = new THREE.Vector3(f.z, 0, -f.x);
+    this.doel.addScaledVector(r, dx * s).addScaledVector(f, dy * s);
   }
 
   zet(x: number, z: number, afstand: number, yawGraden?: number, pitchGraden?: number) {
