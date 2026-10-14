@@ -15,6 +15,8 @@ namespace CityBuilder.Game.WaterEnLandschap
     {
         public void OnCreate(ref SystemState state)
         {
+            if (!CityBuilder.Game.TestModus.BootstrapsAan) { state.Enabled = false; return; }
+
             var em = state.EntityManager;
 
             Entity tick = em.CreateEntity(typeof(WaterTickData));

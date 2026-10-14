@@ -12,6 +12,8 @@ namespace CityBuilder.Game.Wegennetwerk
     {
         public void OnCreate(ref SystemState state)
         {
+            if (!CityBuilder.Game.TestModus.BootstrapsAan) { state.Enabled = false; return; }
+
             var em = state.EntityManager;
 
             Entity tick = em.CreateEntity(typeof(NetwerkTickData));

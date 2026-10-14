@@ -17,89 +17,117 @@ namespace CityBuilder.Game.Wegennetwerk
         }
     }
 
-    /// Section 2's keuzemenu, as a startset ("uitbreidbaar" per the doc -- add an enum value in
-    /// WegEnums.cs plus a case here for a new type). Widths are placeholder-realistic; retune
-    /// once real cross-section references exist.
+    /// Dwarsprofielen, van links naar rechts gezien in de tekenrichting van het segment
+    /// (EenrichtingA rijdt in die richting, rechts van de as -- Nederlands rechts rijden).
+    /// Breedtes volgen de orde van grootte van de CROW-richtlijnen: rijstrook 3,0-3,5 m,
+    /// fietsstrook 1,5-2,0 m, vrijliggend tweerichtingsfietspad 3,0 m, trottoir 1,8-3,0 m.
+    /// Stoepen en fietsvoorzieningen liggen aan beide kanten, zoals in een echte straat.
     public static class WegTypeCatalogus
     {
         public const float AutorijbaanBreedte = 3.25f;
-        public const float GedeeldeBaanBreedte = 3.25f;
+        public const float GedeeldeBaanBreedte = 2.75f;
         public const float BusbaanBreedte = 3.5f;
         public const float TramrailBreedte = 3.0f;
-        public const float FietspadBreedte = 2.0f;   // tweerichting
+        public const float FietspadBreedte = 3.0f;   // vrijliggend, tweerichting
+        public const float FietsstrookBreedte = 1.75f;
         public const float TrottoirBreedte = 2.0f;
+
+        const LaneRichting A = LaneRichting.EenrichtingA;
+        const LaneRichting B = LaneRichting.EenrichtingB;
+        const LaneRichting T = LaneRichting.Tweerichting;
 
         public static LaneSpec[] GetLanes(WegTypeId type) => type switch
         {
             WegTypeId.Voetpad => new[]
             {
-                new LaneSpec(LaneType.Trottoir, LaneRichting.Tweerichting, TrottoirBreedte),
+                new LaneSpec(LaneType.Trottoir, T, 2.5f),
             },
             WegTypeId.Fietspad => new[]
             {
-                new LaneSpec(LaneType.Fietspad, LaneRichting.Tweerichting, FietspadBreedte),
+                new LaneSpec(LaneType.Fietspad, T, FietspadBreedte),
             },
+            // Erftoegangsweg in klinkers, auto te gast: geen belijning, smalle gedeelde rijbaan.
             WegTypeId.Woonstraat => new[]
             {
-                new LaneSpec(LaneType.GedeeldeBaan, LaneRichting.EenrichtingA, GedeeldeBaanBreedte),
-                new LaneSpec(LaneType.GedeeldeBaan, LaneRichting.EenrichtingB, GedeeldeBaanBreedte),
-                new LaneSpec(LaneType.Trottoir, LaneRichting.Tweerichting, TrottoirBreedte),
+                new LaneSpec(LaneType.Trottoir, T, 1.8f),
+                new LaneSpec(LaneType.GedeeldeBaan, B, GedeeldeBaanBreedte),
+                new LaneSpec(LaneType.GedeeldeBaan, A, GedeeldeBaanBreedte),
+                new LaneSpec(LaneType.Trottoir, T, 1.8f),
             },
             WegTypeId.Straat => new[]
             {
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Fietspad, LaneRichting.Tweerichting, FietspadBreedte),
-                new LaneSpec(LaneType.Trottoir, LaneRichting.Tweerichting, TrottoirBreedte),
+                new LaneSpec(LaneType.Trottoir, T, TrottoirBreedte),
+                new LaneSpec(LaneType.Fietspad, B, FietsstrookBreedte),
+                new LaneSpec(LaneType.Autorijbaan, B, 3.0f),
+                new LaneSpec(LaneType.Autorijbaan, A, 3.0f),
+                new LaneSpec(LaneType.Fietspad, A, FietsstrookBreedte),
+                new LaneSpec(LaneType.Trottoir, T, TrottoirBreedte),
             },
             // Fysiek identiek aan Straat -- het verschil is het HeeftBusoverlay-vlag op het
-            // WegSegment zodra er daadwerkelijk een buslijn overheen gerouteerd wordt, niet een
-            // aparte lane (zie sectie 1: "geen aparte lane nodig, wel een vlag").
+            // WegSegment, niet een aparte lane (zie sectie 1: "geen aparte lane nodig, wel een vlag").
             WegTypeId.StraatMetBus => new[]
             {
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Fietspad, LaneRichting.Tweerichting, FietspadBreedte),
-                new LaneSpec(LaneType.Trottoir, LaneRichting.Tweerichting, TrottoirBreedte),
+                new LaneSpec(LaneType.Trottoir, T, TrottoirBreedte),
+                new LaneSpec(LaneType.Fietspad, B, FietsstrookBreedte),
+                new LaneSpec(LaneType.Autorijbaan, B, 3.25f),
+                new LaneSpec(LaneType.Autorijbaan, A, 3.25f),
+                new LaneSpec(LaneType.Fietspad, A, FietsstrookBreedte),
+                new LaneSpec(LaneType.Trottoir, T, TrottoirBreedte),
             },
-            // Middenberm is een visuele/ruimtelijke tussenruimte, geen Lane -- die komt bij de
-            // mesh-generatie terug, niet in dit datamodel.
+            // Stadslaan: brede stoepen, vrijliggende fietspaden, twee rijstroken per richting en
+            // een middenberm met een bomenrij.
             WegTypeId.Avenue => new[]
             {
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Fietspad, LaneRichting.Tweerichting, FietspadBreedte),
-                new LaneSpec(LaneType.Trottoir, LaneRichting.Tweerichting, TrottoirBreedte),
+                new LaneSpec(LaneType.Trottoir, T, 3.0f),
+                new LaneSpec(LaneType.Fietspad, B, 2.0f),
+                new LaneSpec(LaneType.Berm, T, 1.0f),
+                new LaneSpec(LaneType.Autorijbaan, B, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Autorijbaan, B, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Middenberm, T, 3.5f),
+                new LaneSpec(LaneType.Autorijbaan, A, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Autorijbaan, A, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Berm, T, 1.0f),
+                new LaneSpec(LaneType.Fietspad, A, 2.0f),
+                new LaneSpec(LaneType.Trottoir, T, 3.0f),
             },
             WegTypeId.Tramstraat => new[]
             {
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Tramrail, LaneRichting.EenrichtingA, TramrailBreedte),
-                new LaneSpec(LaneType.Tramrail, LaneRichting.EenrichtingB, TramrailBreedte),
-                new LaneSpec(LaneType.Fietspad, LaneRichting.Tweerichting, FietspadBreedte),
-                new LaneSpec(LaneType.Trottoir, LaneRichting.Tweerichting, TrottoirBreedte),
+                new LaneSpec(LaneType.Trottoir, T, 2.5f),
+                new LaneSpec(LaneType.Fietspad, B, FietsstrookBreedte),
+                new LaneSpec(LaneType.Autorijbaan, B, 3.0f),
+                new LaneSpec(LaneType.Tramrail, B, TramrailBreedte),
+                new LaneSpec(LaneType.Tramrail, A, TramrailBreedte),
+                new LaneSpec(LaneType.Autorijbaan, A, 3.0f),
+                new LaneSpec(LaneType.Fietspad, A, FietsstrookBreedte),
+                new LaneSpec(LaneType.Trottoir, T, 2.5f),
             },
-            // Baseline van de "4-6x"-range uit sectie 2; een bredere variant met 6 lanes kan later
-            // via dezelfde catalogus-vorm toegevoegd worden zonder de rest te raken.
+            // 50/70 km/u-weg: geen erftoegang, vrijliggende fietspaden achter een grasberm.
             WegTypeId.Gebiedsontsluitingsweg => new[]
             {
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Fietspad, B, 2.5f),
+                new LaneSpec(LaneType.Berm, T, 2.5f),
+                new LaneSpec(LaneType.Autorijbaan, B, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Autorijbaan, B, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Middenberm, T, 3.0f),
+                new LaneSpec(LaneType.Autorijbaan, A, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Autorijbaan, A, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Berm, T, 2.5f),
+                new LaneSpec(LaneType.Fietspad, A, 2.5f),
             },
-            // Baseline van de "6-8x"-range uit sectie 2.
+            // Autosnelweg 2x3 met vluchtstroken en een middenberm met geleiderail.
             WegTypeId.Snelweg => new[]
             {
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingA, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
-                new LaneSpec(LaneType.Autorijbaan, LaneRichting.EenrichtingB, AutorijbaanBreedte),
+                new LaneSpec(LaneType.Berm, T, 1.5f),
+                new LaneSpec(LaneType.Vluchtstrook, B, 3.5f),
+                new LaneSpec(LaneType.Autorijbaan, B, 3.5f),
+                new LaneSpec(LaneType.Autorijbaan, B, 3.5f),
+                new LaneSpec(LaneType.Autorijbaan, B, 3.5f),
+                new LaneSpec(LaneType.Middenberm, T, 4.0f),
+                new LaneSpec(LaneType.Autorijbaan, A, 3.5f),
+                new LaneSpec(LaneType.Autorijbaan, A, 3.5f),
+                new LaneSpec(LaneType.Autorijbaan, A, 3.5f),
+                new LaneSpec(LaneType.Vluchtstrook, A, 3.5f),
+                new LaneSpec(LaneType.Berm, T, 1.5f),
             },
             _ => new LaneSpec[0],
         };
@@ -116,6 +144,19 @@ namespace CityBuilder.Game.Wegennetwerk
             WegTypeId.Gebiedsontsluitingsweg => 70,
             WegTypeId.Snelweg => 100, // representatief voor de 100-120 range uit sectie 2
             _ => 50,
+        };
+
+        /// Mogen er kavels (en dus gebouwen) direct aan deze weg liggen? Gebiedsontsluitings-
+        /// wegen en snelwegen hebben in Nederland juist géén erftoegang; fiets- en voetpaden
+        /// ontsluiten geen bebouwing voor auto's.
+        public static bool HeeftErfOntsluiting(WegTypeId type) => type switch
+        {
+            WegTypeId.Woonstraat => true,
+            WegTypeId.Straat => true,
+            WegTypeId.StraatMetBus => true,
+            WegTypeId.Avenue => true,
+            WegTypeId.Tramstraat => true,
+            _ => false,
         };
     }
 }

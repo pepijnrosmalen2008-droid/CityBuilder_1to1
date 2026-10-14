@@ -15,6 +15,8 @@ namespace CityBuilder.Game.Ontwikkeling
     {
         public void OnCreate(ref SystemState state)
         {
+            if (!CityBuilder.Game.TestModus.BootstrapsAan) { state.Enabled = false; return; }
+
             var em = state.EntityManager;
             var rng = new Unity.Mathematics.Random(777);
 

@@ -16,6 +16,9 @@ namespace CityBuilder.Game.Wegennetwerk
         Fietspad,
         Trottoir,
         GedeeldeBaan,
+        Berm,          // verhoogde grasstrook langs de rijbaan
+        Middenberm,    // scheiding tussen de rijrichtingen (gras, bomen of geleiderail)
+        Vluchtstrook,
     }
 
     public enum LaneRichting : byte

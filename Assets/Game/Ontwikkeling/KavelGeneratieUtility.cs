@@ -13,14 +13,11 @@ namespace CityBuilder.Game.Ontwikkeling
         public float MinFrontbreedte;
     }
 
-    /// Section 1's GenereerKavelsLangsWeg. Twee bewuste vereenvoudigingen t.o.v. de pseudocode:
-    /// - Gebruikt alleen het eerste en laatste splinepunt van het wegsegment (een rechte lijn),
-    ///   geen per-subsegment generatie langs een gebogen spline.
-    /// - `AfstandTotEerstvolgendObstakelOfWeg(terrein)` bestaat niet -- er is nog geen obstakel-
-    ///   detectie via het terrein, dus diepte is altijd exact MaxDiepteVanafWeggrens. Omdat dit
-    ///   nooit meer dan één rij kavels per wegzijde genereert, is de "resterende diepte >
-    ///   max_diepte -> geen automatische kavel"-regel hierdoor al automatisch voldaan: er is
-    ///   sowieso nooit een tweede rij die de suggestie "tweede ontsluitingsweg nodig" zou triggeren.
+    /// Section 1's GenereerKavelsLangsWeg. Kavels volgen de spline van het wegsegment (ook in een
+    /// bocht): langs de booglengte wordt het segment in gelijke stukken van minstens
+    /// MinFrontbreedte verdeeld, en elke kavel staat haaks op de lokale wegrichting.
+    /// `AfstandTotEerstvolgendObstakelOfWeg(terrein)` bestaat niet -- diepte is altijd
+    /// MaxDiepteVanafWeggrens; overlap met andere wegen en kavels ruimt KavelOpruimUtility op.
     public static class KavelGeneratieUtility
     {
         public static Entity[] GenereerKavelsLangsWeg(EntityManager em, Entity wegsegment, KavelGeneratieRegel regel, int districtId)
@@ -29,28 +26,60 @@ namespace CityBuilder.Game.Ontwikkeling
             if (spline.Length < 2 || regel.MinFrontbreedte <= 0f)
                 return System.Array.Empty<Entity>();
 
-            float3 van = spline[0].Punt;
-            float3 naar = spline[spline.Length - 1].Punt;
-            float lengte = math.distance(van, naar);
-            if (lengte < regel.MinFrontbreedte)
+            int n = spline.Length;
+            var punten = new float3[n];
+            var afstanden = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                punten[i] = spline[i].Punt;
+                if (i > 0)
+                    afstanden[i] = afstanden[i - 1] + math.distance(punten[i - 1], punten[i]);
+            }
+
+            float lengte = afstanden[n - 1];
+            int aantalPerRij = (int)math.floor(lengte / regel.MinFrontbreedte);
+            if (aantalPerRij < 1)
                 return System.Array.Empty<Entity>();
 
-            float3 richting = math.normalize(naar - van);
-            float3 zijkant = math.normalize(math.cross(new float3(0, 1, 0), richting));
+            // Gelijk verdelen zodat er geen restje aan het eind overblijft.
+            var verdeeld = regel;
+            verdeeld.MinFrontbreedte = lengte / aantalPerRij;
 
-            int aantalPerRij = (int)math.floor(lengte / regel.MinFrontbreedte);
             var resultaten = new System.Collections.Generic.List<Entity>(aantalPerRij * 2);
-
-            foreach (float zijdeTeken in new[] { -1f, 1f })
+            for (int i = 0; i < aantalPerRij; i++)
             {
-                for (int i = 0; i < aantalPerRij; i++)
-                {
-                    float3 frontMidden = van + richting * ((i + 0.5f) * regel.MinFrontbreedte);
-                    resultaten.Add(MaakKavel(em, frontMidden, richting, zijkant * zijdeTeken, regel, wegsegment, districtId));
-                }
+                float s = (i + 0.5f) * verdeeld.MinFrontbreedte;
+                PuntOpAfstand(punten, afstanden, s, out float3 frontMidden, out float3 richting);
+                float3 zijkant = math.normalize(math.cross(new float3(0, 1, 0), richting));
+
+                resultaten.Add(MaakKavel(em, frontMidden, richting, -zijkant, verdeeld, wegsegment, districtId));
+                resultaten.Add(MaakKavel(em, frontMidden, richting, zijkant, verdeeld, wegsegment, districtId));
             }
 
             return resultaten.ToArray();
+        }
+
+        static void PuntOpAfstand(float3[] punten, float[] afstanden, float s, out float3 punt, out float3 richting)
+        {
+            int n = punten.Length;
+            for (int i = 0; i < n - 1; i++)
+            {
+                float segLengte = afstanden[i + 1] - afstanden[i];
+                if (segLengte < 0.0001f)
+                    continue;
+                if (s <= afstanden[i + 1] || i == n - 2)
+                {
+                    float t = math.saturate((s - afstanden[i]) / segLengte);
+                    punt = math.lerp(punten[i], punten[i + 1], t);
+                    float3 d = punten[i + 1] - punten[i];
+                    d.y = 0f;
+                    richting = math.normalizesafe(d, new float3(1, 0, 0));
+                    return;
+                }
+            }
+
+            punt = punten[0];
+            richting = new float3(1, 0, 0);
         }
 
         static Entity MaakKavel(EntityManager em, float3 frontMidden, float3 richting, float3 naarBinnen,
