@@ -415,6 +415,23 @@ export class Wereld {
     return max;
   }
 
+  /** Raakt dit grondvlak een bestaand gebouw (behalve de opgegeven)? Steekproef op een raster van 1,2 m. */
+  private overlaptBuren(voet: V2[], behalve: number[]): boolean {
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const p of voet) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+    for (const g of this.gebouwen.values()) {
+      if (behalve.includes(g.id)) continue;
+      if (g.voet.every(p => p.x < x0) || g.voet.every(p => p.x > x1) || g.voet.every(p => p.z < z0) || g.voet.every(p => p.z > z1)) continue;
+      // Echte overlap (een paar m²), niet het delen van een rand met de buurwoning.
+      let n = 0;
+      for (let x = x0 + 0.6; x < x1; x += 1.2) for (let z = z0 + 0.6; z < z1; z += 1.2) {
+        const p = { x, z };
+        if (puntInPolygoon(p, voet) && puntInPolygoon(p, g.voet) && ++n >= 3) return true;
+      }
+    }
+    return false;
+  }
+
   private ontwerp(reeks: Kavel[], seed: number, niveau = 1, vasteStijl?: Bouwstijl): Gebouw | null {
     const r = new Rng(seed);
     const k = reeks[0], zone = k.zone;
@@ -443,8 +460,14 @@ export class Wereld {
     const terugZij = vorm === 'winkelsMetWonen' ? 0.2 : Math.max(1.5, terug * 0.6);
     const zijStraat = st.knippen.filter(kn => kn.straat).map(kn => ({ o: { x: kn.o.x + kn.n.x * terugZij, z: kn.o.z + kn.n.z * terugZij }, n: kn.n }));
     const opZij = (poly: V2[]) => { for (const z of zijStraat) poly = poly.length >= 3 ? knipHalfvlak(poly, z.o, z.n) : poly; return poly; };
-    const voet = opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte, d - 1)));
-    if (voet.length < 3 || Math.abs(getekendOppervlak(voet)) < 30) return null;
+    let voet = opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte, d - 1)));
+    // Nooit door een ander gebouw heen (op hoeken en in krappe bochten): dan ondieper bouwen.
+    for (let poging = 0; poging < 4 && voet.length >= 3 && this.overlaptBuren(voet, reeks.map(x => x.gebouw)); poging++) {
+      diepte *= 0.75;
+      if (diepte < 6) return null;
+      voet = opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte, d - 1)));
+    }
+    if (voet.length < 3 || Math.abs(getekendOppervlak(voet)) < 30 || this.overlaptBuren(voet, reeks.map(x => x.gebouw))) return null;
     const ls: Laag[] = [];
     for (let i = 0; i < lagen; i++) {
       const bg = i === 0;
@@ -513,6 +536,11 @@ export class Wereld {
     for (const x of reeks) { x.gebouw = g.id; this.events.push({ soort: 'kavel~', id: x.id }); }
     this.bomen.wisInPolygoon(g.perceel, 1);
     this.events.push({ soort: 'gebouw+', id: g.id });
+    // Buren opnieuw opbouwen: hun schuttingen en schuurtjes wijken voor het nieuwe pand.
+    for (const o of this.gebouwen.values()) {
+      if (o === g || Math.abs(o.centrum.x - g.centrum.x) > 90 || Math.abs(o.centrum.z - g.centrum.z) > 90) continue;
+      if (g.voet.some(p => puntInPolygoon(p, o.perceel)) || o.perceel.some(p => puntInPolygoon(p, g.voet))) this.events.push({ soort: 'gebouw~', id: o.id });
+    }
   }
 
   verwijderGebouw(id: number) {

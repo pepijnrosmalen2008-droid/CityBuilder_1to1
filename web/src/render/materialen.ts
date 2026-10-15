@@ -33,6 +33,7 @@ export class Materialen {
   reflectedLight.directDiffuse *= mix(0.62, 1.04, kroonAO);`);
       };
     }
+    if (sleutel.startsWith('gevel:')) parallaxRamen(m);
     if (d.bovenop) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -4; }
     if (d.tex) {
       // Zolang de textuur er niet is: een rustige grijswaarde in plaats van wit.
@@ -53,4 +54,52 @@ export class Materialen {
     this.cache.set(sleutel, m);
     return m;
   }
+}
+
+/**
+ * Ramen die in de gevel liggen: parallax op de hoogte in het alfakanaal van de normal map.
+ * Alleen diepe delen (glas) zakken weg, ~15 cm; bij een schuine blik schuift het muurwerk over het
+ * glas en wordt de neggekant zichtbaar, zoals bij echte vensters. Werkt met afgeleiden, dus zonder tangents.
+ */
+function parallaxRamen(m: THREE.MeshStandardMaterial) {
+  m.onBeforeCompile = s => {
+    const C = THREE.ShaderChunk;
+    const met = (chunk: string) => chunk.replace(/vMapUv|vNormalMapUv|vRoughnessMapUv|vMetalnessMapUv/g, 'pUv');
+    s.fragmentShader = s.fragmentShader
+      .replace('#include <map_fragment>', `
+  vec2 pUv = vMapUv;
+  float pDiep = 0.0;
+  #ifdef USE_NORMALMAP
+  {
+    vec3 N = normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0);
+    vec3 dp1 = dFdx(-vViewPosition), dp2 = dFdy(-vViewPosition);
+    vec2 du1 = dFdx(vMapUv), du2 = dFdy(vMapUv);
+    vec3 dp2p = cross(dp2, N), dp1p = cross(N, dp1);
+    vec3 T = dp2p * du1.x + dp1p * du2.x, B = dp2p * du1.y + dp1p * du2.y;
+    float im = inversesqrt(max(dot(T, T), dot(B, B)) + 1e-12);
+    mat3 tbn = mat3(T * im, B * im, N);
+    vec3 v = normalize(vViewPosition) * tbn;
+    // Diepte: alleen lage delen (glas) liggen terug.
+    const float SCHAAL = 0.026;
+    const int N_STAP = 10;
+    vec2 stap = v.xy / max(v.z, 0.3) * SCHAAL / float(N_STAP);
+    float laag = 0.0;
+    float d = clamp((0.5 - texture2D(normalMap, pUv).a) / 0.4, 0.0, 1.0);
+    for (int i = 0; i < N_STAP; i++) {
+      if (laag >= d) break;
+      pUv -= stap;
+      laag += 1.0 / float(N_STAP);
+      d = clamp((0.5 - texture2D(normalMap, pUv).a) / 0.4, 0.0, 1.0);
+    }
+    // Muurwerk geraakt op diepte = de negge (binnenkant van de raamopening).
+    pDiep = laag * (1.0 - d);
+  }
+  #endif
+` + met(C.map_fragment) + `
+  // Neggekant en binnenkant van het venster wat donkerder.
+  diffuseColor.rgb *= 1.0 - 0.35 * pDiep;`)
+      .replace('#include <roughnessmap_fragment>', met(C.roughnessmap_fragment))
+      .replace('#include <metalnessmap_fragment>', met(C.metalnessmap_fragment))
+      .replace('#include <normal_fragment_maps>', met(C.normal_fragment_maps));
+  };
 }

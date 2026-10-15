@@ -117,7 +117,15 @@ export class StadWeergave {
       this.bouwRij.delete(id);
       const g = this.w.gebouwen.get(id);
       if (!g) { this.tegels.wis(`geb:${id}`); continue; }
-      const r = bouwGebouw(g, (x, z) => this.w.terrein.hoogte(x, z));
+      // Buurgebouwen waarvan het grondvlak op dit perceel kan liggen.
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (const p of g.perceel) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+      const buren: { x: number; z: number }[][] = [];
+      for (const o of this.w.gebouwen.values()) {
+        if (o === g || Math.abs(o.centrum.x - (x0 + x1) / 2) > 120 || Math.abs(o.centrum.z - (z0 + z1) / 2) > 120) continue;
+        if (o.voet.some(p => p.x > x0 && p.x < x1 && p.z > z0 && p.z < z1) || o.voet.every(p => p.x < x0) === false && o.voet.every(p => p.x > x1) === false && o.voet.every(p => p.z < z0) === false && o.voet.every(p => p.z > z1) === false) buren.push(o.voet);
+      }
+      const r = bouwGebouw(g, (x, z) => this.w.terrein.hoogte(x, z), buren);
       this.tegels.zet(`geb:${id}`, g.centrum.x, g.centrum.z, r.mesh);
       this.props.zet(`geb:${id}`, r.props);
     }

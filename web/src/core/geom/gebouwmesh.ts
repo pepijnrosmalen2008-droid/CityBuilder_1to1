@@ -136,7 +136,12 @@ function stijlVoor(g: Gebouw, r: Rng): GevelStijl {
   }
 }
 
-export function bouwGebouw(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[] } {
+/** Grondvlakken van buurgebouwen: tuinspullen en schuttingen komen daar niet (hoekpercelen raken elkaar soms net). */
+let BUREN: V2[][] = [];
+export const bijBuur = (p: V2) => BUREN.some(v => puntInPolygoon(p, v));
+
+export function bouwGebouw(g: Gebouw, hoogte: H, buren: V2[][] = []): { mesh: MeshData; props: Prop[] } {
+  BUREN = buren;
   const mb = new MeshBouwer();
   const props: Prop[] = [];
   const r = new Rng(g.seed);
@@ -280,6 +285,16 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
       const m = { x: (rd.a.x + rd.b.x) / 2 + rd.n.x * 0.32, z: (rd.a.z + rd.b.z) / 2 + rd.n.z * 0.32 };
       doos(mb, 'metaal', 'metaal', m, rd.t, rd.L, 0.18, H - 0.32, H - 0.16);
     }
+    // Regenpijpen (zink) van de goot naar beneden op elke woningscheiding, en ontluchtingspijpjes op het achterdak.
+    for (const gr of g.grenzen) {
+      const p = { x: gr.p.x + gr.n.x * (g.terug - 0.12), z: gr.p.z + gr.n.z * (g.terug - 0.12) };
+      cilinder(mb, 'metaal', { x: p.x, y: Y - 0.1, z: p.z }, { x: p.x, y: H - 0.2, z: p.z }, 0.05, 0.05, 6);
+    }
+    for (const an of g.ankers) {
+      const d = g.diepte * 0.72, p = { x: an.p.x + an.n.x * d + an.t.x * w * 0.25, z: an.p.z + an.n.z * d + an.t.z * w * 0.25 };
+      const y = H + (g.terug + g.diepte - afstandTotLijn(p, g.voorLijn).d) * tan;
+      cilinder(mb, 'trimDonker', { x: p.x, y: y - 0.3, z: p.z }, { x: p.x, y: y + 0.55, z: p.z }, 0.06, 0.06, 6);
+    }
     // Niveau 3+: zonnepanelen op het voordakvlak (in plaats van een dakkapel).
     const panelen = (g.niveau ?? 1) >= 3 || !!g.dakBeleid?.zon;
     if (panelen) for (const an of g.ankers) {
@@ -337,13 +352,14 @@ function rijErf(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[], w: 
   const lijnstuk = (gr: Anker, mat: string, d0: number, d1: number, h: number, dik: number, zij = 0) => {
     const a = (d: number) => ({ x: gr.p.x + gr.n.x * d + gr.t.x * zij, z: gr.p.z + gr.n.z * d + gr.t.z * zij });
     // Niet buiten het perceel (hoekpercelen lopen schuin af).
-    while (d1 - d0 > 0.8 && !binnenPerceel(a(d1 - 0.2))) d1 -= 1;
+    while (d1 - d0 > 0.8 && (!binnenPerceel(a(d1 - 0.2)) || bijBuur(a(d1 - 0.2)))) d1 -= 1;
     if (d1 - d0 < 0.8) return;
     // In stukken, zodat de schutting het terrein volgt.
     const n = Math.max(1, Math.ceil((d1 - d0) / 6));
     for (let i = 0; i < n; i++) {
       const e0 = d0 + (d1 - d0) * i / n, e1 = d0 + (d1 - d0) * (i + 1) / n;
       const c = a((e0 + e1) / 2), y = hoogte(c.x, c.z);
+      if (bijBuur(c)) continue;
       doos(mb, mat, mat, c, gr.n, e1 - e0 + 0.02, dik, y - 0.15, y + h);
     }
   };
@@ -375,7 +391,7 @@ function rijErf(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[], w: 
     const rand = Math.min(...g.perceel.map(p => (p.x - z.o.x) * z.n.x + (p.z - z.o.z) * z.n.z)) + 0.4;
     for (let s = a0; s < a1; s += 3) {
       const c = { x: z.o.x + t.x * (s + 1.5) + z.n.x * rand, z: z.o.z + t.z * (s + 1.5) + z.n.z * rand };
-      if (!binnenPerceel(c) || puntInPolygoon(c, g.voet)) continue;
+      if (!binnenPerceel(c) || puntInPolygoon(c, g.voet) || bijBuur(c)) continue;
       // Alleen naast de tuin, niet voor de voorgevel.
       if (afstandTotLijn(c, g.voorLijn).d < g.terug + 0.5) continue;
       const y = hoogte(c.x, c.z);
@@ -446,21 +462,21 @@ function tuin(mb: MeshBouwer, g: Gebouw, an: Anker, w: number, r: Rng, hoogte: H
     if (r.next() < 0.35) continue;
     const d = g.diepte + terras + 1 + (achter - terras - 2) * (i + 0.5) / nS;
     const c = P(d, (i % 2 ? 1 : -1) * (half - 0.6));
-    struik(mb, c, yv(c), r.range(0.4, 0.7), r.range(0.8, 1.6));
+    if (!bijBuur(c)) struik(mb, c, yv(c), r.range(0.4, 0.7), r.range(0.8, 1.6));
   }
   // Schuurtje achterin.
   if (achter > 5 && r.next() < 0.7) {
     const sb = Math.min(2.4, w - 1.2);
     const c = P(eind - 1.5, (r.next() < 0.5 ? -1 : 1) * Math.max(0, half - sb / 2 - 0.2)), y = yv(c);
-    doos(mb, 'hout', 'dakgrind', c, an.t, sb, 2.2, y, y + 2.3);
+    if (!bijBuur(c) && !bijBuur(P(eind - 0.3, 0))) doos(mb, 'hout', 'dakgrind', c, an.t, sb, 2.2, y, y + 2.3);
   }
   // Boom.
   if (achter > 7 && r.next() < 0.45) {
     const c = P(g.diepte + terras + (achter - terras) * 0.5, r.range(-half * 0.4, half * 0.4));
-    props.push({ soort: r.kies(['berk', 'eik', 'linde'] as const), x: c.x, y: yv(c), z: c.z, rot: r.range(0, 6.28), schaal: r.range(0.45, 0.7), variant: r.int(0, 1) });
+    if (!bijBuur(c)) props.push({ soort: r.kies(['berk', 'eik', 'linde'] as const), x: c.x, y: yv(c), z: c.z, rot: r.range(0, 6.28), schaal: r.range(0.45, 0.7), variant: r.int(0, 1) });
   }
   // Achtergrens: haag of schutting.
-  if (achter > 3.5) {
+  if (achter > 3.5 && !bijBuur(P(eind - 0.2, -half)) && !bijBuur(P(eind - 0.2, half))) {
     const c = P(eind - 0.2, 0), y = yv(c);
     if (r.next() < 0.45) doos(mb, 'haag', 'haag', c, an.t, w, 0.6, y - 0.1, y + 1.7);
     else doos(mb, 'schutting', 'schutting', c, an.t, w, 0.06, y - 0.1, y + 1.6);
@@ -658,7 +674,7 @@ function inrichting(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[])
   const an = g.ankers[0];
   const P = (d: number, s: number): V2 => ({ x: an.p.x + an.n.x * d + an.t.x * s, z: an.p.z + an.n.z * d + an.t.z * s });
   const yv = (p: V2) => hoogte(p.x, p.z);
-  const binnen = (p: V2) => puntInPolygoon(p, g.perceel) && !puntInPolygoon(p, g.voet);
+  const binnen = (p: V2) => puntInPolygoon(p, g.perceel) && !puntInPolygoon(p, g.voet) && !bijBuur(p);
   const half = g.breedte / 2 - 0.8;
   const d0 = g.diepte + 1, d1 = an.d - g.terug - 0.6; // achter het gebouw, gemeten vanaf de voorgevel
   const diep = d1 - d0;

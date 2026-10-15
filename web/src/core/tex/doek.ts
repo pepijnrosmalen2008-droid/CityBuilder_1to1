@@ -53,7 +53,9 @@ export class Doek {
         const l = Math.hypot(dx, dy, 1);
         const i = (y * W + x) * 4;
         // Textuur-v loopt omhoog in de mesh (y=0 is de onderste rij), vandaar +dy.
-        nm[i] = (-dx / l * 0.5 + 0.5) * 255; nm[i + 1] = (-dy / l * 0.5 + 0.5) * 255; nm[i + 2] = (1 / l * 0.5 + 0.5) * 255; nm[i + 3] = 255;
+        nm[i] = (-dx / l * 0.5 + 0.5) * 255; nm[i + 1] = (-dy / l * 0.5 + 0.5) * 255; nm[i + 2] = (1 / l * 0.5 + 0.5) * 255;
+        // Hoogte in alfa: voor parallax (ramen die in de gevel liggen).
+        nm[i + 3] = Math.max(0, Math.min(1, this.hoogte[y * W + x])) * 255;
       }
       r.normaal = nm;
     }

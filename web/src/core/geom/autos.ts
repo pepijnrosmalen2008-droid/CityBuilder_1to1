@@ -287,7 +287,9 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
     const w = plan(v, u) - 0.02;
     return cabineDoorsnede(xVan(u), w * 0.97, w * (v.dakBreed ?? 0.8), onderTop(v, u) - 0.02, Math.max(onderTop(v, u) + 0.01, cabineTop(v, u)), laag ? 0.06 : 0.12, k);
   });
-  const cas = cu.map(u => ({ x: xVan(u), y: onderTop(v, u) + 0.2, z: 0 }));
+  // As midden in de cabinedoorsnede: bij voor- en achterruit is de cabine laag; een vast punt erboven
+  // zou die vlakken binnenstebuiten zetten (dan zie je door de ruit heen).
+  const cas = cu.map(u => ({ x: xVan(u), y: (onderTop(v, u) - 0.02 + Math.max(onderTop(v, u) + 0.01, cabineTop(v, u))) / 2 - 0.05, z: 0 }));
   loft(mb, cr, cas, (i, j) => {
     const u = (cu[i] + cu[i + 1]) / 2;
     const zij = j === 0 || j === cr[0].length - 2; // rechter en linker zijvlak
@@ -363,57 +365,121 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
   return mb.bouw();
 }
 
+/**
+ * Bakwagen (zoals een DAF/Volvo-distributietruck): cabine voorover met grote voorruit, grille, zonneklep,
+ * windkap, spiegels en opstappen; chassisbalken, dieseltank, dubbel gemonteerde achterwielen met
+ * spatborden en zijafscherming; laadbak met hoekprofielen, ribben en achterdeuren.
+ */
 function vrachtwagen(laag: boolean, brandweer = false): MeshData {
   const mb = new MeshBouwer();
   const L = 9.6, W = 2.5;
-  // Cabine voorop (gelakt), laadbak (wit) erachter.
-  const cabL = 2.3, xc = L / 2 - cabL / 2;
+  const cabL = 2.25, xF = L / 2, xR = xF - cabL;
+  const cabY0 = 1.05, cabY1 = 3.3;
+  const k = laag ? 1 : 3;
+  const xVoorWiel = L / 2 - 1.35, achter = [-L / 2 + 2.6, -L / 2 + 1.25];
+  // Cabine: gelofte doorsneden, voorkant iets naar achteren hellend en afgerond.
+  const n = laag ? 2 : 8;
   const ringen: V3[][] = [], as: V3[] = [];
-  const n = laag ? 2 : 6;
   for (let i = 0; i <= n; i++) {
-    const x = xc - cabL / 2 + cabL * i / n;
-    const u = i / n;
-    ringen.push(doorsnede(x, W - (u > 0.85 ? (u - 0.85) * 1.2 : 0), 0.55, 3.25 - (u > 0.9 ? (u - 0.9) * 2 : 0), 0.1, 0.25, laag ? 1 : 3));
-    as.push({ x, y: 1.9, z: 0 });
+    const u = i / n, x = lerp(xR, xF, u);
+    const terug = u > 0.8 ? (u - 0.8) / 0.2 : 0;
+    ringen.push(doorsnede(x, W - terug * terug * 0.14, cabY0, cabY1 - terug * terug * 0.12, 0.12, 0.28, k));
+    as.push({ x, y: (cabY0 + cabY1) / 2, z: 0 });
   }
   loft(mb, ringen, as, () => 'autolak');
   for (const [i, uit] of [[0, -1], [ringen.length - 1, 1]] as const) {
     const r = ringen[i], c = as[i];
     for (let j = 0; j < r.length; j++) mb.driehoek('autolak', c, r[j], r[(j + 1) % r.length], [0, 0], [1, 0], [1, 1], { x: uit, y: 0, z: 0 });
   }
-  // Voorruit en zijruitjes.
-  const xf = L / 2 + 0.005;
-  mb.quad('autoglas', { x: xf, y: 1.95, z: -1.1 }, { x: xf, y: 1.95, z: 1.1 }, { x: xf - 0.12, y: 3.0, z: 1.05 }, { x: xf - 0.12, y: 3.0, z: -1.05 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0.1, z: 0 });
-  for (const s of [-1, 1]) mb.quad('autoglas', { x: xf - 0.3, y: 2.0, z: s * (W / 2 + 0.005) }, { x: xf - 1.2, y: 2.0, z: s * (W / 2 + 0.005) }, { x: xf - 1.2, y: 2.85, z: s * (W / 2 + 0.005) }, { x: xf - 0.35, y: 2.85, z: s * (W / 2 + 0.005) }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
-  // Laadbak.
-  const bakL = L - cabL - 0.25;
-  mb.blok(brandweer ? 'autolak' : 'laadbak', brandweer ? 'autolak' : 'laadbak', { x: -L / 2 + bakL / 2, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, bakL, W, 1.05, brandweer ? 3.15 : 3.75, true);
-  if (brandweer && !laag) {
-    // Rolluiken (vakken), reflecterende strepen, ladder op het dak.
+  // Chassis: twee balken over de hele lengte.
+  for (const z of [-0.45, 0.45]) kastje(mb, 'autotrim', { x: -0.3, y: 0.82, z }, L - 1.2, 0.28, 0.12);
+  // Laadbak (dichte opbouw).
+  const bakX0 = -L / 2, bakX1 = xR - 0.2, bakL = bakX1 - bakX0, bakY0 = 1.05, bakY1 = brandweer ? 3.15 : 3.8;
+  const bakMat = brandweer ? 'autolak' : 'laadbak';
+  mb.blok(bakMat, bakMat, { x: (bakX0 + bakX1) / 2, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, bakL, W, bakY0, bakY1, true);
+  // Wielen: voor enkel, achter tandem met dubbellucht.
+  for (const z of [-1.0, 1.0]) wiel(mb, xVoorWiel, z, 0.5, 0.32, laag, 'vracht');
+  for (const x of achter) for (const z of [-1.0, 1.0, -0.66, 0.66]) wiel(mb, x, z, 0.5, 0.3, laag || Math.abs(z) < 0.8, 'vracht');
+  if (laag) {
+    mb.quad('autoglas', { x: xF + 0.01, y: 2.0, z: -1.05 }, { x: xF + 0.01, y: 2.0, z: 1.05 }, { x: xF - 0.08, y: 3.0, z: 1.0 }, { x: xF - 0.08, y: 3.0, z: -1.0 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0.1, z: 0 });
+    return mb.bouw();
+  }
+  const zKant = W / 2 + 0.004;
+  // Voorruit met zwarte rand, zonneklep erboven.
+  mb.quad('autotrim', { x: xF + 0.004, y: 1.9, z: -1.12 }, { x: xF + 0.004, y: 1.9, z: 1.12 }, { x: xF - 0.1, y: 3.04, z: 1.06 }, { x: xF - 0.1, y: 3.04, z: -1.06 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0.1, z: 0 });
+  mb.quad('autoglas', { x: xF + 0.012, y: 1.96, z: -1.06 }, { x: xF + 0.012, y: 1.96, z: 1.06 }, { x: xF - 0.09, y: 2.98, z: 1.0 }, { x: xF - 0.09, y: 2.98, z: -1.0 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0.1, z: 0 });
+  kastje(mb, 'autotrim', { x: xF - 0.02, y: 3.1, z: 0 }, 0.28, 0.08, 2.15);
+  // Grille met chromen lamellen, logo, koplampen en een stevige bumper.
+  kastje(mb, 'autotrim', { x: xF + 0.02, y: 1.5, z: 0 }, 0.05, 0.62, 1.5);
+  for (let y = 1.26; y < 1.8; y += 0.11) kastje(mb, 'chroom', { x: xF + 0.05, y, z: 0 }, 0.02, 0.025, 1.44);
+  kastje(mb, 'chroom', { x: xF + 0.06, y: 1.86, z: 0 }, 0.02, 0.07, 0.3);
+  kastje(mb, 'autotrim', { x: xF + 0.02, y: 0.78, z: 0 }, 0.3, 0.5, W - 0.04);
+  for (const s of [-1, 1]) {
+    kastje(mb, 'koplamp', { x: xF + 0.18, y: 0.86, z: s * 0.88 }, 0.04, 0.2, 0.42);
+    kastje(mb, 'politieoranje', { x: xF + 0.18, y: 0.86, z: s * 1.14 }, 0.04, 0.12, 0.1);
+    kastje(mb, 'koplamp', { x: xF + 0.18, y: 0.66, z: s * 0.6 }, 0.04, 0.08, 0.2);
+  }
+  kastje(mb, 'kenteken', { x: xF + 0.18, y: 0.66, z: 0 }, 0.02, 0.11, 0.52);
+  for (const s of [-1, 1]) {
+    // Zijruit en kleine achterruit in de deur, deurnaad, greep.
+    mb.quad('autoglas', { x: xF - 0.25, y: 2.05, z: s * zKant }, { x: xF - 1.25, y: 2.05, z: s * zKant }, { x: xF - 1.25, y: 2.95, z: s * zKant }, { x: xF - 0.35, y: 2.95, z: s * zKant }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    mb.quad('autoglas', { x: xF - 1.45, y: 2.25, z: s * zKant }, { x: xF - 1.85, y: 2.25, z: s * zKant }, { x: xF - 1.85, y: 2.85, z: s * zKant }, { x: xF - 1.45, y: 2.85, z: s * zKant }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    for (const xd of [xF - 0.15, xF - 1.35]) mb.quad('autotrim', { x: xd - 0.01, y: 1.1, z: s * (zKant + 0.002) }, { x: xd + 0.01, y: 1.1, z: s * (zKant + 0.002) }, { x: xd + 0.01, y: 3.0, z: s * (zKant + 0.002) }, { x: xd - 0.01, y: 3.0, z: s * (zKant + 0.002) }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    kastje(mb, 'chroom', { x: xF - 1.15, y: 1.85, z: s * (zKant + 0.02) }, 0.22, 0.04, 0.03);
+    // Opstappen onder de deur.
+    for (const y of [0.55, 0.85]) kastje(mb, 'autotrim', { x: xF - 0.75, y, z: s * (W / 2 - 0.12) }, 0.6, 0.05, 0.24);
+    // Spiegels: arm en groot spiegelhuis met een kleinere eronder.
+    kastje(mb, 'autotrim', { x: xF - 0.25, y: 2.75, z: s * (W / 2 + 0.17) }, 0.05, 0.04, 0.32);
+    kastje(mb, 'autotrim', { x: xF - 0.25, y: 2.55, z: s * (W / 2 + 0.34) }, 0.09, 0.42, 0.2);
+    kastje(mb, 'autotrim', { x: xF - 0.25, y: 2.15, z: s * (W / 2 + 0.32) }, 0.08, 0.2, 0.17);
+    // Spatbord voorwiel (zwarte boog als drie plaatjes).
+    for (const [dx, y, lx] of [[-0.45, 1.12, 0.35], [0, 1.18, 0.6], [0.45, 1.12, 0.35]] as const) kastje(mb, 'autotrim', { x: xVoorWiel + dx, y, z: s * (W / 2 - 0.15) }, lx, 0.05, 0.36);
+    // Spatborden achter over de tandem en zijafscherming tussen de assen.
+    kastje(mb, 'autotrim', { x: (achter[0] + achter[1]) / 2, y: 1.12, z: s * (W / 2 - 0.15) }, achter[0] - achter[1] + 1.25, 0.05, 0.4);
+    const g0 = achter[0] + 0.65, g1 = xVoorWiel - 0.65;
+    for (const y of [0.55, 0.85]) kastje(mb, 'velg', { x: (g0 + g1) / 2, y, z: s * (W / 2 - 0.05) }, g1 - g0, 0.1, 0.04);
+    // Oranje zijmarkeringslichten langs de bak.
+    for (let x = bakX0 + 0.4; x < bakX1; x += 1.6) kastje(mb, 'politieoranje', { x, y: 1.1, z: s * (W / 2 + 0.01) }, 0.08, 0.04, 0.02);
+  }
+  // Dieseltank en accubak.
+  kastje(mb, 'velg', { x: (achter[0] + xVoorWiel) / 2 + 0.3, y: 0.78, z: 0.98 }, 1.3, 0.5, 0.45);
+  kastje(mb, 'autotrim', { x: (achter[0] + xVoorWiel) / 2 + 0.3, y: 0.78, z: -0.98 }, 0.8, 0.45, 0.4);
+  // Uitlaat achter de cabine.
+  kastje(mb, 'velg', { x: xR - 0.08, y: 2.2, z: -1.05 }, 0.12, 2.3, 0.12);
+  if (!brandweer) {
+    // Windkap op het dak tot de hoogte van de bak.
+    const d0 = xR + 0.25, d1 = xF - 0.5;
+    const P = (x: number, y: number, z: number): V3 => ({ x, y, z });
+    for (const s of [-1, 1]) mb.quad('autolak', P(d0, cabY1, s * 1.05), P(d1, cabY1, s * 1.05), P(d0, bakY1 - 0.02, s * 1.0), P(d0, bakY1 - 0.02, s * 1.0), [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    mb.quad('autolak', P(d1, cabY1, -1.05), P(d1, cabY1, 1.05), P(d0, bakY1 - 0.02, 1.0), P(d0, bakY1 - 0.02, -1.0), [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 1.2, z: 0 });
+    // Laadbak: hoekprofielen, boven- en onderregel, ribben, achterdeuren met sluitstangen.
+    for (const x of [bakX0, bakX1]) for (const z of [-W / 2, W / 2]) kastje(mb, 'velg', { x, y: (bakY0 + bakY1) / 2, z }, 0.09, bakY1 - bakY0, 0.09);
+    for (const y of [bakY0 + 0.04, bakY1 - 0.04]) for (const z of [-W / 2, W / 2]) kastje(mb, 'velg', { x: (bakX0 + bakX1) / 2, y, z }, bakL, 0.09, 0.07);
+    for (const s of [-1, 1]) for (let x = bakX0 + 1.1; x < bakX1 - 0.5; x += 1.1) mb.quad('velg', { x: x - 0.02, y: bakY0 + 0.1, z: s * (W / 2 + 0.004) }, { x: x + 0.02, y: bakY0 + 0.1, z: s * (W / 2 + 0.004) }, { x: x + 0.02, y: bakY1 - 0.1, z: s * (W / 2 + 0.004) }, { x: x - 0.02, y: bakY1 - 0.1, z: s * (W / 2 + 0.004) }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    const xa = bakX0 - 0.006;
+    mb.quad('autotrim', { x: xa, y: bakY0 + 0.1, z: -0.012 }, { x: xa, y: bakY0 + 0.1, z: 0.012 }, { x: xa, y: bakY1 - 0.1, z: 0.012 }, { x: xa, y: bakY1 - 0.1, z: -0.012 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: -1, y: 0, z: 0 });
+    for (const z of [-0.85, -0.35, 0.35, 0.85]) kastje(mb, 'velg', { x: bakX0 - 0.03, y: (bakY0 + bakY1) / 2, z }, 0.04, bakY1 - bakY0 - 0.3, 0.04);
+    for (const z of [-1.1, 1.1]) for (const y of [bakY0 + 0.5, (bakY0 + bakY1) / 2, bakY1 - 0.5]) kastje(mb, 'velg', { x: bakX0 - 0.03, y, z }, 0.05, 0.12, 0.08);
+  } else {
+    // Brandweer: rolluiken, reflecterende strepen, ladder op het dak.
     for (const s of [-1, 1]) {
       const z = s * (W / 2 + 0.006);
       for (let i = 0; i < 4; i++) {
-        const x0 = -L / 2 + 0.3 + i * (bakL - 0.5) / 4, x1 = x0 + (bakL - 0.5) / 4 - 0.12;
+        const x0 = bakX0 + 0.3 + i * (bakL - 0.5) / 4, x1 = x0 + (bakL - 0.5) / 4 - 0.12;
         mb.quad('velg', { x: x0, y: 1.25, z }, { x: x1, y: 1.25, z }, { x: x1, y: 2.85, z }, { x: x0, y: 2.85, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+        for (let y = 1.4; y < 2.85; y += 0.16) mb.quad('autotrim', { x: x0, y, z: z + s * 0.002 }, { x: x1, y, z: z + s * 0.002 }, { x: x1, y: y + 0.015, z: z + s * 0.002 }, { x: x0, y: y + 0.015, z: z + s * 0.002 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
       }
-      mb.quad('kenteken', { x: -L / 2, y: 1.08, z }, { x: L / 2 - 0.1, y: 1.08, z }, { x: L / 2 - 0.1, y: 1.2, z }, { x: -L / 2, y: 1.2, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
-      mb.quad('turbinewit', { x: -L / 2, y: 2.95, z }, { x: L / 2 - 2.6, y: 2.95, z }, { x: L / 2 - 2.6, y: 3.05, z }, { x: -L / 2, y: 3.05, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+      mb.quad('kenteken', { x: bakX0, y: 1.08, z }, { x: xF - 0.1, y: 1.08, z }, { x: xF - 0.1, y: 1.2, z }, { x: bakX0, y: 1.2, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+      mb.quad('turbinewit', { x: bakX0, y: 2.95, z }, { x: bakX1, y: 2.95, z }, { x: bakX1, y: 3.05, z }, { x: bakX0, y: 3.05, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
     }
     for (const z of [-0.45, 0.45]) kastje(mb, 'velg', { x: -0.6, y: 3.42, z }, L - 1.6, 0.1, 0.08);
     for (let x = -L / 2 + 1.2; x < L / 2 - 2.2; x += 0.45) kastje(mb, 'velg', { x, y: 3.42, z: 0 }, 0.05, 0.05, 0.9);
     for (const x of [-L / 2 + 1.5, L / 2 - 3]) kastje(mb, 'autotrim', { x, y: 3.25, z: 0 }, 0.2, 0.2, 1.0);
   }
-  mb.blok('autotrim', 'autotrim', { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, L - 0.4, 1.0, 0.55, 1.05, true);
-  for (const x of [L / 2 - 1.3, -L / 2 + 2.4, -L / 2 + 1.1]) for (const z of [-1.0, 1.0]) wiel(mb, x, z, 0.5, 0.32, laag, 'vracht');
-  if (!laag) {
-    for (const s of [-1, 1]) {
-      kastje(mb, 'koplamp', { x: L / 2 + 0.01, y: 0.85, z: s * 0.95 }, 0.06, 0.18, 0.35);
-      kastje(mb, 'achterlicht', { x: -L / 2 - 0.01, y: 1.2, z: s * 1.0 }, 0.06, 0.15, 0.3);
-      kastje(mb, 'autotrim', { x: L / 2 - 0.4, y: 2.55, z: s * (W / 2 + 0.25) }, 0.08, 0.45, 0.06);
-    }
-    kastje(mb, 'autotrim', { x: L / 2 + 0.01, y: 1.3, z: 0 }, 0.05, 0.55, 1.6);
-    kastje(mb, 'kenteken', { x: -L / 2 - 0.02, y: 0.9, z: 0 }, 0.03, 0.11, 0.52);
-  }
+  // Achter: onderrijbeveiliging, achterlichten, kenteken.
+  kastje(mb, 'autotrim', { x: -L / 2 + 0.1, y: 0.62, z: 0 }, 0.14, 0.14, W - 0.3);
+  for (const s of [-1, 1]) kastje(mb, 'achterlicht', { x: -L / 2 - 0.01, y: 1.2, z: s * 1.0 }, 0.06, 0.15, 0.3);
+  kastje(mb, 'kenteken', { x: -L / 2 - 0.02, y: 0.9, z: 0 }, 0.03, 0.11, 0.52);
   return mb.bouw();
 }
 
@@ -474,7 +540,7 @@ export function voertuigMesh(soort: VoertuigSoort, laag = false): MeshData {
     const m = vrachtwagen(laag, true);
     if (laag) return m;
     const mb = new MeshBouwer();
-    lichtbalk(mb, 9.6 / 2 - 1.2, 3.2, 1.9);
+    lichtbalk(mb, 9.6 / 2 - 1.2, 3.3, 1.9);
     return samenvoegen([m, mb.bouw()]);
   }
   if (soort === 'bus') return bus(laag);
@@ -502,7 +568,7 @@ export function voertuigMesh(soort: VoertuigSoort, laag = false): MeshData {
 export function zwaailichten(soort: VoertuigSoort): MeshData {
   const mb = new MeshBouwer();
   let x = 0, y = 0, breed = 1.2;
-  if (soort === 'brandweer') { x = 9.6 / 2 - 1.2; y = 3.2; breed = 1.9; }
+  if (soort === 'brandweer') { x = 9.6 / 2 - 1.2; y = 3.3; breed = 1.9; }
   else if (soort === 'politie') { const v = VORMEN.stationwagen; x = (v.c1 + v.c2) / 2 * v.L - v.L / 2; y = v.dak; }
   else if (soort === 'ambulance') { const v = VORMEN.bestelbus; x = (v.c3 - 0.5) * v.L - 0.35; y = v.dak; breed = 1.6; }
   for (const z of [-breed / 2 + 0.2, breed / 2 - 0.2]) kastje(mb, 'zwaailicht', { x, y: y + 0.15, z }, 0.28, 0.14, 0.36);
