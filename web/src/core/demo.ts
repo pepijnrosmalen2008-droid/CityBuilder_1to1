@@ -38,6 +38,19 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
     else zone = 'wonenLaag';
     w.zoneer(c, 0.1, zone);
   }
+  // Buitengebied: ontsluitingswegen naar landbouw, bos, olie en een zandwinning.
+  weg({ x: -700, z: 40 }, { x: -960, z: 70 }, 'gow');
+  weg({ x: 560, z: 60 }, { x: 640, z: 330 }, 'gow', { x: 640, z: 150 });
+  weg({ x: 120, z: -400 }, { x: 440, z: -470 }, 'gow');
+  weg({ x: 560, z: 60 }, { x: 880, z: -210 }, 'gow', { x: 760, z: 40 });
+  const e = w.economie;
+  const gebied = (soort: Parameters<typeof e.maakGebied>[0], pts: [number, number][]) => { const f = e.maakGebied(soort, pts.map(([x, z]) => ({ x, z }))); if (f) console.warn('demo gebied', soort, f); };
+  gebied('olie', [[-760, 80], [-940, 95], [-950, 260], [-770, 250]]);
+  gebied('landbouw', [[400, 110], [620, 120], [630, 330], [420, 320]]);
+  gebied('landbouw', [[660, 120], [880, 100], [900, 330], [665, 320]]);
+  gebied('bosbouw', [[200, -430], [440, -490], [460, -700], [220, -680]]);
+  gebied('delfstoffen', [[840, -230], [940, -250], [960, -420], [850, -400]]);
+
   // Groeien: de simulatie een tijd laten lopen.
   w.snelheid = 4;
   for (let t = 0; t < groeiSeconden; t += 1) w.stap(0.25);

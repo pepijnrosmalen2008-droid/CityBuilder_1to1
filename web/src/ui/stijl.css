@@ -145,3 +145,24 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
   #tip { transform: translate(-50%, -64px); }
 }
 @media (pointer: coarse) { .hulp { display: none; } }
+
+/* Begroting */
+.klikbaar { cursor: pointer; }
+.cijfer small { font-size: 11px; font-weight: 600; margin-left: 2px; } small.plus, .rij.plus b { color: #69db7c; } small.min, .rij.min b { color: #ff8787; }
+.begroting { left: 50%; right: auto; transform: translateX(-50%); width: 340px; top: 74px; }
+.begroting.open { animation: none; }
+.groep { font-size: 11px; color: var(--zacht); margin: 8px 4px 2px; }
+.rij { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 4px; }
+.rij b { font-variant-numeric: tabular-nums; font-weight: 600; }
+.rij.plus, .rij.min { border-top: 1px solid rgba(255,255,255,.1); margin-top: 4px; padding-top: 6px; font-weight: 700; }
+.schuif { display: grid; grid-template-columns: 110px 1fr 44px; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 4px; }
+.schuif input { accent-color: var(--accent); width: 100%; }
+.schuif b { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 820px) { .begroting { width: calc(100vw - 16px); top: 120px; } .cijfer small { display: none; } }
+.economie { width: 360px; top: 74px; right: 12px; max-height: calc(100vh - 290px); overflow-y: auto; }
+.keten { padding: 8px 6px; border-top: 1px solid rgba(255,255,255,.06); }
+.keten-kop { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 4px; } .keten-kop span:last-child { margin-left: auto; font-size: 11px; color: var(--zacht); }
+.stip { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.keten .rij { font-size: 12px; padding: 2px 0; } .keten .rij span { color: var(--zacht); }
+.balk { height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); margin: 3px 0 4px; overflow: hidden; } .balk div { height: 100%; border-radius: 3px; }
+@media (max-width: 820px) { .economie { width: calc(100vw - 16px); top: 120px; max-height: calc(100vh - 330px); } }

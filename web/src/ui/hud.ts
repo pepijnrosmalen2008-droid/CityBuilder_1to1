@@ -15,6 +15,8 @@ export class Hud {
   private laatsteNieuws = 0;
 
   private fpsEl!: HTMLElement;
+  private begroting!: HTMLElement;
+  private schuiversGetekend = false;
   private menu!: HTMLElement;
 
   constructor(private w: Wereld, private regelaar: KwaliteitRegelaar) {
@@ -25,7 +27,7 @@ export class Hud {
         <div class="inw"><span class="ic">${ICOON.mensen}</span><b data-v="inw"></b></div>
       </div>
       <div class="kaart cijfers paneel">
-        <div class="cijfer" title="Begroting"><span class="ic geel">${ICOON.munt}</span><b data-v="geld"></b></div>
+        <div class="cijfer klikbaar" title="Begroting" data-begroting><span class="ic geel">${ICOON.munt}</span><b data-v="geld"></b><small data-v="saldo"></small></div>
         <div class="cijfer" title="Woningen"><span class="ic">${ICOON.huis}</span><b data-v="won"></b></div>
         <div class="cijfer" title="Banen"><span class="ic">${ICOON.koffer}</span><b data-v="banen"></b></div>
         <div class="cijfer" title="Werkloosheid"><span class="ic">${ICOON.grafiek}</span><b data-v="wl"></b></div>
@@ -61,9 +63,41 @@ export class Hud {
     tekenMenu();
     this.el.querySelector<HTMLElement>('[data-instel]')!.onclick = e => { e.stopPropagation(); this.menu.classList.toggle('open'); };
     addEventListener('pointerdown', e => { if (!this.menu.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-instel]')) this.menu.classList.remove('open'); });
+    // Begrotingspaneel.
+    this.begroting = document.createElement('div');
+    this.begroting.className = 'instellingen begroting paneel';
+    document.body.appendChild(this.begroting);
+    this.el.querySelector<HTMLElement>('[data-begroting]')!.onclick = e => { e.stopPropagation(); this.begroting.classList.toggle('open'); this.tekenBegroting(); };
+    addEventListener('pointerdown', e => { if (!this.begroting.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-begroting]')) this.begroting.classList.remove('open'); });
     this.nieuwsEl = document.createElement('div');
     this.nieuwsEl.id = 'nieuws';
     document.body.appendChild(this.nieuwsEl);
+  }
+
+  private tekenBegroting() {
+    if (!this.begroting.classList.contains('open')) return;
+    const p = this.w.prognose, v = this.w.vorigeMaand;
+    const rij = (n: string, b: number, kl = '') => `<div class="rij ${kl}"><span>${n}</span><b>${b >= 0 ? '' : '−'}€ ${fmt(Math.abs(b))}</b></div>`;
+    const tabel = `<div class="menu-kop">Begroting per maand</div>
+      <div class="groep">Inkomsten</div>
+      ${rij('Woonlasten (OZB, riool, afval)', p.woonlasten)}${rij('OZB bedrijven', p.bedrijfslasten)}${rij('Gemeentefonds', p.gemeentefonds)}${p.export ? rij('Heffing op export', p.export) : ''}
+      <div class="groep">Uitgaven</div>
+      ${rij('Voorzieningen', -p.voorzieningen)}${rij('Onderhoud wegen', -p.wegen)}
+      ${rij('Saldo', p.saldo, p.saldo >= 0 ? 'plus' : 'min')}
+      ${v ? `<div class="fps">Vorige maand: ${v.saldo >= 0 ? '+' : '−'}€ ${fmt(Math.abs(v.saldo))}</div>` : ''}`;
+    if (!this.schuiversGetekend) {
+      this.begroting.innerHTML = `<div data-tabel></div>
+        <div class="menu-kop" style="margin-top:10px">Lokale lasten</div>
+        ${[['wonen', 'Woonlasten'], ['bedrijven', 'OZB bedrijven']].map(([k, n]) => `<label class="schuif"><span>${n}</span><input type="range" min="50" max="150" step="5" data-t="${k}"><b data-tw="${k}"></b></label>`).join('')}
+        <div class="fps">Hogere lasten: meer inkomsten, maar minder vraag naar wonen of bedrijven.</div>`;
+      this.begroting.querySelectorAll<HTMLInputElement>('[data-t]').forEach(inp => {
+        inp.value = String(Math.round((this.w.tarieven as unknown as Record<string, number>)[inp.dataset.t!] * 100));
+        inp.oninput = () => { (this.w.tarieven as unknown as Record<string, number>)[inp.dataset.t!] = Number(inp.value) / 100; this.w.berekenStatistiek(); this.tekenBegroting(); };
+      });
+      this.schuiversGetekend = true;
+    }
+    this.begroting.querySelector('[data-tabel]')!.innerHTML = tabel;
+    this.begroting.querySelectorAll<HTMLElement>('[data-tw]').forEach(b => (b.textContent = Math.round((this.w.tarieven as unknown as Record<string, number>)[b.dataset.tw!] * 100) + '%'));
   }
 
   fps(r: KwaliteitRegelaar) {
@@ -77,6 +111,10 @@ export class Hud {
     this.v.datum.textContent = d.toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
     this.v.inw.textContent = fmt(s.inwoners);
     this.v.geld.textContent = geldFmt(w.geld);
+    const sd = w.prognose.saldo;
+    this.v.saldo.textContent = `${sd >= 0 ? '+' : '−'}${geldFmt(Math.abs(sd)).replace('€ ', '€')}/mnd`;
+    this.v.saldo.className = sd >= 0 ? 'plus' : 'min';
+    this.tekenBegroting();
     this.v.won.textContent = fmt(s.woningen);
     this.v.banen.textContent = fmt(s.banen);
     this.v.wl.textContent = (s.werkloosheid * 100).toFixed(1) + '%';

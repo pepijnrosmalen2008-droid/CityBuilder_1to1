@@ -2,6 +2,14 @@ import { Gereedschap, Modus } from '../core/gereedschap';
 import { WEGTYPEN, WEGTYPE_VOLGORDE, WegTypeId, strookGrenzen, totaleBreedte } from '../core/wegen/typen';
 import { ZONES, Zone } from '../core/zones';
 import { ICOON } from './iconen';
+import { GRONDSTOFFEN, Grondstof } from '../core/economie';
+
+const GRONDSTOF_ICOON: Record<Grondstof, string> = {
+  landbouw: '<svg viewBox="0 0 86 46"><path d="M14 34h58" stroke="#8a6b3c" stroke-width="3"/><path d="M20 34c0-8 3-14 6-18M30 34c0-9 2-15 5-20M40 34c0-8 3-15 6-19M50 34c0-9 2-15 5-20M60 34c0-8 3-14 6-18" stroke="#c0d36b" stroke-width="2.4" fill="none"/><circle cx="26" cy="15" r="2.6" fill="#e9c46a"/><circle cx="35" cy="13" r="2.6" fill="#e9c46a"/><circle cx="46" cy="14" r="2.6" fill="#e9c46a"/><circle cx="55" cy="13" r="2.6" fill="#e9c46a"/><circle cx="66" cy="15" r="2.6" fill="#e9c46a"/></svg>',
+  bosbouw: '<svg viewBox="0 0 86 46"><path d="M30 6 18 30h24zM56 10 45 32h22z" fill="#2f9e44"/><path d="M30 30v8M56 32v6" stroke="#8a6b3c" stroke-width="3"/><rect x="62" y="34" width="16" height="4" rx="2" fill="#a0784a"/><rect x="64" y="29" width="12" height="4" rx="2" fill="#a0784a"/></svg>',
+  olie: '<svg viewBox="0 0 86 46"><path d="M18 38h40M28 38l8-22 8 22" stroke="#868e96" stroke-width="2.6" fill="none"/><path d="M14 18l46-6" stroke="#ffd43b" stroke-width="4"/><path d="M60 10v10" stroke="#ffd43b" stroke-width="5"/><rect x="66" y="22" width="12" height="16" rx="3" fill="#dee2e6"/></svg>',
+  delfstoffen: '<svg viewBox="0 0 86 46"><path d="M10 38l14-16 12 16z" fill="#d9a066"/><path d="M30 38l14-12 12 12z" fill="#adb5bd"/><path d="M52 38l12-18 14 18z" fill="#d9a066"/><path d="M8 38h72" stroke="#6c757d" stroke-width="2"/></svg>',
+};
 
 const STROOKKLEUR: Record<string, string> = { stoep: '#9aa0a6', fiets: '#a8473b', auto: '#3b3f45', gedeeld: '#7b4a3a', bus: '#7a3f35', tram: '#55575c', berm: '#5f8d3e', middenberm: '#5f8d3e', vluchtstrook: '#4a4e55' };
 
@@ -33,6 +41,9 @@ function zoneIcoon(z: Zone, kleur: string): string {
 export class Werkbalk {
   private el = document.getElementById('werkbalk')!;
 
+  /** Wordt aangeroepen om het economiepaneel te openen. */
+  opEconomie: () => void = () => {};
+
   constructor(private g: Gereedschap, private opZoneModus: (aan: boolean) => void) {
     this.el.className = 'paneel';
     addEventListener('keydown', e => {
@@ -40,6 +51,7 @@ export class Werkbalk {
       const k = e.key.toLowerCase();
       if (k === 'escape') { if (!this.g.terug()) this.kies('kijk'); }
       if (k === 'z') this.kies('zone');
+      if (k === 'g') this.kies('gebied');
       if (k === 'x') this.kies('weg');
       if (k === 'u') this.kies('opwaarderen');
       if (k === 'b') this.kies('sloop');
@@ -47,6 +59,7 @@ export class Werkbalk {
       if (/^[1-9]$/.test(k)) {
         const i = Number(k) - 1;
         if (this.g.modus === 'zone' && ZONES[i]) { this.g.zone = ZONES[i].id; this.teken(); }
+        else if (this.g.modus === 'gebied' && i < 4) { this.g.grondstof = (Object.keys(GRONDSTOFFEN) as Grondstof[])[i]; this.teken(); }
         else if ((this.g.modus === 'weg' || this.g.modus === 'opwaarderen') && WEGTYPE_VOLGORDE[i]) { this.g.wegtype = WEGTYPE_VOLGORDE[i]; this.teken(); }
       }
       if ((k === '+' || k === '=') && this.g.modus === 'zone') { this.g.penseel = Math.min(80, this.g.penseel + 4); this.teken(); }
@@ -59,7 +72,7 @@ export class Werkbalk {
 
   teken() {
     const g = this.g;
-    const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog };
+    const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, gebied: ICOON.fabriek, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog };
     const tab = (m: Modus, naam: string, toets: string) => `<button class="knop tab ${g.modus === m ? 'aan' : ''}" data-m="${m}"><span class="ic">${ic[m]}</span><span class="tab-tekst">${naam}</span><span class="toets">${toets}</span></button>`;
     let items = '', opties = '';
     if (g.modus === 'weg' || g.modus === 'opwaarderen') {
@@ -68,16 +81,21 @@ export class Werkbalk {
     } else if (g.modus === 'zone') {
       items = ZONES.map(z => `<div class="item ${g.zone === z.id ? 'aan' : ''}" data-z="${z.id}">${zoneIcoon(z.id, z.kleur)}<div class="item-naam">${z.naam}</div><div class="item-sub">${z.toets}</div></div>`).join('');
       opties = `<span>Penseel</span><button class="knop" data-p="-4">−</button><span style="color:#e9eef5;font-weight:600">${g.penseel} m</span><button class="knop" data-p="4">+</button>`;
+    } else if (g.modus === 'gebied') {
+      items = (Object.values(GRONDSTOFFEN)).map((x, i) => `<div class="item ${g.grondstof === x.id ? 'aan' : ''}" data-gs="${x.id}">${GRONDSTOF_ICOON[x.id]}<div class="item-naam">${x.naam}</div><div class="item-sub">${i + 1} · ${x.product.toLowerCase()}</div></div>`).join('');
+      opties = `<button class="knop" data-eco>Overzicht economie</button>`;
     } else if (g.modus === 'sloop') {
       items = `<div class="item-sub" style="padding:14px">Klik op een weg of gebouw om het te slopen. Je krijgt een kwart van de wegkosten terug.</div>`;
     } else {
       items = `<div class="item-sub" style="padding:14px">Kies een gereedschap. Camera: WASD of middelste muisknop = schuiven, rechts slepen of Q/E = draaien, R/F = kantelen, scrollen = zoomen. Spatie = pauze.</div>`;
     }
-    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('kijk', 'Kijken', 'Esc')}<div class="opties">${opties}</div></div><div class="items">${items}</div>`;
+    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('gebied', 'Economie', 'G')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('kijk', 'Kijken', 'Esc')}<div class="opties">${opties}</div></div><div class="items">${items}</div>`;
     this.el.querySelectorAll<HTMLElement>('[data-m]').forEach(e => (e.onclick = () => this.kies(e.dataset.m as Modus)));
     this.el.querySelectorAll<HTMLElement>('[data-w]').forEach(e => (e.onclick = () => { g.wegtype = e.dataset.w as WegTypeId; this.teken(); }));
     this.el.querySelectorAll<HTMLElement>('[data-z]').forEach(e => (e.onclick = () => { g.zone = e.dataset.z as Zone; this.teken(); }));
     this.el.querySelectorAll<HTMLElement>('[data-b]').forEach(e => (e.onclick = () => { g.bocht = e.dataset.b === '1'; g.annuleer(); this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-gs]').forEach(e => (e.onclick = () => { g.grondstof = e.dataset.gs as Grondstof; g.annuleer(); this.teken(); }));
+    this.el.querySelector<HTMLElement>('[data-eco]')?.addEventListener('click', () => this.opEconomie());
     this.el.querySelectorAll<HTMLElement>('[data-p]').forEach(e => (e.onclick = () => { g.penseel = Math.max(6, Math.min(80, g.penseel + Number(e.dataset.p))); this.teken(); }));
   }
 

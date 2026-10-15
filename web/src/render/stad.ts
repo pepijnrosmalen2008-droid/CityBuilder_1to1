@@ -10,6 +10,7 @@ import { Materialen } from './materialen';
 import { naarMesh, weg } from './meshes';
 import { samenvoegen, MeshData } from '../core/geom/mesh';
 import { PropLaag } from './props';
+import { EconomieWeergave } from './economie';
 
 const TEGEL = 256;
 const tegelVan = (x: number, z: number) => (Math.floor(x / TEGEL) + 100) * 1000 + (Math.floor(z / TEGEL) + 100);
@@ -19,7 +20,7 @@ const tegelVan = (x: number, z: number) => (Math.floor(x / TEGEL) + 100) * 1000 
  * groep per materiaal. Duizenden losse meshes kosten duizenden tekenopdrachten; zo blijven er
  * per vak een paar tientallen over.
  */
-class TegelLaag {
+export class TegelLaag {
   groep = new THREE.Group();
   private bron = new Map<string, { tegel: number; data: MeshData }>();
   private inhoud = new Map<number, Set<string>>();
@@ -60,6 +61,7 @@ export class StadWeergave {
   groep = new THREE.Group();
   tegels: TegelLaag;
   props: PropLaag;
+  economie: EconomieWeergave;
   zones: ZoneLaag;
   private bouwRij = new Set<number>();
   private segRij = new Set<number>();
@@ -69,7 +71,8 @@ export class StadWeergave {
     this.props = new PropLaag(mats);
     this.zones = new ZoneLaag(w);
     this.tegels = new TegelLaag(mats);
-    this.groep.add(this.props.groep, this.zones.mesh, this.tegels.groep);
+    this.economie = new EconomieWeergave(w, this.tegels, this.props);
+    this.groep.add(this.props.groep, this.zones.mesh, this.tegels.groep, this.economie.groep);
     for (const v of w.bomen.alleVakken()) this.natuur(v);
   }
 
@@ -118,6 +121,7 @@ export class StadWeergave {
       this.tegels.zet(`geb:${id}`, g.centrum.x, g.centrum.z, r.mesh);
       this.props.zet(`geb:${id}`, r.props);
     }
+    this.economie.werkBij();
     this.tegels.bouw(budgetMs > 100 ? 1e9 : 3);
     this.zones.werkBij();
   }

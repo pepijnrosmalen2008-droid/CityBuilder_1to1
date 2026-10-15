@@ -71,7 +71,24 @@ export class VoorbeeldLaag {
         this.ring.visible = true;
         break;
       }
+      case 'gebied': {
+        const pts = v.dicht ? [...v.punten, v.punten[0]] : v.punten;
+        if (pts.length > 1) {
+          this.lintLangs(pts.map(q => ({ ...q, y: Math.max(q.y, 0) })), 2, 0.8);
+          this.lintMat.color.set(v.kleur);
+          this.lint.visible = true;
+        }
+        const m = new THREE.Matrix4();
+        const n = Math.min(4, v.punten.length - 1);
+        for (let i = 0; i < n; i++) this.stippen.setMatrixAt(i, m.makeTranslation(v.punten[i].x, Math.max(v.punten[i].y, 0) + 0.6, v.punten[i].z));
+        this.stippen.count = n; this.stippen.instanceMatrix.needsUpdate = true; this.stippen.visible = n > 0;
+        break;
+      }
       case 'markeer': {
+        if (v.gebied !== undefined) {
+          const gb = this.w.economie.gebieden.get(v.gebied);
+          if (gb) { this.lintLangs([...gb.poly, gb.poly[0]].map(q => ({ x: q.x, y: this.w.terrein.hoogte(q.x, q.z), z: q.z })), 3, 0.8); this.lintMat.color.set(v.kleur); this.lint.visible = true; }
+        }
         if (v.segment !== undefined) {
           const seg = this.w.net.segmenten.get(v.segment);
           if (seg) {

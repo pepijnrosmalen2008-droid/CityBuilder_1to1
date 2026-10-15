@@ -514,3 +514,76 @@ export function waterNormaal(): TexData {
   });
   return d.naarTex(6, false);
 }
+
+// ═══════ AKKERS ═══════
+
+/** Gewas op een akker; v loopt dwars op de rijen. Eén herhaling = 8 × 8 m. */
+export function akker(gewas: string): TexData {
+  const N = 256, d = new Doek(N, N);
+  const s = 1200 + gewas.length * 7;
+  const tulpKleuren: C[] = [K(0.80, 0.08, 0.10), K(0.95, 0.80, 0.10), K(0.92, 0.45, 0.60), K(0.45, 0.15, 0.55), K(0.95, 0.94, 0.90), K(0.95, 0.45, 0.08)];
+  loop(d, (x, y, u, v) => {
+    const mv = v * 8, mu = u * 8;
+    const ruis = fbm(u, v, 8, 3, s), korrel = hash01(x, y, s + 1);
+    const grond = mix(K(0.30, 0.22, 0.15), K(0.42, 0.32, 0.22), fbm(u, v, 16, 2, s + 2));
+    let k: C, h = 0.5;
+    switch (gewas) {
+      case 'tarwe': {
+        const rij = 0.5 + 0.5 * Math.sin(mv / 0.15 * Math.PI * 2);
+        k = mix(K(0.66, 0.58, 0.30), K(0.80, 0.70, 0.38), ruis * 0.7 + rij * 0.3);
+        k = mul(k, 0.85 + 0.25 * korrel); h = 0.4 + 0.4 * korrel; break;
+      }
+      case 'mais': {
+        const f = frac(mv / 0.75), plant = glad01(0.15, 0.3, f) * (1 - glad01(0.7, 0.85, f));
+        const blad = mix(K(0.17, 0.32, 0.08), K(0.30, 0.48, 0.14), ruis);
+        k = mix(grond, mul(blad, 0.8 + 0.4 * korrel), 0.35 + 0.65 * plant); h = plant; break;
+      }
+      case 'aardappel': {
+        const f = frac(mv / 0.75), rug = Math.sin(f * Math.PI);
+        const loof = mix(K(0.12, 0.24, 0.07), K(0.24, 0.38, 0.12), ruis);
+        k = mix(grond, mul(loof, 0.8 + 0.4 * korrel), glad01(0.3, 0.7, rug)); h = rug; break;
+      }
+      case 'gras': {
+        const maaibaan = frac(mv / 4) < 0.5 ? 1 : 0.9;
+        k = mul(mix(K(0.22, 0.38, 0.12), K(0.36, 0.52, 0.18), ruis), (0.85 + 0.25 * korrel) * maaibaan); h = korrel; break;
+      }
+      case 'tulpen': {
+        const band = Math.floor(mv / 2), f = frac(mv / 0.4);
+        const kleur = tulpKleuren[wikkel(band + Math.floor(hash01(band, 0, s) * 3), tulpKleuren.length)];
+        const bloem = glad01(0.2, 0.35, f) * (1 - glad01(0.65, 0.8, f)) * (0.7 + 0.3 * hash01(x >> 1, y >> 1, s + 3));
+        const blad = mix(K(0.18, 0.34, 0.12), K(0.28, 0.44, 0.16), ruis);
+        k = mix(mix(grond, blad, 0.6), kleur, bloem * 0.9); h = bloem; break;
+      }
+      default: {
+        const voor = 0.5 + 0.5 * Math.sin((mv + ruis * 0.3) / 0.35 * Math.PI * 2);
+        k = mul(grond, 0.8 + 0.3 * voor + 0.1 * korrel); h = voor;
+      }
+    }
+    void mu;
+    d.zet(x, y, k, h, 0.08);
+  });
+  return d.naarTex(3);
+}
+
+/** Sloot: donker water met kroos. */
+export function sloot(): TexData {
+  const d = new Doek(128, 128);
+  loop(d, (x, y, u, v) => {
+    const kroos = glad01(0.55, 0.7, fbm(u, v, 6, 3, 1301));
+    const k = mix(K(0.10, 0.14, 0.12), K(0.35, 0.48, 0.15), kroos * 0.8);
+    d.zet(x, y, mul(k, 0.9 + 0.15 * hash01(x, y, 1302)), kroos * 0.6, 0.9 - kroos * 0.6);
+  });
+  return d.naarTex(1.5);
+}
+
+/** Grind: ronde steentjes in grijs-beige. */
+export function grind(): TexData {
+  const d = new Doek(256, 256);
+  loop(d, (x, y, u, v) => {
+    const w = worley(u, v, 48, 1401);
+    const steen = mix(K(0.52, 0.48, 0.42), K(0.72, 0.66, 0.56), w.id);
+    const k = mix(K(0.28, 0.25, 0.22), steen, glad01(0, 0.2, w.f2 - w.f1));
+    d.zet(x, y, mul(k, 0.9 + 0.15 * hash01(x, y, 1402)), 1 - w.f1, 0.15);
+  });
+  return d.naarTex(3);
+}

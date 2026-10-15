@@ -17,13 +17,14 @@ npm run dev        # http://localhost:5173
 - `?shot` – fotomodus: bouwt alles op en rendert één frame (voor geautomatiseerde screenshots).
 
 `npm run build` maakt `dist/`. Bij een push naar `main` publiceert `.github/workflows/web-pages.yml`
-de site op GitHub Pages (zet in de repo-instellingen *Pages → Source* op *GitHub Actions*).
+de site op GitHub Pages: https://pepijnrosmalen2008-droid.github.io/CityBuilder_1to1/ (slagio.nl/stad verwijst
+hierheen).
 
 ## Besturing
 
 | Toets / muis | Functie |
 |---|---|
-| X / Z / U / B / Esc | Wegen / Zones / Opwaarderen / Slopen / Kijken |
+| X / Z / G / U / B / Esc | Wegen / Zones / Economie (gebieden) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
 | C | Recht of bocht |
 | Linkerklik | Beginpunt, (bochtpunt), eindpunt; zones: slepen met het penseel |
@@ -34,6 +35,7 @@ de site op GitHub Pages (zet in de repo-instellingen *Pages → Source* op *GitH
 | R/F | Kantelen |
 | Scrollen | Zoomen (tot op straatniveau) |
 | Spatie | Pauze |
+| Tikken / slepen / knijpen | Op een aanraakscherm: klikken / schuiven (in Zones: schilderen) / zoomen; twee vingers draaien en kantelen |
 
 ## Opbouw: klaar om naar een andere engine te verhuizen
 
@@ -48,6 +50,9 @@ src/core/      Engine-onafhankelijk (puur TypeScript, geen three.js, geen DOM)
                            splitsen op kruisingen, hoogteprofiel, bruggen)
   wereld.ts                Kavels, zones, gebouwen, simulatie (groei, bevolking, vraag), opslaan
   zones.ts                 Zones, gebouwvormen, kengetallen (m² per woning/baan, huishoudens)
+  percelen.ts              Gevelstroken en percelen (zonering zonder gaten)
+  begroting.ts             Gemeentebegroting (woonlasten, OZB, Gemeentefonds, voorzieningen, wegen)
+  economie.ts              Grondstofgebieden, winningsbedrijven en productieketens
   bomen.ts                 Natuurbomen per vak
   gereedschap.ts           Wegen tekenen, zoneren, slopen, opwaarderen (abstracte invoer)
   demo.ts                  Voorbeeldstad

@@ -13,6 +13,7 @@ import { VoorbeeldLaag } from './render/voorbeeld';
 import { Hud } from './ui/hud';
 import { Werkbalk } from './ui/werkbalk';
 import { StraatLabels } from './ui/labels';
+import { EconomiePaneel } from './ui/economiepaneel';
 
 const param = new URLSearchParams(location.search);
 const laadTekst = document.getElementById('laad-tekst')!, laadBalk = document.getElementById('laad-voortgang')!;
@@ -56,7 +57,9 @@ async function start() {
   sfeer.scene.add(voorbeeld.groep);
   const hud = new Hud(wereld, regelaar);
   const labels = new StraatLabels(wereld, sfeer.camera);
-  new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; });
+  const werkbalk = new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; });
+  const ecoPaneel = new EconomiePaneel(wereld);
+  werkbalk.opEconomie = () => ecoPaneel.wissel();
 
   // Muis → grondpunt.
   const tip = document.getElementById('tip')!, melding = document.getElementById('melding')!;
@@ -108,7 +111,7 @@ async function start() {
   // Knop "Klaar" tijdens het tekenen van een weg (vooral voor aanraakschermen).
   const klaar = document.createElement('button');
   klaar.id = 'klaarknop'; klaar.className = 'knop'; klaar.textContent = 'Klaar met tekenen';
-  klaar.onclick = () => gereedschap.terug();
+  klaar.onclick = () => { if (gereedschap.modus === 'gebied') gereedschap.rondGebiedAf(); else gereedschap.terug(); };
   document.body.appendChild(klaar);
 
   // Hulp en voorbeeldstad.
@@ -168,16 +171,18 @@ async function start() {
     if (stad.props.werkBij(sfeer.camera.position, dt)) sfeer.schaduwVuil();
     const vb = gereedschap.voorbeeld();
     voorbeeld.toon(vb);
-    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' ? vb.tekst : '';
+    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' ? vb.tekst : '';
     tip.style.display = tekst && grond ? 'block' : 'none';
     tip.textContent = tekst;
     tip.className = vb.soort === 'weg' && !vb.geldig ? 'fout' : '';
     tip.style.left = muis.x + 'px'; tip.style.top = muis.y + 'px';
     melding.style.display = gereedschap.melding ? 'block' : 'none';
     klaar.style.display = gereedschap.tekent ? 'block' : 'none';
+    klaar.textContent = gereedschap.modus === 'gebied' ? 'Gebied afronden' : 'Klaar met tekenen';
+    stad.economie.toonKaart(gereedschap.modus === 'gebied' ? gereedschap.grondstof : null);
     melding.textContent = gereedschap.melding;
     hudKlok += dt;
-    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); }
+    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); ecoPaneel.werkBij(); }
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.render();
     labels.werkBij(dt, camera.afstand);

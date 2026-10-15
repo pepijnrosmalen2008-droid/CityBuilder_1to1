@@ -1,0 +1,13 @@
+import { Wereld } from '../../src/core/wereld';
+import { bouwVoorbeeldstad } from '../../src/core/demo';
+const w = new Wereld(1);
+const t0 = Date.now();
+bouwVoorbeeldstad(w, Number(process.argv[2] ?? 1800));
+console.log('opbouw', Date.now() - t0, 'ms');
+const e = w.economie;
+for (const g of e.gebieden.values()) console.log('gebied', g.id, g.soort, Math.round(g.ha), 'ha, rijk', g.rijk.toFixed(2), 'velden', g.velden.length, 'bedrijven', [...e.bedrijven.values()].filter(b => b.gebied === g.id).length);
+for (const k of Object.values(e.ketens)) console.log(k.soort, 'prod', Math.round(k.productie), 'verwerkt', Math.round(k.verwerkt), 'banen', k.banenWinning, '/', Math.round(k.banenVerwerking), 'waarde €', Math.round(k.waarde));
+const hallen = [...w.gebouwen.values()].filter(g => g.vorm === 'bedrijfshal');
+console.log('bedrijfshallen', hallen.length, 'met specialisatie', hallen.filter(h => h.specialisatie).map(h => h.specialisatie).join(','));
+console.log('inwoners', w.stat.inwoners, 'banen', w.stat.banen, 'werkloos', (w.stat.werkloosheid * 100).toFixed(1) + '%', 'saldo/mnd', Math.round(w.prognose.saldo), 'geld', Math.round(w.geld));
+console.log('nieuws:', w.nieuws.slice(-6).map(n => n.tekst).join(' | '));

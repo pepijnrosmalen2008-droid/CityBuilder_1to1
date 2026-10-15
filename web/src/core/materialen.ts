@@ -58,6 +58,12 @@ const VAST: Record<string, MatDef> = {
   steiger: D({ tex: 'steiger', meter: 2, alfa: 'knip', dubbelzijdig: true }),
   hekwerk: D({ tex: 'hekwerk', meter: 0, alfa: 'knip', dubbelzijdig: true }),
   schors: D({ tex: 'schors', meter: 1, normaal: 1 }),
+  sloot: D({ tex: 'sloot', meter: 3, ruwheid: 0.3 }),
+  grind: D({ tex: 'grind', meter: 3, normaal: 1 }),
+  zandberg: D({ tex: 'zand', meter: 6, normaal: 1 }),
+  silo: D({ kleur: [0.80, 0.82, 0.84], ruwheid: 0.35, metaal: 0.7 }),
+  tank: D({ kleur: [0.92, 0.92, 0.9], ruwheid: 0.4, metaal: 0.3 }),
+  plas: D({ kleur: [0.12, 0.26, 0.30], ruwheid: 0.05, metaal: 0.2 }),
   schorsBerk: D({ tex: 'schorsBerk', meter: 1, normaal: 0.8 }),
 };
 
@@ -74,6 +80,7 @@ export function materiaal(sleutel: string): MatDef {
     case 'luifel': return D({ tex: sleutel, meter: 0.6, dubbelzijdig: true });
     case 'golfplaat': return D({ tex: sleutel, meter: 4, normaal: 1 });
     case 'deur': return D({ kleur: DEUR[Number(arg) % DEUR.length], ruwheid: 0.4 });
+    case 'gewas': return D({ tex: sleutel, meter: 8, normaal: 0.8, schaduw: false });
     case 'blad': return D({ tex: sleutel, meter: 0, alfa: 'knip', dubbelzijdig: true, normaal: 0.6, instantieTint: true });
     case 'bladkern': return D({ tex: sleutel, meter: 3, instantieTint: true });
     default: return D({ kleur: [1, 0, 1] });

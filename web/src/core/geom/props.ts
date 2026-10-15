@@ -13,7 +13,7 @@ const VORM: Record<string, BoomVorm> = {
   plataan: { stam: 5.5, stamR: 0.42, kroonY: 11, kroonR: 5.8, kroonH: 5.8, trossen: 28, kaart: 3.8, naald: false, berk: false },
 };
 
-function cilinder(mb: MeshBouwer, mat: string, a: V3, b: V3, ra: number, rb: number, zijden = 7) {
+export function cilinder(mb: MeshBouwer, mat: string, a: V3, b: V3, ra: number, rb: number, zijden = 7) {
   const as = norm3(sub3(b, a));
   const t = Math.abs(as.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
   // Twee loodrechte vectoren.
@@ -149,8 +149,32 @@ export function lantaarnMesh(dubbel: boolean): MeshData {
 
 export const isBoom = (soort: string) => soort in VORM;
 
+/** Jaknikker (oliepomp): voet, bok, balans met paardenkop en een contragewicht. */
+export function jaknikkerMesh(): MeshData {
+  const mb = new MeshBouwer();
+  const X = { x: 1, y: 0, z: 0 }, Z = { x: 0, y: 0, z: 1 };
+  mb.blok('beton', 'beton', { x: 0, y: 0, z: 0 }, X, Z, 9, 3, -0.3, 0.5);
+  // Bok (A-frame).
+  cilinder(mb, 'metaal', { x: 0, y: 0.5, z: -1.1 }, { x: 0.3, y: 5.2, z: 0 }, 0.12, 0.1, 5);
+  cilinder(mb, 'metaal', { x: 0, y: 0.5, z: 1.1 }, { x: 0.3, y: 5.2, z: 0 }, 0.12, 0.1, 5);
+  cilinder(mb, 'metaal', { x: 1.6, y: 0.5, z: 0 }, { x: 0.3, y: 5.2, z: 0 }, 0.12, 0.1, 5);
+  // Balans, licht schuin.
+  mb.blok('kraan', 'kraan', { x: 0.2, y: 0, z: 0 }, { x: 0.996, y: 0, z: 0 }, Z, 7.2, 0.5, 5.1, 5.7);
+  // Paardenkop.
+  mb.blok('kraan', 'kraan', { x: 3.9, y: 0, z: 0 }, X, Z, 0.8, 0.7, 3.9, 6.1);
+  cilinder(mb, 'paal', { x: 4.3, y: 0.5, z: 0 }, { x: 4.3, y: 4.0, z: 0 }, 0.05, 0.05, 4);
+  // Kruk en contragewicht met motor.
+  mb.blok('metaal', 'metaal', { x: -3.2, y: 0, z: 0 }, X, Z, 1.2, 1.8, 0.5, 2.6);
+  mb.blok('trimDonker', 'trimDonker', { x: -3.2, y: 0, z: 0 }, X, Z, 1.6, 0.6, 1.6, 3.2);
+  cilinder(mb, 'metaal', { x: -3.1, y: 3.1, z: 0 }, { x: -2.7, y: 5.3, z: 0 }, 0.1, 0.1, 4);
+  // Putkop.
+  cilinder(mb, 'metaal', { x: 4.3, y: -0.2, z: 0 }, { x: 4.3, y: 0.9, z: 0 }, 0.25, 0.25, 6);
+  return mb.bouw();
+}
+
 export function propMesh(soort: string, variant: number, niveau = 0): MeshData {
   if (soort === 'lantaarn') return lantaarnMesh(false);
   if (soort === 'lantaarnDubbel') return lantaarnMesh(true);
+  if (soort === 'jaknikker') return jaknikkerMesh();
   return boomMesh(soort, variant, niveau);
 }

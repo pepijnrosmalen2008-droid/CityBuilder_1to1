@@ -39,6 +39,9 @@ export function maakTextuur(sleutel: string): TexData {
     case 'blad': return G.bladkaart(arg);
     case 'bladkern': return G.bladkern(arg);
     case 'water': return G.waterNormaal();
+    case 'gewas': return G.akker(arg);
+    case 'sloot': return G.sloot();
+    case 'grind': return G.grind();
     default: throw new Error(`Onbekende textuur: ${sleutel}`);
   }
 }

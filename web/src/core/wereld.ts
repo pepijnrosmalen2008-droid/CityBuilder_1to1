@@ -9,6 +9,8 @@ import { Strook, maakStrook, band, opStrook, verdeel, stroomSleutel, STROOK_DIEP
 import { afstandTotLijn, getekendOppervlak, zwaartepunt } from './poly';
 import { puntInPolygoon } from './math';
 import { Namen, stadsnaam } from './namen';
+import { Economie, Grondstof } from './economie';
+import { Tarieven, Maandstaat, maandstaat, wegOppervlak, tariefEffect } from './begroting';
 
 /** Perceel op een gevelstrook: van booglengte s0 tot s1 langs de straat, zo diep als de strook. */
 export interface Kavel {
@@ -42,6 +44,8 @@ export interface Gebouw {
   lagen: Laag[]; eenheden: number; seed: number;
   voortgang: number; klaar: boolean; bezetting: number;
   cap: Capaciteit;
+  /** Bedrijfshal die lokale grondstoffen verwerkt. */
+  specialisatie?: Grondstof;
 }
 
 export interface Statistiek {
@@ -90,6 +94,15 @@ export class Wereld {
   private segBox = new Map<number, Box>();
   naam: string;
   namen: Namen;
+  tarieven: Tarieven = { wonen: 1, bedrijven: 1 };
+  /** Laatste afgerekende maand en de lopende prognose. */
+  vorigeMaand: Maandstaat | null = null;
+  prognose: Maandstaat = maandstaat({ wonen: 1, bedrijven: 1 }, 0, 0, 0, 0, 0);
+  /** Exportopbrengst-heffing die de economie deze maand opbracht (gezet door economie.ts). */
+  exportHeffing = 0;
+  private maandKlok = 0;
+  /** Extra vraag naar industrie door lokale grondstoffen (gezet door economie.ts). */
+  industrieBonus = 0;
   nieuws: Nieuws[] = [];
   private nieuwsId = 1;
   private gemeld = new Set<string>();
@@ -106,7 +119,9 @@ export class Wereld {
     this.naam = stadsnaam(seed);
     this.namen = new Namen(seed);
     this.net.naamGever = t => this.namen.straat(t);
+    this.economie = new Economie(this);
   }
+  economie: Economie;
 
   meld(tekst: string, soort: Nieuws['soort']) {
     this.nieuws.push({ id: this.nieuwsId++, dag: this.dagen, tekst, soort });
@@ -415,6 +430,7 @@ export class Wereld {
     }
     const g = this.ontwerp(reeks, Math.floor(this.rng.next() * 2 ** 31));
     if (!g) return;
+    if (g.vorm === 'bedrijfshal') g.specialisatie = this.economie.kiesSpecialisatie() ?? undefined;
     this.gebouwen.set(g.id, g);
     for (const x of reeks) { x.gebouw = g.id; this.events.push({ soort: 'kavel~', id: x.id }); }
     this.bomen.wisInPolygoon(g.perceel, 1);
@@ -497,6 +513,17 @@ export class Wereld {
     this.statKlok += dtEcht;
     if (this.statKlok >= 0.5) { this.statKlok = 0; this.berekenStatistiek(); }
 
+    this.economie.stap(dt);
+
+    // Maandafrekening (30 dagen).
+    this.maandKlok += dt / SECONDEN_PER_DAG;
+    if (this.maandKlok >= 30) {
+      this.maandKlok -= 30;
+      this.vorigeMaand = this.prognose;
+      this.geld += this.prognose.saldo;
+      if (this.prognose.saldo < 0 && this.geld < 0) this.meld(`Begrotingstekort: € ${Math.round(-this.prognose.saldo).toLocaleString('nl-NL')} per maand. Verhoog de lasten of bouw zuiniger.`, 'waarschuwing');
+    }
+
     // Nieuws: opleveringen per straat bundelen, mijlpalen, waarschuwingen.
     this.nieuwsKlok += dt;
     if (this.nieuwsKlok > 30) {
@@ -538,6 +565,9 @@ export class Wereld {
       inw += c.bewoners * b; won += c.woningen;
       d += c.banen.detailhandel * b; h += c.banen.horeca * b; kk += c.banen.kantoor * b; ii += c.banen.industrie * b; o += c.banen.overig * b;
     }
+    let winning = 0;
+    for (const b of this.economie.bedrijven.values()) if (b.klaar) winning += b.banen;
+    ii += winning;
     const banen = d + h + kk + ii + o;
     const beroeps = inw * KENGETALLEN.beroepsbevolking;
     const werkenden = Math.min(beroeps, banen);
@@ -545,12 +575,16 @@ export class Wereld {
     this.stat = { inwoners: Math.round(inw), woningen: won, beroeps: Math.round(beroeps), werkenden: Math.round(werkenden), werkloosheid: wl,
       banen: Math.round(banen), banenD: Math.round(d), banenH: Math.round(h), banenK: Math.round(kk), banenI: Math.round(ii), banenO: Math.round(o), gebouwenKlaar: klaar, inAanbouw: bouw };
     const doelD = inw / 12, doelK = beroeps * 0.3, doelI = beroeps * 0.15;
+    const tw = tariefEffect(this.tarieven.wonen), tb = tariefEffect(this.tarieven.bedrijven);
     this.vraag = {
-      wonen: saturate(0.55 + (banen - beroeps) / Math.max(150, beroeps + banen) * 1.2 - wl * 1.5),
-      detailhandel: saturate(0.1 + (doelD - (d + h)) / Math.max(10, doelD)),
-      kantoor: saturate(0.05 + (doelK - kk) / Math.max(25, doelK) + wl),
-      industrie: saturate(0.15 + (doelI - ii) / Math.max(25, doelI) + wl),
+      wonen: saturate(0.55 + (banen - beroeps) / Math.max(150, beroeps + banen) * 1.2 - wl * 1.5 + tw),
+      detailhandel: saturate(0.1 + (doelD - (d + h)) / Math.max(10, doelD) + tb),
+      kantoor: saturate(0.05 + (doelK - kk) / Math.max(25, doelK) + wl + tb),
+      industrie: saturate(0.15 + (doelI - ii) / Math.max(25, doelI) + wl + tb + this.industrieBonus),
     };
+    let m2 = 0;
+    for (const sg of this.net.segmenten.values()) m2 += wegOppervlak(sg.type, sg.lengte);
+    this.prognose = maandstaat(this.tarieven, won, Math.round(banen), Math.round(inw), m2, this.exportHeffing);
   }
 
   // ─── Opslaan (engine-onafhankelijk JSON-formaat) ────────────────────────────
