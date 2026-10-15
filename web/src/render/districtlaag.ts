@@ -13,6 +13,8 @@ export class DistrictLaag {
   private aan = false;
   private labels = document.createElement('div');
   private pool = new Map<number, HTMLElement>();
+  private middens = new Map<number, { x: number; z: number } | null>();
+  private middenVersie = -1;
   private mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 });
 
   constructor(private w: Wereld, private cam: THREE.PerspectiveCamera) {
@@ -62,8 +64,9 @@ export class DistrictLaag {
     const zicht = this.aan || afstand > 320;
     const v = new THREE.Vector3();
     const gezien = new Set<number>();
+    if (this.middenVersie !== ds.versie) { this.middenVersie = ds.versie; this.middens = new Map([...ds.lijst.keys()].map(id => [id, ds.midden(id)])); }
     if (zicht) for (const d of ds.lijst.values()) {
-      const m = ds.midden(d.id);
+      const m = this.middens.get(d.id);
       if (!m) continue;
       v.set(m.x, Math.max(this.w.terrein.hoogte(m.x, m.z), 0) + 2, m.z).project(this.cam);
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;

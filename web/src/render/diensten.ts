@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Wereld, totaleHoogte } from '../core/wereld';
 import { Materialen } from './materialen';
-import { naarMesh, weg } from './meshes';
+import { naarMesh, weg, schaduwMesh } from './meshes';
+import { vereenvoudig } from '../core/geom/lod';
 import { bouwDienst, windRotor, WIND, ASHOOGTE } from '../core/geom/dienstmesh';
 import type { Nut } from '../core/voorzieningen';
 
@@ -76,10 +77,16 @@ export class DienstWeergave {
     const t = this.w.terrein;
     const r = bouwDienst(d, (x, z) => t.hoogte(x, z));
     this.props?.zet(`dienst:${id}`, r.props);
-    const mesh = naarMesh(r.mesh, this.mats, true, d.soort);
+    // Dichtbij alle materialen, veraf de vereenvoudigde versie (textuurreeks); schaduw via één vervanger.
+    const mesh = naarMesh(r.mesh, this.mats, false, d.soort);
     if (!mesh) return;
+    const ver = naarMesh(vereenvoudig(r.mesh), this.mats, false, d.soort);
     const g = new THREE.Group();
     g.add(mesh);
+    if (ver) { ver.visible = false; g.add(ver); g.userData.lod = { dicht: mesh, ver }; }
+    const sch = schaduwMesh(r.mesh);
+    if (sch) g.add(sch);
+    g.userData.p = d.p;
     if (d.soort === 'windmolen' && d.klaar) {
       if (!this.rotorGeo) this.rotorGeo = naarMesh(windRotor(), this.mats, true, 'rotor');
       if (this.rotorGeo) {
@@ -102,12 +109,23 @@ export class DienstWeergave {
     this.meshes.set(id, g);
   }
 
+  lodAfstand = 380;
+
   werkBij(dt: number, cam: THREE.Camera, snelheid: number): boolean {
     let veranderd = false;
     for (const e of this.w.voorzieningen.haalEvents()) {
       if (e.soort === 'dienst-') { const o = this.meshes.get(e.id); if (o) { weg(o); this.meshes.delete(e.id); this.rotors = this.rotors.filter(r => r.userData.dienst !== e.id); } }
       else this.bouw(e.id);
       veranderd = true;
+    }
+    // Detailniveau per voorziening op afstand tot de camera.
+    for (const g of this.meshes.values()) {
+      const l = g.userData.lod as { dicht: THREE.Mesh; ver: THREE.Mesh } | undefined;
+      if (!l) continue;
+      const pp = g.userData.p as { x: number; z: number };
+      const d = Math.hypot(pp.x - cam.position.x, pp.z - cam.position.z, cam.position.y);
+      const ver = l.ver.visible ? d > this.lodAfstand * 0.85 : d > this.lodAfstand * 1.15;
+      l.ver.visible = ver; l.dicht.visible = !ver;
     }
     // Rotors: ~13 omwentelingen per minuut.
     for (const r of this.rotors) (r.userData.draai as THREE.Mesh).rotation.x += dt * 1.35 * Math.min(1, snelheid || 0.25);

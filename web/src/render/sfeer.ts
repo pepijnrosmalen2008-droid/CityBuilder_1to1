@@ -81,6 +81,8 @@ export class Sfeer {
     this.zon = new THREE.DirectionalLight(0xffe7c4, 3.4);
     this.zon.castShadow = true;
     this.zon.shadow.bias = -0.0004; this.zon.shadow.normalBias = 0.6;
+    // De zonnecamera ziet ook laag 1: de schaduwvervangers van de stadsvakken.
+    this.zon.shadow.camera.layers.enable(1);
     this.scene.add(this.zon, this.zon.target);
     this.hemi = new THREE.HemisphereLight(0xbcd6ff, 0x4d4a32, 0.42);
     this.scene.add(this.hemi);

@@ -69,6 +69,10 @@ async function start() {
 
   await voortgang('Bossen planten…', 0.7);
   const stad = new StadWeergave(wereld, mats);
+  stad.cam = sfeer.camera.position;
+  // Afstand waarop stadsblokken naar de vereenvoudigde versie gaan, per kwaliteitsniveau.
+  const lodVoor = () => ({ laag: 300, midden: 380, hoog: 480 } as Record<string, number>)[sfeer.niveau] ?? 560;
+  stad.tegels.lodAfstand = lodVoor();
   sfeer.scene.add(stad.groep);
   const verkeer = new VerkeerWeergave(wereld, mats);
   sfeer.scene.add(verkeer.groep);
@@ -299,6 +303,7 @@ async function start() {
     gereedschap.beweeg(grond);
     gereedschap.stap(dt);
     const voor = stad.bezig;
+    stad.tegels.lodAfstand = lodVoor(); diensten.lodAfstand = lodVoor();
     stad.werkBij(8);
     if (voor || stad.bezig) sfeer.schaduwVuil();
     regelaar.tik(dt);

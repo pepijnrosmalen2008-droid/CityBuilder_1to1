@@ -104,10 +104,15 @@ export function zwaartepunt(p: V2[]): V2 {
 }
 
 /** Driehoeken opdelen tot de randen korter zijn dan `max` (om over het terrein te draperen). */
-export function verfijn(p: V2[], tri: number[], max: number): { p: V2[]; tri: number[] } {
+/**
+ * Driehoeken onderverdelen tot de langste rand hooguit `max` is. Met `hoogte` adaptief: alleen waar
+ * het terrein echt afwijkt van het platte vlak (meer dan `tol` m), zodat vlakke grond met een paar
+ * grote driehoeken toe kan (veel minder hoekpunten, geen zichtbaar verschil).
+ */
+export function verfijn(p: V2[], tri: number[], max: number, hoogte?: (x: number, z: number) => number, tol = 0.05): { p: V2[]; tri: number[] } {
   const pts = p.slice();
   let t = tri.slice();
-  for (let ronde = 0; ronde < 6; ronde++) {
+  for (let ronde = 0; ronde < (hoogte ? 10 : 6); ronde++) {
     const nieuw: number[] = [];
     let iets = false;
     const midden = new Map<string, number>();
@@ -122,6 +127,16 @@ export function verfijn(p: V2[], tri: number[], max: number): { p: V2[]; tri: nu
       const lab = dist2(pts[a], pts[b]), lbc = dist2(pts[b], pts[c]), lca = dist2(pts[c], pts[a]);
       const m = Math.max(lab, lbc, lca);
       if (m <= max) { nieuw.push(a, b, c); continue; }
+      if (hoogte) {
+        // Wijkt het terrein onder de langste rand en het midden af van het vlak door de drie hoeken?
+        const [e0, e1] = m === lab ? [a, b] : m === lbc ? [b, c] : [c, a];
+        const ha = hoogte(pts[a].x, pts[a].z), hb = hoogte(pts[b].x, pts[b].z), hc = hoogte(pts[c].x, pts[c].z);
+        const hv = (q: number) => q === a ? ha : q === b ? hb : hc;
+        const mx = (pts[e0].x + pts[e1].x) / 2, mz = (pts[e0].z + pts[e1].z) / 2;
+        const cx = (pts[a].x + pts[b].x + pts[c].x) / 3, cz = (pts[a].z + pts[b].z + pts[c].z) / 3;
+        const afw = Math.max(Math.abs(hoogte(mx, mz) - (hv(e0) + hv(e1)) / 2), Math.abs(hoogte(cx, cz) - (ha + hb + hc) / 3));
+        if (afw < tol && m < 60) { nieuw.push(a, b, c); continue; }
+      }
       iets = true;
       // Langste rand halveren.
       if (m === lab) { const d = mid(a, b); nieuw.push(a, d, c, d, b, c); }

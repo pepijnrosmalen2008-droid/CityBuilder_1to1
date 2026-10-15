@@ -3,6 +3,7 @@ import { Rng } from '../rng';
 import { Gebouw, Anker, totaleHoogte } from '../wereld';
 import { MeshBouwer, MeshData, Prop } from './mesh';
 import { cilinder } from './props';
+import { LOD } from './lod';
 import { DakInfo, villas, terrasflat, woontoren, grachtpanden, rijParams, erker, luifel, houtAccent, portiekflat, galerijflat, appModern, wederopbouwLuifel, bovenBalkons, kantoor30, kantoorToren, sheddak, steigers } from './stijlmesh';
 import { afstandTotLijn, driehoeken, getekendOppervlak, verfijn, zwaartepunt } from '../poly';
 import { puntInPolygoon } from '../math';
@@ -119,7 +120,7 @@ export function dakrand(mb: MeshBouwer, poly: V2[], y: number, h: number, w: num
 
 /** Maaiveld van het perceel, over het terrein gedrapeerd. */
 function grond(mb: MeshBouwer, poly: V2[], mat: string, hoogte: H, dy = 0.05) {
-  const v = verfijn(poly, driehoeken(poly), 5);
+  const v = verfijn(poly, driehoeken(poly), 5, hoogte);
   for (let i = 0; i < v.tri.length; i += 3) {
     const [a, b, c] = [v.p[v.tri[i]], v.p[v.tri[i + 1]], v.p[v.tri[i + 2]]];
     mb.driehoek(mat, { x: a.x, y: hoogte(a.x, a.z) + dy, z: a.z }, { x: b.x, y: hoogte(b.x, b.z) + dy, z: b.z }, { x: c.x, y: hoogte(c.x, c.z) + dy, z: c.z }, [a.x, a.z], [b.x, b.z], [c.x, c.z], OP);
@@ -140,8 +141,13 @@ function stijlVoor(g: Gebouw, r: Rng): GevelStijl {
 let BUREN: V2[][] = [];
 export const bijBuur = (p: V2) => BUREN.some(v => puntInPolygoon(p, v));
 
-export function bouwGebouw(g: Gebouw, hoogte: H, buren: V2[][] = []): { mesh: MeshData; props: Prop[] } {
+export function bouwGebouw(g: Gebouw, hoogte: H, buren: V2[][] = [], ver = false): { mesh: MeshData; props: Prop[] } {
   BUREN = buren;
+  LOD.ver = ver;
+  try { return bouwGebouwIntern(g, hoogte); } finally { LOD.ver = false; }
+}
+
+function bouwGebouwIntern(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[] } {
   const mb = new MeshBouwer();
   const props: Prop[] = [];
   const r = new Rng(g.seed);
@@ -196,6 +202,7 @@ export function bouwGebouw(g: Gebouw, hoogte: H, buren: V2[][] = []): { mesh: Me
 
 /** Luchtbehandelingskasten en afvoeren op een plat dak (vanaf niveau 3 liggen er zonnepanelen). */
 function dakInstallaties(mb: MeshBouwer, g: Gebouw, dak: DakInfo) {
+  if (LOD.ver) return;
   const H = dak.y;
   const vrij = inzet(dak.poly, 2.2);
   if (Math.abs(getekendOppervlak(vrij)) < 40) return;
@@ -286,11 +293,11 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
       doos(mb, 'metaal', 'metaal', m, rd.t, rd.L, 0.18, H - 0.32, H - 0.16);
     }
     // Regenpijpen (zink) van de goot naar beneden op elke woningscheiding, en ontluchtingspijpjes op het achterdak.
-    for (const gr of g.grenzen) {
+    if (!LOD.ver) for (const gr of g.grenzen) {
       const p = { x: gr.p.x + gr.n.x * (g.terug - 0.12), z: gr.p.z + gr.n.z * (g.terug - 0.12) };
       cilinder(mb, 'metaal', { x: p.x, y: Y - 0.1, z: p.z }, { x: p.x, y: H - 0.2, z: p.z }, 0.05, 0.05, 6);
     }
-    for (const an of g.ankers) {
+    if (!LOD.ver) for (const an of g.ankers) {
       const d = g.diepte * 0.72, p = { x: an.p.x + an.n.x * d + an.t.x * w * 0.25, z: an.p.z + an.n.z * d + an.t.z * w * 0.25 };
       const y = H + (g.terug + g.diepte - afstandTotLijn(p, g.voorLijn).d) * tan;
       cilinder(mb, 'trimDonker', { x: p.x, y: y - 0.3, z: p.z }, { x: p.x, y: y + 0.55, z: p.z }, 0.06, 0.06, 6);
@@ -308,7 +315,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
     }
     // Dakkapellen en schoorstenen.
     for (const an of g.ankers) {
-      if (panelen || r.next() > rp.dakkapel) continue;
+      if (panelen || r.next() > rp.dakkapel || LOD.ver) continue;
       const bw = Math.min(2.6, w - 1.4);
       if (bw < 1.2) continue;
       const c = { x: an.p.x + an.n.x * 1.7, z: an.p.z + an.n.z * 1.7 };
@@ -324,7 +331,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
       mb.quad('dakgrind', P3(L(vr, -bw / 2 - 0.1), top), P3(L(vr, bw / 2 + 0.1), top), P3(L(ac, bw / 2 + 0.1), top), P3(L(ac, -bw / 2 - 0.1), top), [0, 0], [1, 0], [1, 1], [0, 1], OP);
     }
     for (let i = 0; i < g.ankers.length; i += 2) {
-      if (!rp.schoorsteen || r.next() > 0.5) continue;
+      if (!rp.schoorsteen || r.next() > 0.5 || LOD.ver) continue;
       const an = g.ankers[i];
       const c = { x: an.p.x + an.n.x * (g.diepte * 0.62) + an.t.x * w * 0.3, z: an.p.z + an.n.z * (g.diepte * 0.62) + an.t.z * w * 0.3 };
       const yN = H + (g.diepte / 2) * tan;
@@ -343,6 +350,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
 
 /** Voortuinen, achtertuinen en erfgrenzen van een rij woningen. */
 function rijErf(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[], w: number, deuren: boolean) {
+  if (LOD.ver) return;
   const Y = g.y;
   // Voordeuren, stoepjes, tuinpaden, hagen, schuttingen, schuurtjes, bomen.
   if (deuren) g.ankers.forEach((an, i) => deur(mb, an, Y, (g.seed + i * 7) % 5));
@@ -412,6 +420,7 @@ function plaat(mb: MeshBouwer, mat: string, an: Anker, d0: number, d1: number, s
 
 /** Struik: afgeplatte bol van een paar lagen (goedkoop, één materiaal). */
 export function struik(mb: MeshBouwer, c: V2, y: number, r: number, h: number) {
+  if (LOD.ver) return;
   cilinder(mb, 'haag', { x: c.x, y, z: c.z }, { x: c.x, y: y + h * 0.55, z: c.z }, r * 0.75, r, 7);
   cilinder(mb, 'haag', { x: c.x, y: y + h * 0.55, z: c.z }, { x: c.x, y: y + h, z: c.z }, r, r * 0.35, 7);
 }
@@ -484,6 +493,7 @@ function tuin(mb: MeshBouwer, g: Gebouw, an: Anker, w: number, r: Rng, hoogte: H
 }
 
 export function deur(mb: MeshBouwer, an: Anker, Y: number, kleur: number) {
+  if (LOD.ver) return;
   const uit = { x: -an.n.x, z: -an.n.z };
   const p = (s: number, d: number) => ({ x: an.p.x + an.t.x * s + uit.x * d, z: an.p.z + an.t.z * s + uit.z * d });
   const q = (mat: string, s0: number, s1: number, y0: number, y1: number, d: number) =>
@@ -511,6 +521,7 @@ export function appartementen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelSti
     doos(mb, 'metaal', 'metaal', { x: c.x + t.x * 4, z: c.z + t.z * 4 }, t, 2.2, 1.6, H, H + 1.3);
   }
   // Balkons aan de voorgevel(s), per ~6 m, vanaf de eerste verdieping.
+  if (LOD.ver) return;
   const hek = r.next() < 0.5 ? 'glas' : 'metaal';
   for (const x of voorRanden) {
     const n = Math.floor(x.L / 6);
@@ -671,6 +682,7 @@ function bouwplaats(mb: MeshBouwer, g: Gebouw, hoogte: H) {
  * containers en hekwerk bij bedrijfshallen.
  */
 function inrichting(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[]) {
+  if (LOD.ver) return;
   const an = g.ankers[0];
   const P = (d: number, s: number): V2 => ({ x: an.p.x + an.n.x * d + an.t.x * s, z: an.p.z + an.n.z * d + an.t.z * s });
   const yv = (p: V2) => hoogte(p.x, p.z);
@@ -809,7 +821,7 @@ function platDak(mb: MeshBouwer, g: Gebouw, dak: DakInfo) {
   const groen = groenBeleid || ((n >= 5 || (n === 4 && g.seed % 2 === 0)) && (g.vorm === 'appartementen' || g.vorm === 'kantoortoren'));
   if (groen && Math.abs(getekendOppervlak(vrij)) > 40) vlak(mb, 'tuin', vrij, H + 0.12);
   const midden = zwaartepunt(dak.poly);
-  if (zon) for (let x = x0; x < x1 - 1; x += 1.15) for (let z = z0; z < z1 - 1.6; z += 2.4) {
+  if (zon && !LOD.ver) for (let x = x0; x < x1 - 1; x += 1.15) for (let z = z0; z < z1 - 1.6; z += 2.4) {
     const hoeken = [{ x, z }, { x: x + 1.05, z }, { x: x + 1.05, z: z + 1.6 }, { x, z: z + 1.6 }];
     if (!hoeken.every(p => puntInPolygoon(p, vrij))) continue;
     if (kern && hoeken.some(p => puntInPolygoon(p, kern))) continue;
@@ -819,7 +831,7 @@ function platDak(mb: MeshBouwer, g: Gebouw, dak: DakInfo) {
     // Schuin naar het zuiden (+z): noordkant hoger.
     mb.quad('zonnepaneel', { x, y: y + 0.55, z }, { x: x + 1.05, y: y + 0.55, z }, { x: x + 1.05, y: y + 0.15, z: z + 1.6 }, { x, y: y + 0.15, z: z + 1.6 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 1, z: 0.3 });
   }
-  if (groen) {
+  if (groen && !LOD.ver) {
     // Dakterras: houten vlonder en een paar plantenbakken.
     const c = { x: (x0 + midden.x) / 2, z: midden.z };
     doos(mb, 'hout', 'hout', c, { x: 1, z: 0 }, Math.min(6, (midden.x - x0) * 0.8), Math.min(5, (z1 - z0) * 0.6), H, H + 0.25);

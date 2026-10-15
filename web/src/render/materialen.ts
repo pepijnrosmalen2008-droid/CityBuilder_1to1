@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { materiaal } from '../core/materialen';
 import { TextuurBron } from './texturen';
+import { atlas } from '../core/geom/lod';
 
 /** MatDef (engine-onafhankelijk) → three.js-materiaal. Texturen komen later binnen uit de workers. */
 export class Materialen {
@@ -10,12 +11,22 @@ export class Materialen {
   haal(sleutel: string): THREE.MeshStandardMaterial {
     let m = this.cache.get(sleutel);
     if (m) return m;
+    if (sleutel === 'atlasVer') { m = this.maakAtlas(); this.cache.set(sleutel, m); return m; }
     const d = materiaal(sleutel);
     m = sleutel === 'autolak'
       // Autolak: metallic basislaag met een blanke laklaag erover.
       ? new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(...d.kleur, THREE.SRGBColorSpace), roughness: d.ruwheid, metalness: d.metaal, clearcoat: 1, clearcoatRoughness: 0.06 })
       : new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...d.kleur, THREE.SRGBColorSpace), roughness: d.ruwheid, metalness: d.metaal });
     m.name = sleutel;
+    if (sleutel === 'kleurVer') {
+      // Kleur, ruwheid en metaal per hoekpunt (samengevoegde effen materialen).
+      m.vertexColors = true; m.roughness = 1; m.metalness = 1;
+      m.onBeforeCompile = s => {
+        s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 rm;\nvarying vec2 vRm;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvRm = rm;');
+        s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vRm;')
+          .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRm.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRm.y;');
+      };
+    }
     if (d.dubbelzijdig) m.side = THREE.DoubleSide;
     if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; m.alphaToCoverage = !sleutel.startsWith('blad'); }
     if (d.alfa === 'mengen') { m.transparent = true; m.depthWrite = false; }
@@ -52,6 +63,62 @@ export class Materialen {
       });
     }
     this.cache.set(sleutel, m);
+    return m;
+  }
+
+  /**
+   * Alle getextureerde materialen voor op afstand in één textuurreeks (256×256 per laag): kleur in RGB
+   * (met de ingebakken occlusie), glans in alfa. Lagen vullen zich zodra de texturen klaar zijn.
+   */
+  private maakAtlas(): THREE.MeshStandardMaterial {
+    const N = 256, sleutels = atlas(), L = sleutels.length;
+    const data = new Uint8Array(N * N * 4 * L).fill(128);
+    const arr = new THREE.DataArrayTexture(data, N, N, L);
+    arr.format = THREE.RGBAFormat; arr.type = THREE.UnsignedByteType;
+    arr.wrapS = arr.wrapT = THREE.RepeatWrapping;
+    arr.minFilter = THREE.LinearMipmapLinearFilter; arr.magFilter = THREE.LinearFilter;
+    arr.generateMipmaps = true; arr.anisotropy = 4;
+    arr.colorSpace = THREE.SRGBColorSpace;
+    arr.needsUpdate = true;
+    let wacht = 0, uploadGepland = false;
+    sleutels.forEach((k, laag) => {
+      const tex = materiaal(k).tex;
+      if (!tex) return;
+      this.bron.haal(tex, t => {
+        const img = t.map.image as { data: Uint8ClampedArray; width: number; height: number };
+        const orm = t.ormMap?.image as { data: Uint8ClampedArray } | undefined;
+        const tint = materiaal(k).kleur;
+        const fx = img.width / N, fy = img.height / N, o = laag * N * N * 4;
+        // Doosfilter: gemiddelde van de bronpixels die in een doelpixel vallen.
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+          let r = 0, g = 0, b = 0, a = 0, n = 0;
+          for (let sy = Math.floor(y * fy); sy < Math.floor((y + 1) * fy); sy++) for (let sx = Math.floor(x * fx); sx < Math.floor((x + 1) * fx); sx++) {
+            const i = (sy * img.width + sx) * 4;
+            const ao = orm ? orm.data[i] / 255 : 1;
+            r += img.data[i] * ao; g += img.data[i + 1] * ao; b += img.data[i + 2] * ao;
+            a += orm ? 255 - orm.data[i + 1] : 40; n++;
+          }
+          const j = o + (y * N + x) * 4;
+          data[j] = r / n * tint[0]; data[j + 1] = g / n * tint[1]; data[j + 2] = b / n * tint[2]; data[j + 3] = a / n;
+        }
+        // Uploaden gebundeld (niet per laag de hele reeks opnieuw).
+        wacht--;
+        if (!uploadGepland) { uploadGepland = true; setTimeout(() => { uploadGepland = false; arr.needsUpdate = true; }, wacht > 0 ? 250 : 0); }
+      });
+      wacht++;
+    });
+    const dummy = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    dummy.needsUpdate = true;
+    const m = new THREE.MeshStandardMaterial({ map: dummy, roughness: 1, metalness: 0 });
+    m.name = 'atlasVer';
+    m.onBeforeCompile = s => {
+      s.uniforms.tAtlas = { value: arr };
+      s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute float atlaslaag;\nvarying float vLaag;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLaag = atlaslaag;');
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform highp sampler2DArray tAtlas;\nvarying float vLaag;')
+        .replace('#include <map_fragment>', 'vec4 atlasT = texture(tAtlas, vec3(vMapUv, floor(vLaag + 0.5)));\ndiffuseColor.rgb *= atlasT.rgb;')
+        .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.95, 0.12, atlasT.a);');
+    };
     return m;
   }
 }

@@ -1,7 +1,7 @@
 import { V3, cross3, dot3, norm3, sub3 } from '../math';
 
 /** Eén submesh per materiaal. UV's zijn in meters (of in een vaste textuurlayout, zie materialen.ts). */
-export interface MeshGroep { materiaal: string; posities: Float32Array; normalen: Float32Array; uvs: Float32Array; indices: Uint32Array }
+export interface MeshGroep { materiaal: string; posities: Float32Array; normalen: Float32Array; uvs: Float32Array; indices: Uint32Array; /** Kleur per hoekpunt (RGB), alleen bij samengevoegde materialen op afstand. */ kleuren?: Float32Array; /** Laag in de textuurreeks (alleen 'atlasVer'). */ lagen?: Float32Array; /** Ruwheid en metaal per hoekpunt (alleen 'kleurVer'). */ rm?: Float32Array }
 export interface MeshData { groepen: MeshGroep[] }
 
 /** Losse objecten die de render-laag als instanties tekent (bomen, lantaarns, ...). */
@@ -133,13 +133,19 @@ export function samenvoegen(lijst: MeshData[]): MeshData {
     let nv = 0, ni = 0;
     for (const g of gs) { nv += g.posities.length / 3; ni += g.indices.length; }
     const posities = new Float32Array(nv * 3), normalen = new Float32Array(nv * 3), uvs = new Float32Array(nv * 2), indices = new Uint32Array(ni);
+    const kleuren = gs.some(g => g.kleuren) ? new Float32Array(nv * 3).fill(1) : undefined;
+    const lagen = gs.some(g => g.lagen) ? new Float32Array(nv) : undefined;
+    const rm = gs.some(g => g.rm) ? new Float32Array(nv * 2).fill(0.8) : undefined;
     let ov = 0, oi = 0;
     for (const g of gs) {
       posities.set(g.posities, ov * 3); normalen.set(g.normalen, ov * 3); uvs.set(g.uvs, ov * 2);
+      if (kleuren && g.kleuren) kleuren.set(g.kleuren, ov * 3);
+      if (lagen && g.lagen) lagen.set(g.lagen, ov);
+      if (rm && g.rm) rm.set(g.rm, ov * 2);
       for (let i = 0; i < g.indices.length; i++) indices[oi + i] = g.indices[i] + ov;
       ov += g.posities.length / 3; oi += g.indices.length;
     }
-    groepen.push({ materiaal, posities, normalen, uvs, indices });
+    groepen.push({ materiaal, posities, normalen, uvs, indices, kleuren, lagen, rm });
   }
   return { groepen };
 }

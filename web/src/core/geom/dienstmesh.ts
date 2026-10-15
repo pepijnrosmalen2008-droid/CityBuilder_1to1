@@ -17,7 +17,7 @@ export const WIND = Math.atan2(0.6, -0.8);
 export const ASHOOGTE = 120;
 
 function grond(mb: MeshBouwer, mat: string, poly: V2[], hoogte: H, dy = 0.08) {
-  const v = verfijn(poly, driehoeken(poly), 8);
+  const v = verfijn(poly, driehoeken(poly), 8, hoogte);
   for (let i = 0; i < v.tri.length; i += 3) {
     const [a, b, c] = [v.p[v.tri[i]], v.p[v.tri[i + 1]], v.p[v.tri[i + 2]]];
     mb.driehoek(mat, { x: a.x, y: hoogte(a.x, a.z) + dy, z: a.z }, { x: b.x, y: hoogte(b.x, b.z) + dy, z: b.z }, { x: c.x, y: hoogte(c.x, c.z) + dy, z: c.z }, [a.x, a.z], [b.x, b.z], [c.x, c.z], OP);

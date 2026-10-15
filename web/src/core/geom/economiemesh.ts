@@ -11,7 +11,7 @@ const OP: V3 = { x: 0, y: 1, z: 0 };
 
 /** Gedrapeerd vlak; UV in meters langs een as (voor rijen in een akker). */
 function gedrapeerd(mb: MeshBouwer, mat: string, poly: V2[], hoogte: H, dy: number, as: V2 = { x: 1, z: 0 }, max = 8) {
-  const v = verfijn(poly, driehoeken(poly), max);
+  const v = verfijn(poly, driehoeken(poly), max, hoogte);
   const uv = (p: V2): [number, number] => [p.x * as.x + p.z * as.z, -p.x * as.z + p.z * as.x];
   for (let i = 0; i < v.tri.length; i += 3) {
     const [a, b, c] = [v.p[v.tri[i]], v.p[v.tri[i + 1]], v.p[v.tri[i + 2]]];

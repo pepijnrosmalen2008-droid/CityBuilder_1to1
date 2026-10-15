@@ -3,6 +3,7 @@ import { Rng } from '../rng';
 import { Gebouw, Anker, totaleHoogte } from '../wereld';
 import { MeshBouwer, Prop } from './mesh';
 import { driehoeken, getekendOppervlak, knipHalfvlak, zwaartepunt } from '../poly';
+import { LOD } from './lod';
 import { H, Rand, randen, wand, vlak, inzet, norm, doos, dakrand, deur, P3, N3, OP, PUIEN } from './gebouwmesh';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -192,6 +193,7 @@ export function rijParams(g: Gebouw, r: Rng): RijParams {
 
 /** Erker op de begane grond (jaren dertig, vanaf niveau 3). */
 export function erker(mb: MeshBouwer, an: Anker, Y: number, w: number, muur: string) {
+  if (LOD.ver) return;
   const bw = Math.min(w - 1.8, 3.0);
   if (bw < 1.6) return;
   const s = w * 0.22;
@@ -208,11 +210,13 @@ export function erker(mb: MeshBouwer, an: Anker, Y: number, w: number, muur: str
 
 /** Doorlopende betonnen luifel boven de voordeuren (naoorlogs). */
 export function luifel(mb: MeshBouwer, an: Anker, Y: number, w: number) {
+  if (LOD.ver) return;
   doos(mb, 'beton', 'beton', { x: an.p.x - an.n.x * 0.55, z: an.p.z - an.n.z * 0.55 }, an.t, w + 0.02, 1.1, Y + 2.5, Y + 2.68);
 }
 
 /** Houten gevelstuk naast de voordeur (nieuwbouw). */
 export function houtAccent(mb: MeshBouwer, an: Anker, Y: number, w: number, hoog: number) {
+  if (LOD.ver) return;
   const uit = { x: -an.n.x, z: -an.n.z };
   const v = (s: number) => ({ x: an.p.x + an.t.x * s + uit.x * 0.04, z: an.p.z + an.t.z * s + uit.z * 0.04 });
   const s0 = -w / 2 + 0.05, s1 = -0.75;
@@ -244,6 +248,7 @@ export function portiekflat(mb: MeshBouwer, g: Gebouw, r: Rng): DakInfo {
       mb.quad('raam', P3(P(-0.8, 0.06), Y + 2.8), P3(P(0.8, 0.06), Y + 2.8), P3(P(0.8, 0.06), H - 0.8), P3(P(-0.8, 0.06), H - 0.8), [0, 0], [1, 0], [1, 1], [0, 1], N3(v.n));
       deur(mb, ankerOp(v, s), Y, (g.seed + i) % 5);
       // Balkons links en rechts van het trappenhuis.
+      if (LOD.ver) continue;
       let y = Y + g.lagen[0].hoogte;
       for (let l = 1; l < lagen; l++) {
         for (const k of [-1, 1]) {
@@ -310,7 +315,7 @@ export function appModern(mb: MeshBouwer, g: Gebouw, r: Rng, props: Prop[]): Dak
   }
   // Glazen balkons, om en om verspringend.
   const v = langsteVoor(randen(g));
-  if (v) {
+  if (v && !LOD.ver) {
     const n = Math.max(1, Math.floor(v.L / 5.5));
     for (let l = 1; l < knik; l++) for (let i = 0; i < n; i++) {
       const s = (i + 0.5 + (l % 2 ? 0.25 : -0.25)) * v.L / n;
@@ -336,6 +341,7 @@ export function appModern(mb: MeshBouwer, g: Gebouw, r: Rng, props: Prop[]): Dak
 
 /** Wederopbouwwinkels: doorlopende betonnen luifel, platte kap met dunne overstek. */
 export function wederopbouwLuifel(mb: MeshBouwer, g: Gebouw) {
+  if (LOD.ver) return;
   const hBG = g.lagen[0].hoogte, Y = g.y;
   for (const x of randen(g).filter(q => q.soort === 'voor')) {
     const m = { x: (x.a.x + x.b.x) / 2 + x.n.x * 1.1, z: (x.a.z + x.b.z) / 2 + x.n.z * 1.1 };
@@ -346,6 +352,7 @@ export function wederopbouwLuifel(mb: MeshBouwer, g: Gebouw) {
 
 /** Glazen balkons op de verdiepingen boven de winkels (modern gemengd). */
 export function bovenBalkons(mb: MeshBouwer, g: Gebouw) {
+  if (LOD.ver) return;
   const Y = g.y;
   const v = langsteVoor(randen(g));
   if (!v) return;
@@ -576,7 +583,7 @@ export function woontoren(mb: MeshBouwer, g: Gebouw, r: Rng): DakInfo {
     dakrand(mb, d.poly, yL(d.tot) - 0.05, 1.05, 0.25, 'trimDonker');
   }
   // Balkons rondom de toren, om de laag verspringend.
-  for (const x of randen(g, toren)) {
+  if (!LOD.ver) for (const x of randen(g, toren)) {
     const n = Math.max(1, Math.floor(x.L / 6));
     for (let l = plint + 1; l < kroonVan; l++) for (let i = 0; i < n; i++) {
       if ((l + i) % 2) continue;

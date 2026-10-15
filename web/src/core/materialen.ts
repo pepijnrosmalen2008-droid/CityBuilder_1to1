@@ -40,6 +40,10 @@ const VAST: Record<string, MatDef> = {
   metaal: D({ kleur: [0.55, 0.57, 0.6], ruwheid: 0.45, metaal: 0.8 }),
   paal: D({ kleur: [0.22, 0.23, 0.24], ruwheid: 0.5, metaal: 0.6 }),
   lamp: D({ kleur: [1, 0.95, 0.8], ruwheid: 0.3, emissie: [1.0, 0.85, 0.6], schaduw: false }),
+  /** Samengevoegde effen materialen op afstand (kleur per hoekpunt). */
+  kleurVer: D({ kleur: [1, 1, 1], ruwheid: 0.75 }),
+  /** Getextureerde materialen op afstand uit één textuurreeks. */
+  atlasVer: D({ kleur: [1, 1, 1], ruwheid: 0.85, meter: 0 }),
   trim: D({ kleur: [0.92, 0.92, 0.9], ruwheid: 0.55 }),
   trimDonker: D({ kleur: [0.16, 0.16, 0.17], ruwheid: 0.5, metaal: 0.2 }),
   glas: D({ kleur: [0.22, 0.30, 0.36], ruwheid: 0.08, metaal: 0.6 }),
