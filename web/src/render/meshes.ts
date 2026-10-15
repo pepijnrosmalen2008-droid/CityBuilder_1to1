@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { MeshData } from '../core/geom/mesh';
 import { Materialen } from './materialen';
 import { materiaal } from '../core/materialen';
+import type { VakGeometrie } from './tegelworker';
 
 /** MeshData (één groep per materiaal) → één three.js-mesh met materiaalgroepen. */
 export function naarMesh(data: MeshData, mats: Materialen, schaduw = true, bron = ''): THREE.Mesh | null {
@@ -65,6 +66,34 @@ export function schaduwMesh(data: MeshData): THREE.Mesh | null {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeBoundingSphere();
+  const m = new THREE.Mesh(geo, schaduwMat);
+  m.castShadow = true; m.receiveShadow = false; m.matrixAutoUpdate = false;
+  m.layers.set(SCHADUWLAAG);
+  return m;
+}
+
+/** Mesh uit de buffers die de vakkenworker teruggeeft (alleen nog attributen maken: goedkoop). */
+export function meshUitBuffers(g: VakGeometrie, mats: Materialen): THREE.Mesh {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(g.pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(g.nrm, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(g.uv, 2));
+  if (g.kl) geo.setAttribute('color', new THREE.BufferAttribute(g.kl, 3));
+  if (g.la) geo.setAttribute('atlaslaag', new THREE.BufferAttribute(g.la, 1));
+  if (g.rm) geo.setAttribute('rm', new THREE.BufferAttribute(g.rm, 2));
+  geo.setIndex(new THREE.BufferAttribute(g.idx, 1));
+  const materialen = g.groepen.map((x, i) => { geo.addGroup(x.start, x.aantal, i); return mats.haal(x.materiaal); });
+  geo.computeBoundingSphere();
+  const m = new THREE.Mesh(geo, materialen);
+  m.castShadow = false; m.receiveShadow = true; m.matrixAutoUpdate = false;
+  return m;
+}
+
+export function schaduwUitBuffers(s: { pos: Float32Array; idx: Uint32Array }): THREE.Mesh {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(s.pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(s.idx, 1));
   geo.computeBoundingSphere();
   const m = new THREE.Mesh(geo, schaduwMat);
   m.castShadow = true; m.receiveShadow = false; m.matrixAutoUpdate = false;

@@ -7,9 +7,9 @@ import type { Prop } from '../core/geom/mesh';
 import { zoneKleur } from '../core/zones';
 import { driehoeken, verfijn, afstandTotLijn } from '../core/poly';
 import { Materialen } from './materialen';
-import { naarMesh, weg, schaduwMesh } from './meshes';
-import { vereenvoudig, effenSamen } from '../core/geom/lod';
-import { samenvoegen, MeshData } from '../core/geom/mesh';
+import { weg, meshUitBuffers, schaduwUitBuffers } from './meshes';
+import type { NaarWorker, VanWorker } from './tegelworker';
+import type { MeshData } from '../core/geom/mesh';
 import { PropLaag } from './props';
 import { EconomieWeergave } from './economie';
 
@@ -19,85 +19,107 @@ const vakMidden = (v: number, m: number) => ({ x: (Math.floor(v / 1000) - 100 + 
 /** Blok van 512 m waar een vak van 256 m in ligt. */
 const blokVanVak = (v: number) => { const i = Math.floor(v / 1000) - 100, j = (v % 1000) - 100; return (Math.floor(i / 2) + 100) * 1000 + (Math.floor(j / 2) + 100); };
 
-interface Niveau {
-  maat: number;
-  bron: Map<string, { vak: number; data: MeshData }>;
-  inhoud: Map<number, Set<string>>;
-  meshes: Map<number, THREE.Group>;
-  vuil: Set<number>;
-}
+type Niv = 'dicht' | 'ver';
 
 /**
  * Wegen, kruispunten, gebouwen en bedrijven per vak samengevoegd, in twee detailniveaus:
  * - dichtbij: vakken van 256 m met alle details;
- * - veraf: blokken van 512 m met de vereenvoudigde gebouwen en samengevoegde effen materialen.
- * Per blok wordt gekozen (met een marge tegen heen-en-weer wisselen). Elk vak heeft daarnaast één
- * schaduwvervanger: de schaduwpass kost dan één tekenopdracht per vak in plaats van tientallen.
+ * - veraf: blokken van 512 m met de vereenvoudigde gebouwen en de textuurreeks.
+ * Per blok wordt gekozen (met een marge tegen heen-en-weer wisselen). Het samenvoegen gebeurt in een
+ * Web Worker: de hoofdthread stuurt alleen wijzigingen en krijgt kant-en-klare buffers terug, dus het
+ * beeld hapert nooit als de stad groeit. Elk vak heeft één schaduwvervanger (één tekenopdracht).
  */
 export class TegelLaag {
   groep = new THREE.Group();
-  private dicht: Niveau = { maat: TEGEL, bron: new Map(), inhoud: new Map(), meshes: new Map(), vuil: new Set() };
-  private ver: Niveau = { maat: BLOK, bron: new Map(), inhoud: new Map(), meshes: new Map(), vuil: new Set() };
+  private worker = new Worker(new URL('./tegelworker.ts', import.meta.url), { type: 'module' });
+  private meshes: Record<Niv, Map<number, THREE.Group>> = { dicht: new Map(), ver: new Map() };
+  private vuilSet: Record<Niv, Set<number>> = { dicht: new Set(), ver: new Set() };
+  /** Vakken waarvoor een opdracht bij de worker ligt (nr van de laatste opdracht). */
+  private onderweg: Record<Niv, Map<number, number>> = { dicht: new Map(), ver: new Map() };
+  private sleutelVak = new Map<string, { d: number; v: number }>();
+  private nr = 1;
   /** Blokken die nu in de verre versie getekend worden. */
   private blokVer = new Set<number>();
   /** Afstand (m) vanaf waar een blok de verre versie krijgt; gezet per kwaliteitsniveau. */
   lodAfstand = 600;
-  constructor(private mats: Materialen) {}
+  private verKlok = 0;
+  private wachters: (() => void)[] = [];
 
-  get vuil() { return new Set([...this.dicht.vuil, ...this.ver.vuil]); }
+  constructor(private mats: Materialen) {
+    this.worker.onmessage = (e: MessageEvent<VanWorker>) => this.ontvang(e.data);
+  }
+
+  get vuil() { return new Set([...this.vuilSet.dicht, ...this.vuilSet.ver]); }
+  /** Nog werk te doen (vuile vakken of opdrachten bij de worker). */
+  get bezig() { return this.vuilSet.dicht.size + this.vuilSet.ver.size + this.onderweg.dicht.size + this.onderweg.ver.size; }
+  /** Wacht tot alles is opgebouwd (laden, schermafbeeldingen). */
+  klaar(): Promise<void> { return this.bezig ? new Promise(r => this.wachters.push(r)) : Promise.resolve(); }
 
   /** `verData`: eigen versie voor op afstand (gebouwen); anders wordt de detailversie vereenvoudigd. */
   zet(sleutel: string, x: number, z: number, data: MeshData | null, verData?: MeshData | null) {
     this.wis(sleutel);
     if (!data || !data.groepen.length) return;
-    this.zetIn(this.dicht, sleutel, x, z, data);
-    const v = vereenvoudig(verData ?? data);
-    if (v.groepen.length) this.zetIn(this.ver, sleutel, x, z, v);
-  }
-  private zetIn(n: Niveau, sleutel: string, x: number, z: number, data: MeshData) {
-    const v = vakVan(x, z, n.maat);
-    n.bron.set(sleutel, { vak: v, data });
-    let s = n.inhoud.get(v); if (!s) n.inhoud.set(v, s = new Set()); s.add(sleutel);
-    n.vuil.add(v);
+    const vakD = vakVan(x, z, TEGEL), vakV = vakVan(x, z, BLOK);
+    this.sleutelVak.set(sleutel, { d: vakD, v: vakV });
+    const m: NaarWorker = { t: 'zet', k: sleutel, vakD, vakV, data, ver: verData ?? null };
+    const lijst: Transferable[] = [];
+    const gezien = new Set<ArrayBufferLike>();
+    for (const md of [data, verData]) for (const g of md?.groepen ?? []) for (const a of [g.posities, g.normalen, g.uvs, g.indices, g.kleuren, g.lagen, g.rm]) if (a && !gezien.has(a.buffer)) { gezien.add(a.buffer); lijst.push(a.buffer as ArrayBuffer); }
+    try { this.worker.postMessage(m, lijst); } catch { this.worker.postMessage(m); }
+    this.vuilSet.dicht.add(vakD); this.vuilSet.ver.add(vakV);
   }
   wis(sleutel: string) {
-    for (const n of [this.dicht, this.ver]) {
-      const b = n.bron.get(sleutel);
-      if (!b) continue;
-      n.bron.delete(sleutel); n.inhoud.get(b.vak)?.delete(sleutel); n.vuil.add(b.vak);
+    const v = this.sleutelVak.get(sleutel);
+    if (!v) return;
+    this.sleutelVak.delete(sleutel);
+    this.worker.postMessage({ t: 'wis', k: sleutel } as NaarWorker);
+    this.vuilSet.dicht.add(v.d); this.vuilSet.ver.add(v.v);
+  }
+
+  private ontvang(r: VanWorker) {
+    if (this.onderweg[r.niv].get(r.vak) !== r.nr) { this.check(); return; } // er is al een nieuwere opdracht
+    this.onderweg[r.niv].delete(r.vak);
+    const oud = this.meshes[r.niv].get(r.vak);
+    if (oud) { weg(oud); this.meshes[r.niv].delete(r.vak); }
+    if (r.geo) {
+      const g = new THREE.Group();
+      g.matrixAutoUpdate = false;
+      const m = meshUitBuffers(r.geo, this.mats);
+      g.add(m);
+      if (r.geo.schaduw) g.add(schaduwUitBuffers(r.geo.schaduw));
+      const blok = r.niv === 'dicht' ? blokVanVak(r.vak) : r.vak;
+      g.visible = r.niv === 'ver' ? this.blokVer.has(blok) : !this.blokVer.has(blok);
+      this.meshes[r.niv].set(r.vak, g);
+      this.groep.add(g);
     }
+    this.nieuw = true;
+    this.check();
+  }
+  /** Er is net een vak bijgewerkt (de schaduw moet opnieuw). */
+  nieuw = false;
+  private check() { if (!this.bezig) { const w = this.wachters; this.wachters = []; for (const f of w) f(); } }
+
+  private vraag(niv: Niv, vak: number) {
+    this.vuilSet[niv].delete(vak);
+    const nr = this.nr++;
+    this.onderweg[niv].set(vak, nr);
+    this.worker.postMessage({ t: 'bouw', niv, vak, nr } as NaarWorker);
   }
 
-  private bouwVak(n: Niveau, v: number) {
-    const oud = n.meshes.get(v);
-    if (oud) { weg(oud); n.meshes.delete(v); }
-    const delen = [...(n.inhoud.get(v) ?? [])].map(k => n.bron.get(k)!.data);
-    if (!delen.length) return;
-    const data = n === this.dicht ? effenSamen(samenvoegen(delen)) : samenvoegen(delen);
-    const m = naarMesh(data, this.mats, false, `vak ${v}`);
-    if (!m) return;
-    const g = new THREE.Group();
-    g.matrixAutoUpdate = false;
-    g.add(m);
-    const sch = schaduwMesh(data);
-    if (sch) g.add(sch);
-    const blok = n === this.dicht ? blokVanVak(v) : v;
-    g.visible = n === this.ver ? this.blokVer.has(blok) : !this.blokVer.has(blok);
-    n.meshes.set(v, g);
-    this.groep.add(g);
-  }
-
-  /** Vuile vakken samenvoegen; `max` per keer (dichtbij eerst: die zie je het best). */
-  bouw(max = 3, cam?: { x: number; z: number }) {
-    let n = 0;
-    for (const niv of [this.dicht, this.ver]) {
-      let lijst = [...niv.vuil];
-      if (cam) lijst = lijst.sort((a, b) => { const p = vakMidden(a, niv.maat), q = vakMidden(b, niv.maat); return Math.hypot(p.x - cam.x, p.z - cam.z) - Math.hypot(q.x - cam.x, q.z - cam.z); });
-      for (const v of lijst) {
-        if (n++ >= max) return;
-        niv.vuil.delete(v);
-        this.bouwVak(niv, v);
-      }
+  /**
+   * Vuile vakken naar de worker sturen: eerst dichtbij (op afstand gesorteerd, hooguit 3 tegelijk),
+   * daarna rustig de verre blokken (één per 0,4 s): die zie je pas van ver. `max` = alles meteen (laden).
+   */
+  bouw(max = 3, cam?: { x: number; z: number }, _budgetMs = 4, dt = 0.016) {
+    void _budgetMs;
+    this.verKlok += dt;
+    const alles = max > 1e6;
+    const sorteer = (niv: Niv, maat: number) => { let l = [...this.vuilSet[niv]]; if (cam) l = l.sort((a, b) => { const p = vakMidden(a, maat), q = vakMidden(b, maat); return Math.hypot(p.x - cam.x, p.z - cam.z) - Math.hypot(q.x - cam.x, q.z - cam.z); }); return l; };
+    for (const v of sorteer('dicht', TEGEL)) { if (!alles && this.onderweg.dicht.size >= 3) break; if (this.onderweg.dicht.has(v) && !alles) continue; this.vraag('dicht', v); }
+    for (const v of sorteer('ver', BLOK)) {
+      if (!alles && (this.onderweg.ver.size >= 1 || this.verKlok < 0.4 || this.vuilSet.dicht.size)) break;
+      this.verKlok = 0;
+      this.vraag('ver', v);
     }
   }
 
@@ -106,18 +128,18 @@ export class TegelLaag {
    * heen-en-weer schakelen). De wissel valt ver weg en het silhouet blijft gelijk: je merkt hem niet.
    */
   kiesDetail(cam: THREE.Vector3) {
-    const blokken = new Set<number>([...this.ver.meshes.keys(), ...[...this.dicht.meshes.keys()].map(blokVanVak)]);
+    const blokken = new Set<number>([...this.meshes.ver.keys(), ...[...this.meshes.dicht.keys()].map(blokVanVak)]);
     for (const b of blokken) {
       const m = vakMidden(b, BLOK);
-      // Afstand tot de rand van het blok (niet het midden), en de camerahoogte telt mee.
       const dx = Math.max(0, Math.abs(cam.x - m.x) - BLOK / 2), dz = Math.max(0, Math.abs(cam.z - m.z) - BLOK / 2);
       const d = Math.hypot(dx, dz, cam.y);
       const nu = this.blokVer.has(b);
-      const ver = nu ? d > this.lodAfstand * 0.85 : d > this.lodAfstand * 1.15;
+      // Alleen naar veraf als die versie er al is (anders zou er even niets staan).
+      const ver = (nu ? d > this.lodAfstand * 0.85 : d > this.lodAfstand * 1.15) && this.meshes.ver.has(b);
       if (ver === nu) continue;
       if (ver) this.blokVer.add(b); else this.blokVer.delete(b);
-      const vm = this.ver.meshes.get(b); if (vm) vm.visible = ver;
-      for (const [v, g] of this.dicht.meshes) if (blokVanVak(v) === b) g.visible = !ver;
+      const vm = this.meshes.ver.get(b); if (vm) vm.visible = ver;
+      for (const [v, g] of this.meshes.dicht) if (blokVanVak(v) === b) g.visible = !ver;
     }
   }
 }
@@ -152,7 +174,7 @@ export class StadWeergave {
   /** Camera (voor de volgorde van opbouwen en de keuze van het detailniveau). */
   cam: THREE.Vector3 | null = null;
 
-  werkBij(budgetMs = 8) {
+  werkBij(budgetMs = 8, dt = 0.016) {
     for (const e of this.w.haalEvents()) {
       switch (e.soort) {
         case 'seg+': this.segRij.add(e.id); break;
@@ -200,12 +222,12 @@ export class StadWeergave {
       this.props.zet(`geb:${id}`, r.props);
     }
     this.economie.werkBij();
-    this.tegels.bouw(budgetMs > 100 ? 1e9 : 3, this.cam ?? undefined);
+    this.tegels.bouw(budgetMs > 100 ? 1e9 : 3, this.cam ?? undefined, budgetMs > 100 ? 1e9 : 4, dt);
     if (this.cam) this.tegels.kiesDetail(this.cam);
     this.zones.werkBij();
   }
 
-  get bezig() { return this.bouwRij.size + this.segRij.size + this.tegels.vuil.size; }
+  get bezig() { return this.bouwRij.size + this.segRij.size + this.tegels.bezig; }
 }
 
 /** Zonekleuren op de kavels: zacht getint op lege gezoneerde kavels, met raster in de zonemodus. */

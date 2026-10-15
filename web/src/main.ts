@@ -193,6 +193,11 @@ async function start() {
   document.body.appendChild(hulp);
   document.getElementById('demo-knop')?.addEventListener('click', () => { location.search = '?demo=1'; });
 
+  // Laadscherm pas weg als de stad (in de worker) is opgebouwd: geen lege vakken bij het begin.
+  await voortgang('Stad opbouwen…', 0.9);
+  for (let i = 0; i < 400 && (stad.bezig - stad.tegels.bezig); i++) stad.werkBij(1e9);
+  stad.werkBij(1e9);
+  await stad.tegels.klaar();
   await voortgang('Klaar', 1);
   await bron.wacht();
   document.getElementById('laden')!.classList.add('weg');
@@ -200,7 +205,9 @@ async function start() {
 
   if (param.has('shot')) {
     // Fotomodus (voor geautomatiseerde screenshots zonder GPU): alles opbouwen, één frame renderen.
-    for (let i = 0; i < 200 && stad.bezig; i++) stad.werkBij(1e9);
+    for (let i = 0; i < 200 && (stad.bezig - stad.tegels.bezig); i++) stad.werkBij(1e9);
+    stad.werkBij(1e9);
+    await stad.tegels.klaar();
     // Verkeer een minuut laten rijden voor de foto.
     if (param.has('brand')) {
       // Testbrand in het gebouw het dichtst bij het camerapunt.
@@ -225,6 +232,7 @@ async function start() {
       const bij = [...wereld.gebouwen.values()].filter(g => g.klaar).sort((a, b) => Math.hypot(a.centrum.x - camera.doel.x, a.centrum.z - camera.doel.z) - Math.hypot(b.centrum.x - camera.doel.x, b.centrum.z - camera.doel.z));
       for (const g of bij.slice(0, 12)) wereld.startVerbouw(g, Math.min(5, (g.niveau ?? 1) + 1));
       stad.werkBij(1e9);
+      await stad.tegels.klaar();
     }
     if (!param.has('geenverkeer')) {
       const sn = wereld.snelheid; wereld.snelheid = 1; wereld.verkeer.max = maxVerkeer();
@@ -253,6 +261,8 @@ async function start() {
     if (verberg.includes('ui')) for (const id of ['hud', 'werkbalk', 'zoomknoppen', 'infoknoppen']) document.getElementById(id)!.style.display = 'none';
     if (verberg.includes('ui')) { hulp.style.display = 'none'; document.getElementById('nieuws')?.remove(); }
     sfeer.volg(camera.doel, camera.afstand);
+    sfeer.camera.updateMatrixWorld();
+    stad.tegels.kiesDetail(sfeer.camera.position);
     const t0 = performance.now();
     sfeer.render();
     if (!verberg.includes('labels')) labels.werkBij(1, camera.afstand);
@@ -304,8 +314,9 @@ async function start() {
     gereedschap.stap(dt);
     const voor = stad.bezig;
     stad.tegels.lodAfstand = lodVoor(); diensten.lodAfstand = lodVoor();
-    stad.werkBij(8);
-    if (voor || stad.bezig) sfeer.schaduwVuil();
+    stad.werkBij(5, dt);
+    if (stad.tegels.nieuw) { stad.tegels.nieuw = false; sfeer.schaduwVuil(); }
+    void voor;
     regelaar.tik(dt);
     terrein.werkBij();
     terrein.tik(tijd);
