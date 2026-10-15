@@ -32,6 +32,20 @@ hierheen).
 
 `src/core/voorzieningen.ts`: stroom, drinkwater, riolering en afval zoals in Cities: Skylines 2 (leidingen en kabels lopen langs de wegen). Voorzieningen (windturbine, zonnepark, gascentrale, pompstation, rioolwaterzuivering, stortplaats, afvalenergiecentrale) leveren aan alle gebouwen die via het wegennet verbonden zijn. Per netwerk productie tegen verbruik (Nederlandse kengetallen); met een buitenaansluiting wordt een tekort duur ingekocht. Zonder voorziening lopen gebouwen leeg, daalt de vraag en de tevredenheid en verschijnen er meldingen boven de gebouwen. Een nieuwe kaart begint met een snelweg vanaf de rand (de buitenaansluiting).
 
+## Hulpdiensten
+
+`src/core/hulpdiensten.ts`: brandweer, politie, ziekenhuis en gezondheidscentrum. Dekking wordt berekend over de weg (Dijkstra vanaf de kazerne of het bureau, niet hemelsbreed). Zonder dekking ontstaan vaker incidenten: branden groeien tot er een brandweerwagen ter plaatse is, misdaad verdwijnt als de politie niet op tijd komt, zieken gaan met de ambulance naar het ziekenhuis. Voertuigen rijden met sirene door het gewone verkeer en mogen door rood.
+
+## Grondwaarde en gebouwniveaus
+
+`src/core/waarde.ts`: grondwaarde per gebouw uit dekking, nutsvoorzieningen, winkels op loopafstand, water in de buurt, vervuiling en verkeerslawaai. Volle gebouwen met genoeg grondwaarde (voor niveau 3-4 ook brandweer, zorg en politie) knappen op tot niveau 5: meer OZB, zonnepanelen en groene daken. Zonder voorzieningen verloederen ze weer.
+
+## Info en opslaan
+
+- Kijken (Esc) en klik op een gebouw of voorziening: infopaneel met adres, bewoners/banen, grondwaarde met factoren, wat er nodig is voor het volgende niveau, voorzieningen en dekking.
+- Infoknoppen linksboven: kleurlagen voor verkeer, stroom, water, afval, brandweer, politie, zorg, grondwaarde en niveau.
+- De stad wordt elke 2 minuten en bij het wegklikken van het tabblad in de browser opgeslagen (IndexedDB met gzip; `src/opslag.ts`, data uit `Wereld.naarJson()`). Bij het openen kies je Doorgaan, Nieuwe stad of Voorbeeldstad; via het Stad-menu kun je ook meteen opslaan.
+
 ## Besturing
 
 | Toets / muis | Functie |
