@@ -1,0 +1,10 @@
+import { Wereld } from '../../src/core/wereld';
+import { bouwVoorbeeldstad } from '../../src/core/demo';
+const w = new Wereld(1);
+bouwVoorbeeldstad(w, Number(process.argv[2] ?? 600));
+const v = w.voorzieningen;
+v.bereken();
+console.log('diensten', [...v.diensten.values()].map(d => `${d.soort}@${d.p.x.toFixed(0)},${d.p.z.toFixed(0)}`).join(' '));
+for (const [n, b] of Object.entries(v.balans)) console.log(n, `productie ${b.productie.toFixed(1)} verbruik ${b.verbruik.toFixed(1)} inkoop ${b.inkoop.toFixed(1)} tekort ${b.tekort.toFixed(1)}`);
+console.log('gebouwen met tekort', v.tekort.size, 'aandeel', v.tekortAandeel.toFixed(2), '| onderhoud/mnd €', Math.round(v.onderhoud), 'inkoop/mnd €', Math.round(v.inkoopKosten));
+console.log('inwoners', w.stat.inwoners, 'saldo/mnd', Math.round(w.prognose.saldo), 'tevredenheid', w.tevredenheid);

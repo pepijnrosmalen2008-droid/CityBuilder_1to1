@@ -11,6 +11,7 @@ import { puntInPolygoon } from './math';
 import { Namen, stadsnaam } from './namen';
 import { Economie, Grondstof } from './economie';
 import { Verkeer } from './verkeer/verkeer';
+import { Voorzieningen } from './voorzieningen';
 import { Tarieven, Maandstaat, maandstaat, wegOppervlak, tariefEffect } from './begroting';
 
 /** Perceel op een gevelstrook: van booglengte s0 tot s1 langs de straat, zo diep als de strook. */
@@ -126,9 +127,11 @@ export class Wereld {
     this.net.naamGever = t => this.namen.straat(t);
     this.economie = new Economie(this);
     this.verkeer = new Verkeer(this);
+    this.voorzieningen = new Voorzieningen(this);
   }
   economie: Economie;
   verkeer: Verkeer;
+  voorzieningen: Voorzieningen;
 
   meld(tekst: string, soort: Nieuws['soort']) {
     this.nieuws.push({ id: this.nieuwsId++, dag: this.dagen, tekst, soort });
@@ -360,6 +363,7 @@ export class Wereld {
       const c = zwaartepunt(k.poly);
       const raak = dist2(c, m) <= straal || dist2(k.voor, m) <= straal || puntInPolygoon(m, k.poly);
       if (!raak || k.zone === zone) continue;
+      if (zone !== 'geen' && this.voorzieningen.binnen(k.voor)) continue;
       if (k.gebouw) {
         if (zone !== 'geen') continue;
         this.verwijderGebouw(k.gebouw);
@@ -444,6 +448,7 @@ export class Wereld {
   }
 
   private startBouw(k: Kavel) {
+    if (this.voorzieningen.binnen(k.voor)) return;
     const kans: Partial<Record<Zone, number>> = { kantoor: 0.75, wonenHoog: 0.55, industrie: 0.65, wonenLaag: 0.35, gemengd: 0.25 };
     const max: Partial<Record<Zone, number>> = { kantoor: 3, wonenHoog: 3, industrie: 3, wonenLaag: 2, gemengd: 2 };
     const reeks = [k];
@@ -482,6 +487,10 @@ export class Wereld {
   // ─── Simulatie ──────────────────────────────────────────────────────────────
 
   vraagVoor(z: Zone) {
+    return this.vraagZonderNuts(z) * (1 - this.voorzieningen.tekortAandeel * 0.9);
+  }
+
+  private vraagZonderNuts(z: Zone) {
     const v = this.vraag;
     switch (z) {
       case 'wonenLaag': case 'wonenHoog': return v.wonen;
@@ -511,6 +520,9 @@ export class Wereld {
           this.opgeleverd.set(straat, o);
         }
         else if (Math.floor(g.voortgang * g.lagen.length * 2) !== oud) this.events.push({ soort: 'gebouw~', id: g.id });
+      } else if (this.voorzieningen.tekort.has(g.id)) {
+        // Geen stroom, water of afvalophaal: bewoners en bedrijven vertrekken langzaam.
+        g.bezetting = Math.max(0.1, g.bezetting - dt * 0.006);
       } else if (g.bezetting < 1) {
         g.bezetting = Math.min(1, g.bezetting + dt * 0.035 * (0.35 + this.vraagVoor(g.zone)));
       }
@@ -541,6 +553,7 @@ export class Wereld {
     if (this.statKlok >= 0.5) { this.statKlok = 0; this.berekenStatistiek(); }
 
     this.economie.stap(dt);
+    this.voorzieningen.stap(dt);
 
     // Maandafrekening (30 dagen).
     this.maandKlok += dt / SECONDEN_PER_DAG;
@@ -569,6 +582,13 @@ export class Wereld {
       this.mijlpaal++;
     }
     this.waarschuwKlok += dt;
+    if (this.waarschuwKlok > 120 && this.stat.inwoners > 50) {
+      const b = this.voorzieningen.balans;
+      const tekort = (['stroom', 'water', 'riool', 'afval'] as const).find(n => b[n].tekort > b[n].verbruik * 0.02);
+      const tip = { stroom: 'bouw een windturbine, zonnepark of centrale', water: 'bouw een drinkwaterpompstation', riool: 'bouw een rioolwaterzuivering', afval: 'bouw een stortplaats of afvalcentrale' } as const;
+      const naam = { stroom: 'Stroomtekort', water: 'Watertekort', riool: 'Het riool loopt over', afval: 'Het afval wordt niet opgehaald' } as const;
+      if (tekort) { this.meld(`${naam[tekort]}: ${tip[tekort]} (Voorzieningen, N)`, 'waarschuwing'); this.waarschuwKlok = 0; }
+    }
     if (this.waarschuwKlok > 240 && this.stat.inwoners > 200) {
       if (this.stat.werkloosheid > 0.15) { this.meld(`Werkloosheid ${Math.round(this.stat.werkloosheid * 100)}%: er is vraag naar kantoren en bedrijven`, 'waarschuwing'); this.waarschuwKlok = 0; }
       else if (this.vraag.wonen > 0.8 && ![...this.kavels.values()].some(k => (k.zone === 'wonenLaag' || k.zone === 'wonenHoog') && !k.gebouw)) { this.meld('Er is vraag naar woningen: wijs meer woonzones aan', 'waarschuwing'); this.waarschuwKlok = 0; }
@@ -579,7 +599,7 @@ export class Wereld {
   get tevredenheid(): number {
     const s = this.stat, v = this.vraag;
     if (s.inwoners < 1) return 75;
-    let t = 82 - s.werkloosheid * 160 - Math.max(0, v.detailhandel - 0.6) * 25 - Math.max(0, v.wonen - 0.85) * 10;
+    let t = 82 - this.voorzieningen.tekortAandeel * 70 - s.werkloosheid * 160 - Math.max(0, v.detailhandel - 0.6) * 25 - Math.max(0, v.wonen - 0.85) * 10;
     return Math.round(Math.max(5, Math.min(100, t)));
   }
 
@@ -611,7 +631,7 @@ export class Wereld {
     };
     let m2 = 0;
     for (const sg of this.net.segmenten.values()) m2 += wegOppervlak(sg.type, sg.lengte);
-    this.prognose = maandstaat(this.tarieven, won, Math.round(banen), Math.round(inw), m2, this.exportHeffing);
+    this.prognose = maandstaat(this.tarieven, won, Math.round(banen), Math.round(inw), m2, this.exportHeffing, this.voorzieningen.onderhoud, this.voorzieningen.inkoopKosten);
   }
 
   // ─── Opslaan (engine-onafhankelijk JSON-formaat) ────────────────────────────

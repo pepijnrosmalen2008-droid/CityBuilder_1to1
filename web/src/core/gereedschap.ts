@@ -5,13 +5,14 @@ import { WegTypeId, halveBreedte, WEGTYPEN } from './wegen/typen';
 import { Wegennet } from './wegen/netwerk';
 import { Zone, zoneKleur } from './zones';
 import { Grondstof, GRONDSTOFFEN, HoofdPlek } from './economie';
+import { DienstSoort, DIENSTEN, NUT_EENHEID } from './voorzieningen';
 import { getekendOppervlak, afstandTotLijn } from './poly';
 import { PERCEEL_BREEDTE, vrijeDiepte } from './percelen';
 
 // Gereedschap met abstracte invoer: de render-/ui-laag geeft het grondpunt onder de muis en de
 // knoppen door; dit bestand bepaalt wat er gebeurt en welk voorbeeld getekend moet worden.
 
-export type Modus = 'weg' | 'zone' | 'gebied' | 'opwaarderen' | 'sloop' | 'kijk';
+export type Modus = 'weg' | 'zone' | 'gebied' | 'dienst' | 'opwaarderen' | 'sloop' | 'kijk';
 
 /** Tekenstijl van het wegengereedschap (zoals in Cities: Skylines). */
 export type Stijl = 'recht' | 'bocht' | 'vrij';
@@ -26,7 +27,8 @@ export type Voorbeeld =
   | { soort: 'geen' }
   | { soort: 'weg'; as: V3[]; breedte: number; geldig: boolean; tekst: string; punten: V3[]; lijnen: [V3, V3][]; snap: V3 | null; kavels: KavelBand[] }
   | { soort: 'penseel'; m: V3; r: number; kleur: string }
-  | { soort: 'markeer'; segment?: number; gebouw?: number; gebied?: number; kleur: string; tekst: string }
+  | { soort: 'markeer'; segment?: number; gebouw?: number; gebied?: number; dienst?: number; kleur: string; tekst: string }
+  | { soort: 'dienst'; voet: V3[]; geldig: boolean; tekst: string }
   | { soort: 'gebied'; punten: V3[]; kleur: string; tekst: string; dicht: boolean; hoofd: { p: V3; rot: number; geldig: boolean } | null };
 
 export class Gereedschap {
@@ -55,6 +57,7 @@ export class Gereedschap {
   private schilderKlok = 0;
   private meldingKlok = 0;
   grondstof: Grondstof = 'landbouw';
+  dienst: DienstSoort = 'windmolen';
   private gebiedPunten: V2[] = [];
   private hoofd: HoofdPlek | null = null;
 
@@ -315,7 +318,14 @@ export class Gereedschap {
         if (s && !w.wijzigWeg(s.seg.id, this.wegtype)) this.melding = 'Opwaarderen lukt niet (geld?)';
         return;
       }
+      case 'dienst': {
+        const fout = w.voorzieningen.bouw(this.dienst, p);
+        if (fout) this.melding = fout;
+        return;
+      }
       case 'sloop': {
+        const vz = w.voorzieningen.dienstOp(p);
+        if (vz) { w.voorzieningen.sloop(vz.id); return; }
         const g = w.gebouwOp(p);
         if (g) { w.verwijderGebouw(g.id); return; }
         const s = w.net.segmentBij(p, 1);
@@ -427,7 +437,17 @@ export class Gereedschap {
         const s = w.net.segmentBij(p, 1);
         return s ? { soort: 'markeer', segment: s.seg.id, kleur: '#4dabf7', tekst: `${WEGTYPEN[s.seg.type].naam} → ${WEGTYPEN[this.wegtype].naam}` } : { soort: 'geen' };
       }
+      case 'dienst': {
+        const info = DIENSTEN[this.dienst];
+        const r = w.voorzieningen.plek(this.dienst, p);
+        if (!r) return { soort: 'dienst', voet: [], geldig: false, tekst: `${info.naam}: ga naast een weg staan` };
+        const t = w.terrein;
+        const levert = Object.entries(info.levert).map(([n, x]) => `${(x as number).toLocaleString('nl-NL')} ${NUT_EENHEID[n as keyof typeof NUT_EENHEID]}`).join(' + ');
+        return { soort: 'dienst', voet: r.dienst.voet.map(q => ({ x: q.x, y: t.hoogte(q.x, q.z), z: q.z })), geldig: !r.fout, tekst: r.fout ?? `${info.naam} · € ${info.kosten.toLocaleString('nl-NL')} · ${levert}` };
+      }
       case 'sloop': {
+        const vz = w.voorzieningen.dienstOp(p);
+        if (vz) return { soort: 'markeer', dienst: vz.id, kleur: '#ff6b6b', tekst: `${DIENSTEN[vz.soort].naam} slopen (20% terug)` };
         const g = w.gebouwOp(p);
         if (g) return { soort: 'markeer', gebouw: g.id, kleur: '#ff6b6b', tekst: 'Gebouw slopen' };
         const s = w.net.segmentBij(p, 1);

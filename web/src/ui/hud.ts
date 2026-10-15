@@ -83,7 +83,7 @@ export class Hud {
       <div class="groep">Inkomsten</div>
       ${rij('Woonlasten (OZB, riool, afval)', p.woonlasten)}${rij('OZB bedrijven', p.bedrijfslasten)}${rij('Gemeentefonds', p.gemeentefonds)}${p.export ? rij('Heffing op export', p.export) : ''}
       <div class="groep">Uitgaven</div>
-      ${rij('Voorzieningen', -p.voorzieningen)}${rij('Onderhoud wegen', -p.wegen)}
+      ${rij('Voorzieningen', -p.voorzieningen)}${rij('Onderhoud wegen', -p.wegen)}${p.nuts ? rij('Nutsvoorzieningen', -p.nuts) : ''}${p.inkoop ? rij('Inkoop stroom, water, afval', -p.inkoop) : ''}
       ${rij('Saldo', p.saldo, p.saldo >= 0 ? 'plus' : 'min')}
       ${v ? `<div class="fps">Vorige maand: ${v.saldo >= 0 ? '+' : '−'}€ ${fmt(Math.abs(v.saldo))}</div>` : ''}`;
     if (!this.schuiversGetekend) {

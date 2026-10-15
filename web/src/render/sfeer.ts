@@ -56,7 +56,8 @@ export class Sfeer {
     this.scene.add(this.sky);
 
     // Zon: middag in de lente, licht van het zuidwesten.
-    const hoogte = THREE.MathUtils.degToRad(38), azimut = THREE.MathUtils.degToRad(215);
+    // (azimut gemeten vanaf +z = zuid, tegen de klok in vanaf boven: 325° = zuidwest)
+    const hoogte = THREE.MathUtils.degToRad(38), azimut = THREE.MathUtils.degToRad(325);
     this.zonRichting.setFromSphericalCoords(1, Math.PI / 2 - hoogte, azimut);
     u.sunPosition.value.copy(this.zonRichting);
     this.zon = new THREE.DirectionalLight(0xfff1dc, 3.1);

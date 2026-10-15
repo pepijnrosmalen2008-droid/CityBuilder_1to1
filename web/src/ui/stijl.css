@@ -76,7 +76,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
 
 /* Werkbalk onderaan */
 #werkbalk { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 24px)); z-index: 5; padding: 8px; }
-.tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+@media (max-width: 1100px) { .tab .toets { display: none; } .tab { padding: 7px 10px; } }
 .tab { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 7px 12px; }
 .tab .ic { width: 16px; height: 16px; color: inherit; }
 .tab .toets { font-size: 10px; color: var(--zacht); border: 1px solid var(--paneel-rand); border-radius: 4px; padding: 0 4px; }
@@ -179,3 +181,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
 #zoomknoppen { position: fixed; right: 10px; top: 45%; z-index: 5; display: none; flex-direction: column; gap: 8px; }
 #zoomknoppen .knop { width: 44px; height: 44px; border-radius: 50%; font-size: 24px; font-weight: 600; line-height: 1; padding: 0; background: rgba(16,21,30,.82); backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.35); }
 @media (pointer: coarse) { #zoomknoppen { display: flex; } }
+
+/* Balans nutsvoorzieningen */
+.balans { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--zacht); }
+.balans .nut { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.balans .nut b { color: var(--tekst); font-weight: 600; }
+.balans .nut i { width: 44px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; display: inline-block; }
+.balans .nut u { display: block; height: 100%; background: #69db7c; text-decoration: none; }
+.balans .nut.tekort b { color: #ff8787; } .balans .nut.tekort u { background: #ff8787; }
+.balans small { color: var(--zacht); }

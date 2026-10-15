@@ -22,6 +22,8 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
   for (let z = 140; z <= 340; z += 100) weg({ x: -580, z }, { x: 140, z }, z === 240 ? 'tramstraat' : 'woonstraat');
   // Een gebogen woonstraat.
   weg({ x: -620, z: 140 }, { x: -620, z: 340 }, 'woonstraat', { x: -700, z: 240 });
+  weg({ x: -620, z: 140 }, { x: -580, z: 140 }, 'woonstraat');
+  weg({ x: -620, z: 340 }, { x: -580, z: 340 }, 'woonstraat');
 
   // Zones.
   for (const k of [...w.kavels.values()]) {
@@ -50,6 +52,31 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
   gebied('landbouw', [[660, 120], [880, 100], [900, 330], [665, 320]]);
   gebied('bosbouw', [[200, -430], [440, -490], [460, -700], [220, -680]]);
   gebied('delfstoffen', [[840, -230], [940, -250], [960, -420], [850, -400]]);
+
+  // Nutsvoorzieningen langs de buitenwegen (windturbines in een rij, water, riool, afval).
+  const vz = w.voorzieningen;
+  const zet = (soort: Parameters<typeof vz.bouw>[0], segTypes: string[], aantal: number, tussen = 0) => {
+    let n = 0;
+    for (const seg of [...w.net.segmenten.values()].filter(x => segTypes.includes(x.type))) {
+      for (let i = 2; i < seg.pad.length - 2 && n < aantal; i += 2) {
+        for (const k of [1, -1]) {
+          const q = seg.pad[i], p = { x: q.x - q.dz * k * 70, z: q.z + q.dx * k * 70 };
+          if (p.x > -640 && p.x < 200 && p.z > -390 && p.z < 390) continue; // niet in de stad
+          const r = vz.plek(soort, p);
+          if (!r || r.fout) continue;
+          if (tussen && [...vz.diensten.values()].some(d => d.soort === soort && Math.hypot(d.p.x - r.dienst.p.x, d.p.z - r.dienst.p.z) < tussen)) continue;
+          if (!vz.bouw(soort, p)) { n++; break; }
+        }
+      }
+      if (n >= aantal) break;
+    }
+  };
+  zet('windmolen', ['gow', 'laan'], 6, 130);
+  zet('gascentrale', ['gow'], 1);
+  zet('pompstation', ['gow'], 1);
+  zet('rwzi', ['gow'], 1);
+  zet('stortplaats', ['gow'], 1);
+  for (const d of vz.diensten.values()) { d.voortgang = 1; d.klaar = true; }
 
   // Groeien: de simulatie een tijd laten lopen.
   w.snelheid = 4;
@@ -105,4 +132,22 @@ export function bouwTestKruisingen(w: Wereld) {
   hoog(o('afgerond', 0, -20), o('afgerond', 50, -70), 'straat', 0, true);
   // Zones zodat de percelen zichtbaar zijn.
   for (const k of [...w.kavels.values()]) w.zoneer(kavelMidden(k), 0.1, 'wonenLaag');
+}
+
+/**
+ * Nieuwe kaart: een snelweg vanaf de westrand naar binnen (de buitenaansluiting, zoals in Cities:
+ * Skylines). Daarlangs komen de eerste auto's binnen en kan stroom en water worden ingekocht.
+ */
+export function legStartweg(w: Wereld) {
+  const g = w.terrein.grootte / 2;
+  const geld = w.geld;
+  for (const z of [0, 120, -120, 240, -240, 360, -360]) {
+    const a = { x: -g + 22, z }, b = { x: -g + 320, z };
+    let land = true;
+    for (let t = 0; t <= 1; t += 0.05) if (w.terrein.hoogte(a.x + (b.x - a.x) * t, z) < 1.5) { land = false; break; }
+    if (!land) continue;
+    const r = w.legWeg(a, lerp2(a, b, 0.5), b, 'snelweg');
+    if (r.ok) break;
+  }
+  w.geld = geld;
 }

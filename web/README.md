@@ -28,11 +28,15 @@ hierheen).
 - `verkeer.ts`: ritten (woon-werk, winkelen, bestelbussen, vrachtwagens van en naar de buitenaansluitingen), routes met A* (voorkeur voor hogere wegen), volggedrag met het Intelligent Driver Model, voorsorteren door van strook te wisselen, voorrang (hogere weg, rechts gaat voor, rechtdoor voor linksaf), het kruispunt niet blokkeren, doorstroming als meter in de HUD.
 - `geom/autos.ts`: procedurele voertuigen (hatchback, sedan, stationwagen, SUV, bestelbus, vrachtwagen, bus) met lak per voertuig, glas, wielkasten, lampen, kentekens en remlichten; een eenvoudige versie voor op afstand.
 
+## Nutsvoorzieningen
+
+`src/core/voorzieningen.ts`: stroom, drinkwater, riolering en afval zoals in Cities: Skylines 2 (leidingen en kabels lopen langs de wegen). Voorzieningen (windturbine, zonnepark, gascentrale, pompstation, rioolwaterzuivering, stortplaats, afvalenergiecentrale) leveren aan alle gebouwen die via het wegennet verbonden zijn. Per netwerk productie tegen verbruik (Nederlandse kengetallen); met een buitenaansluiting wordt een tekort duur ingekocht. Zonder voorziening lopen gebouwen leeg, daalt de vraag en de tevredenheid en verschijnen er meldingen boven de gebouwen. Een nieuwe kaart begint met een snelweg vanaf de rand (de buitenaansluiting).
+
 ## Besturing
 
 | Toets / muis | Functie |
 |---|---|
-| X / Z / G / U / B / Esc | Wegen / Zones / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Opwaarderen / Slopen / Kijken |
+| X / Z / G / N / U / B / Esc | Wegen / Zones / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Voorzieningen (stroom, water, afval) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
 | C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend) |
 | PgUp / PgDn | Hoogte van de weg in stappen van 4 m: viaduct (omhoog) of tunnel (omlaag); wegen op verschillende hoogte kruisen zonder kruispunt |

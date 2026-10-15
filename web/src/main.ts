@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { Wereld } from './core/wereld';
 import { Gereedschap } from './core/gereedschap';
-import { bouwVoorbeeldstad, bouwTestKruisingen, TEST_PLEKKEN } from './core/demo';
+import { bouwVoorbeeldstad, bouwTestKruisingen, TEST_PLEKKEN, legStartweg } from './core/demo';
 import { Sfeer } from './render/sfeer';
 import { KwaliteitRegelaar, Keuze } from './render/kwaliteit';
 import { StadCamera } from './render/camera';
 import { TextuurBron } from './render/texturen';
 import { Materialen } from './render/materialen';
 import { VerkeerWeergave } from './render/verkeer';
+import { DienstWeergave } from './render/diensten';
 import { Rijstroken } from './core/verkeer/rijstroken';
 import { TerreinWeergave } from './render/terrein';
 import { StadWeergave } from './render/stad';
@@ -42,16 +43,22 @@ async function start() {
   const test = param.get('test');
   if (test) { bouwTestKruisingen(wereld); wereld.snelheid = 0; }
   if (demo) { await voortgang('Voorbeeldstad bouwen…', 0.55); bouwVoorbeeldstad(wereld, Number(param.get('groei') ?? 1800)); }
+  else if (!test) legStartweg(wereld);
 
   await voortgang('Bossen planten…', 0.7);
   const stad = new StadWeergave(wereld, mats);
   sfeer.scene.add(stad.groep);
   const verkeer = new VerkeerWeergave(wereld, mats);
   sfeer.scene.add(verkeer.groep);
+  const diensten = new DienstWeergave(wereld, mats);
+  sfeer.scene.add(diensten.groep);
   const maxVerkeer = () => ({ laag: 300, midden: 650, hoog: 1100 } as Record<string, number>)[sfeer.niveau] ?? 600;
   const camera = new StadCamera(sfeer.camera, sfeer.renderer.domElement, wereld.terrein);
   const plek = test && TEST_PLEKKEN[test];
-  const c = (param.get('cam') ?? (plek ? `${plek[0]},${plek[1]},95,0,88` : demo ? '-260,-60,420,215,38' : '-150,0,520,30,48')).split(',').map(Number);
+  // Nieuwe kaart: begin bij het eind van de snelweg.
+  const eind = [...wereld.net.knopen.values()].sort((a, b) => b.p.x - a.p.x)[0];
+  const start = eind ? `${eind.p.x - 40},${eind.p.z},380,90,35` : "-150,0,520,30,48";
+  const c = (param.get('cam') ?? (plek ? `${plek[0]},${plek[1]},95,0,88` : demo ? '-260,-60,420,215,38' : start)).split(',').map(Number);
   camera.zet(c[0], c[1], c[2], c[3], c[4]);
   stad.werkBij(1e9);
   terrein.werkBij();
@@ -62,7 +69,7 @@ async function start() {
   sfeer.scene.add(voorbeeld.groep);
   const hud = new Hud(wereld, regelaar);
   const labels = new StraatLabels(wereld, sfeer.camera);
-  const werkbalk = new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; });
+  const werkbalk = new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; }, wereld.voorzieningen);
   const ecoPaneel = new EconomiePaneel(wereld);
   werkbalk.opEconomie = () => ecoPaneel.wissel();
 
@@ -129,7 +136,7 @@ async function start() {
   // Hulp en voorbeeldstad.
   const hulp = document.createElement('div');
   hulp.className = 'hulp paneel';
-  hulp.innerHTML = `<b>Bouwen</b><br>Wegen: klik begin- en eindpunt. C = recht / bocht / vrij, PgUp/PgDn = hoogte, H = hulplijnen.<br>Zones: Z, sleep met het penseel.<br>Rechts klikken stopt.<br>${demo ? '' : '<button class="knop" id="demo-knop" style="margin-top:8px;width:100%">Voorbeeldstad laden</button>'}`;
+  hulp.innerHTML = `<b>Bouwen</b><br>Wegen: klik begin- en eindpunt. C = recht / bocht / vrij, PgUp/PgDn = hoogte, H = hulplijnen.<br>Zones: Z, sleep met het penseel.<br>Stroom, water, afval: N (aan een weg).<br>Rechts klikken stopt.<br>${demo ? '' : '<button class="knop" id="demo-knop" style="margin-top:8px;width:100%">Voorbeeldstad laden</button>'}`;
   document.body.appendChild(hulp);
   document.getElementById('demo-knop')?.addEventListener('click', () => { location.search = '?demo=1'; });
 
@@ -151,6 +158,8 @@ async function start() {
       if (v && sp) { const pos = Rijstroken.op(sp, v.s - v.lengte / 2); camera.zet(pos.x, pos.z, Number(af || 12), Number(yaw || 30), Number(pitch || 25)); }
     }
     verkeer.werkBij(sfeer.camera.position);
+    wereld.voorzieningen.bereken();
+    diensten.werkBij(0, sfeer.camera, 1);
     stad.props.werkBij(sfeer.camera.position, 0, true);
     await bron.wacht();
     hud.werkBij();
@@ -183,6 +192,7 @@ async function start() {
     wereld.verkeer.max = maxVerkeer();
     wereld.stap(dt);
     verkeer.werkBij(sfeer.camera.position);
+    if (diensten.werkBij(dt, sfeer.camera, wereld.snelheid)) sfeer.schaduwVuil();
     const grond = grondOnder();
     gereedschap.beweeg(grond);
     gereedschap.stap(dt);
@@ -195,10 +205,10 @@ async function start() {
     if (stad.props.werkBij(sfeer.camera.position, dt)) sfeer.schaduwVuil();
     const vb = gereedschap.voorbeeld();
     voorbeeld.toon(vb);
-    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' ? vb.tekst : '';
+    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' || vb.soort === 'dienst' ? vb.tekst : '';
     tip.style.display = tekst && grond ? 'block' : 'none';
     tip.textContent = tekst;
-    tip.className = vb.soort === 'weg' && !vb.geldig ? 'fout' : '';
+    tip.className = (vb.soort === 'weg' || vb.soort === 'dienst') && !vb.geldig ? 'fout' : '';
     tip.style.left = muis.x + 'px'; tip.style.top = muis.y + 'px';
     melding.style.display = gereedschap.melding ? 'block' : 'none';
     klaar.style.display = gereedschap.tekent ? 'block' : 'none';
@@ -206,7 +216,7 @@ async function start() {
     stad.economie.toonKaart(gereedschap.modus === 'gebied' ? gereedschap.grondstof : null);
     melding.textContent = gereedschap.melding;
     hudKlok += dt;
-    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); ecoPaneel.werkBij(); }
+    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); ecoPaneel.werkBij(); werkbalk.werkBijBalans(); }
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.render();
     labels.werkBij(dt, camera.afstand);

@@ -135,7 +135,20 @@ export class VoorbeeldLaag {
         this.stippen.count = n; this.stippen.instanceMatrix.needsUpdate = true; this.stippen.visible = n > 0;
         break;
       }
+      case 'dienst': {
+        if (v.voet.length) {
+          const pts = [...v.voet, v.voet[0]].map(q => ({ ...q, y: Math.max(q.y, 0) }));
+          this.lintLangs(pts, 2.5, 0.8);
+          this.lintMat.color.set(v.geldig ? 0x40c057 : 0xfa5252);
+          this.lint.visible = true;
+        }
+        break;
+      }
       case 'markeer': {
+        if (v.dienst !== undefined) {
+          const d = this.w.voorzieningen.diensten.get(v.dienst);
+          if (d) { this.lintLangs([...d.voet, d.voet[0]].map(q => ({ x: q.x, y: this.w.terrein.hoogte(q.x, q.z), z: q.z })), 3, 0.8); this.lintMat.color.set(v.kleur); this.lint.visible = true; }
+        }
         if (v.gebied !== undefined) {
           const gb = this.w.economie.gebieden.get(v.gebied);
           if (gb) { this.lintLangs([...gb.poly, gb.poly[0]].map(q => ({ x: q.x, y: this.w.terrein.hoogte(q.x, q.z), z: q.z })), 3, 0.8); this.lintMat.color.set(v.kleur); this.lint.visible = true; }
