@@ -63,13 +63,20 @@ export class DienstWeergave {
     for (const d of w.voorzieningen.diensten.values()) this.bouw(d.id);
   }
 
+  /** Bomenlaag van de stad (bomen op het terrein van een voorziening). */
+  private _props: { zet: (eigenaar: string, props: import('../core/geom/mesh').Prop[]) => void; wis: (eigenaar: string) => void } | null = null;
+  get props() { return this._props; }
+  set props(p) { this._props = p; for (const d of this.w.voorzieningen.diensten.values()) this.bouw(d.id); }
+
   private bouw(id: number) {
     const oud = this.meshes.get(id);
     if (oud) { weg(oud); this.meshes.delete(id); this.rotors = this.rotors.filter(r => r.userData.dienst !== id); }
     const d = this.w.voorzieningen.diensten.get(id);
-    if (!d) return;
+    if (!d) { this.props?.wis(`dienst:${id}`); return; }
     const t = this.w.terrein;
-    const mesh = naarMesh(bouwDienst(d, (x, z) => t.hoogte(x, z)), this.mats, true, d.soort);
+    const r = bouwDienst(d, (x, z) => t.hoogte(x, z));
+    this.props?.zet(`dienst:${id}`, r.props);
+    const mesh = naarMesh(r.mesh, this.mats, true, d.soort);
     if (!mesh) return;
     const g = new THREE.Group();
     g.add(mesh);

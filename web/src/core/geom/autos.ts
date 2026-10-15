@@ -129,12 +129,33 @@ function cabineDoorsnede(x: number, wOnder: number, wBoven: number, y0: number, 
 
 export type VelgStijl = 'spaak5' | 'spaak10' | 'spaak6' | 'staal' | 'vracht';
 
+/** Een wiel van een voertuig (plek in voertuigcoördinaten). */
+export interface WielPlek { x: number; z: number; r: number; b: number; laag: boolean; stijl: VelgStijl }
+/** Als dit gezet is, tekent wiel() niets maar onthoudt het de plek (losse, draaiende wielen). */
+let VERZAMEL: WielPlek[] | null = null;
+
+/** Voertuig zonder wielen plus de plekken van de wielen (de render-laag laat ze draaien). */
+export function voertuigZonderWielen(soort: VoertuigSoort, laag = false): { mesh: MeshData; wielen: WielPlek[] } {
+  VERZAMEL = [];
+  try { const mesh = voertuigMesh(soort, laag); return { mesh, wielen: VERZAMEL }; } finally { VERZAMEL = null; }
+}
+
+/** Los wiel met de as door de oorsprong (as langs z; buitenkant naar +z bij kant 1). */
+export function losWiel(w: WielPlek, kant: 1 | -1): MeshData {
+  const mb = new MeshBouwer();
+  wiel(mb, 0, kant * 1e-4, w.r, w.b, w.laag, w.stijl);
+  const m = mb.bouw();
+  for (const g of m.groepen) for (let i = 1; i < g.posities.length; i += 3) g.posities[i] -= w.r;
+  return m;
+}
+
 /**
  * Wiel: band als omwentelingslichaam (bolle zijwand, afgerond loopvlak), verdiepte velg met
  * spaken, naafdop, remschijf en remklauw erachter. x, z = midden van het wiel; de buitenkant
  * wijst naar het teken van z.
  */
 function wiel(mb: MeshBouwer, x: number, z: number, r: number, b: number, laag: boolean, stijl: VelgStijl = 'spaak5') {
+  if (VERZAMEL) { VERZAMEL.push({ x, z, r, b, laag, stijl }); return; }
   const kant = Math.sign(z) || 1;
   const N = laag ? 8 : 22;
   const P = (rho: number, a: number, hoek: number): V3 => ({ x: x + Math.cos(hoek) * rho, y: r + Math.sin(hoek) * rho, z: z + kant * a });

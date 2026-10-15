@@ -3,7 +3,7 @@ import { Wereld } from '../core/wereld';
 import { Materialen } from './materialen';
 import { naarMesh } from './meshes';
 import { MeshData, MeshBouwer } from '../core/geom/mesh';
-import { voertuigMesh, remlichten, zwaailichten } from '../core/geom/autos';
+import { voertuigMesh, voertuigZonderWielen, losWiel, WielPlek, remlichten, zwaailichten } from '../core/geom/autos';
 import { VoertuigSoort, AFMETING, LAKKEN } from '../core/verkeer/verkeer';
 import { Baan } from '../core/verkeer/rijstroken';
 import { cilinder } from '../core/geom/props';
@@ -42,12 +42,41 @@ export class VerkeerWeergave {
   private lampen: Record<'rood' | 'oranje' | 'groen', THREE.InstancedMesh>;
   private koppen: { knoop: number; seg: number; pos: THREE.Vector3[]; voor: THREE.Vector3 }[] = [];
   private teller = -1;
+  /** Losse, draaiende wielen (alleen dichtbij): per wieltype en kant een instantielaag. */
+  private wielLagen = new Map<string, { m: THREE.InstancedMesh; n: number }>();
+  private wielenVan = new Map<VoertuigSoort, { plek: WielPlek; sleutel: string }[]>();
+  /** Afgelegde weg per voertuig (voor de draaihoek van de wielen) en de vorige plek. */
+  private gereden = new Map<number, { x: number; z: number; s: number }>();
   private m = new THREE.Matrix4();
+  private mW = new THREE.Matrix4();
+  private mR = new THREE.Matrix4();
   private tmp = { f: new THREE.Vector3(), u: new THREE.Vector3(), r: new THREE.Vector3(), p: new THREE.Vector3() };
 
   constructor(private w: Wereld, private mats: Materialen, readonly max = 1200) {
     for (const soort of SOORTEN) for (const laag of [false, true]) {
-      const { lak, rest } = splits(voertuigMesh(soort, laag));
+      // Dichtbij zonder wielen: die worden los getekend en draaien mee met de snelheid.
+      let data: MeshData;
+      if (laag) data = voertuigMesh(soort, true);
+      else {
+        const z = voertuigZonderWielen(soort, false);
+        data = z.mesh;
+        const lijst: { plek: WielPlek; sleutel: string }[] = [];
+        for (const w of z.wielen) {
+          const kant = w.z >= 0 ? 1 : -1;
+          const sleutel = `${w.r}|${w.b}|${w.laag}|${w.stijl}|${kant}`;
+          if (!this.wielLagen.has(sleutel)) {
+            const wm = naarMesh(losWiel(w, kant as 1 | -1), mats, false, 'wiel')!;
+            const im = new THREE.InstancedMesh(wm.geometry, wm.material, max * 3);
+            im.count = 0; im.frustumCulled = false; im.castShadow = false; im.receiveShadow = true;
+            im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            this.groep.add(im);
+            this.wielLagen.set(sleutel, { m: im, n: 0 });
+          }
+          lijst.push({ plek: w, sleutel });
+        }
+        this.wielenVan.set(soort, lijst);
+      }
+      const { lak, rest } = splits(data);
       const mLak = naarMesh(lak, mats, false, 'auto')!;
       const mRest = rest.groepen.length ? naarMesh(rest, mats, false, 'auto') : null;
       const inst = (m: THREE.Mesh) => {
@@ -142,6 +171,7 @@ export class VerkeerWeergave {
     if (vk.stroken.teller !== this.teller) { this.teller = vk.stroken.teller; this.bouwPalen(); }
     for (const l of this.lagen.values()) l.n = 0;
     for (const r of this.rem.values()) r.n = 0;
+    for (const wl of this.wielLagen.values()) wl.n = 0;
     let nv = 0;
     const { f, u, r, p } = this.tmp;
     const schaal = new THREE.Vector3(1, 1, 1);
@@ -170,6 +200,19 @@ export class VerkeerWeergave {
       if (v.sirene && aan) { const z = this.zwaai.get(v.soort); if (z) z.m.setMatrixAt(z.n++, this.m); }
       laag.lak.setColorAt(laag.n, kleur);
       laag.n++;
+      // Afgelegde weg bijhouden (ook bij versnelde tijd klopt de draaiing zo met de beweging).
+      let g = this.gereden.get(v.id);
+      if (!g) { g = { x: p.x, z: p.z, s: 0 }; this.gereden.set(v.id, g); }
+      const stap = Math.hypot(p.x - g.x, p.z - g.z);
+      if (stap < 8) g.s += stap;
+      g.x = p.x; g.z = p.z;
+      if (!ver) for (const { plek, sleutel } of this.wielenVan.get(v.soort) ?? []) {
+        const wl = this.wielLagen.get(sleutel)!;
+        if (wl.n >= wl.m.instanceMatrix.count) continue;
+        this.mR.makeRotationZ(-g.s / plek.r);
+        this.mW.makeTranslation(plek.x, plek.r, plek.z).multiply(this.mR);
+        wl.m.setMatrixAt(wl.n++, this.mW.premultiply(this.m));
+      }
       if (v.rem && !ver) { const rm = this.rem.get(v.soort)!; rm.m.setMatrixAt(rm.n++, this.m); }
       // Schaduwvlek.
       q.setFromRotationMatrix(this.m);
@@ -185,6 +228,8 @@ export class VerkeerWeergave {
     for (const rm of this.rem.values()) { rm.m.count = rm.n; rm.m.visible = rm.n > 0; rm.m.instanceMatrix.needsUpdate = true; }
     for (const z of this.zwaai.values()) { z.m.count = z.n; z.m.visible = z.n > 0; z.m.instanceMatrix.needsUpdate = true; }
     this.vlek.count = nv; this.vlek.instanceMatrix.needsUpdate = true;
+    for (const wl of this.wielLagen.values()) { wl.m.count = wl.n; wl.m.visible = wl.n > 0; wl.m.instanceMatrix.needsUpdate = true; }
+    if (this.gereden.size > vk.voertuigen.size + 200) for (const id of this.gereden.keys()) if (!vk.voertuigen.has(id)) this.gereden.delete(id);
     // Verkeerslichten.
     const n = { rood: 0, oranje: 0, groen: 0 };
     for (const k of this.koppen) {

@@ -74,6 +74,7 @@ async function start() {
   sfeer.scene.add(verkeer.groep);
   const diensten = new DienstWeergave(wereld, mats);
   sfeer.scene.add(diensten.groep);
+  diensten.props = stad.props;
   const infoLaag = new InfoLaag(wereld);
   sfeer.scene.add(infoLaag.groep);
   const districtLaag = new DistrictLaag(wereld, sfeer.camera);
@@ -208,6 +209,12 @@ async function start() {
       const [type, af, yaw, pitch] = (param.get('naartype') ?? '').split(',');
       const g = [...wereld.gebouwen.values()].find(x => x.type === type && x.klaar);
       if (g) camera.zet(g.centrum.x, g.centrum.z, Number(af || 45), Number(yaw || 200), Number(pitch || 30));
+    }
+    for (const k of ['naardienst', 'naarbedrijf'] as const) if (param.has(k)) {
+      const [soort, af, yaw, pitch] = (param.get(k) ?? '').split(',');
+      const lijst = k === 'naardienst' ? [...wereld.voorzieningen.diensten.values()] : [...wereld.economie.bedrijven.values()];
+      const x = lijst.find(q => q.soort === soort);
+      if (x) camera.zet(x.p.x, x.p.z, Number(af || 120), Number(yaw || 200), Number(pitch || 35));
     }
     if (param.has('verbouw')) {
       // Test: panden rond het camerapunt in de steigers zetten.
