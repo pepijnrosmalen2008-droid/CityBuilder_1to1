@@ -55,13 +55,14 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
 
   // Nutsvoorzieningen langs de buitenwegen (windturbines in een rij, water, riool, afval).
   const vz = w.voorzieningen;
-  const zet = (soort: Parameters<typeof vz.bouw>[0], segTypes: string[], aantal: number, tussen = 0) => {
+  const zet = (soort: Parameters<typeof vz.bouw>[0], segTypes: string[], aantal: number, tussen = 0, inStad = false) => {
     let n = 0;
     for (const seg of [...w.net.segmenten.values()].filter(x => segTypes.includes(x.type))) {
       for (let i = 2; i < seg.pad.length - 2 && n < aantal; i += 2) {
         for (const k of [1, -1]) {
           const q = seg.pad[i], p = { x: q.x - q.dz * k * 70, z: q.z + q.dx * k * 70 };
-          if (p.x > -640 && p.x < 200 && p.z > -390 && p.z < 390) continue; // niet in de stad
+          const stad = p.x > -640 && p.x < 200 && p.z > -390 && p.z < 390;
+          if (stad !== inStad) continue; // centrales buiten de stad, hulpdiensten erin
           const r = vz.plek(soort, p);
           if (!r || r.fout) continue;
           if (tussen && [...vz.diensten.values()].some(d => d.soort === soort && Math.hypot(d.p.x - r.dienst.p.x, d.p.z - r.dienst.p.z) < tussen)) continue;
@@ -76,6 +77,11 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
   zet('pompstation', ['gow'], 1);
   zet('rwzi', ['gow'], 1);
   zet('stortplaats', ['gow'], 1);
+  // Hulpdiensten in de stad.
+  zet('brandweer', ['straat'], 2, 500, true);
+  zet('politie', ['straat', 'straatBus'], 1, 0, true);
+  zet('ziekenhuis', ['laan', 'straat', 'straatBus'], 1, 0, true);
+  zet('gezondheidscentrum', ['straat', 'woonstraat'], 2, 400, true);
   for (const d of vz.diensten.values()) { d.voortgang = 1; d.klaar = true; }
 
   // Groeien: de simulatie een tijd laten lopen.

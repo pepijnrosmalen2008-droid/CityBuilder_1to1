@@ -1,6 +1,13 @@
 // Kleine lijnicoontjes (24×24, currentColor).
 const svg = (d: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 export const ICOON = {
+  druppel: svg('<path d="M12 3.5c3.6 4.6 5.5 7.6 5.5 10a5.5 5.5 0 0 1-11 0c0-2.4 1.9-5.4 5.5-10z"/>'),
+  vuilnis: svg('<path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/>'),
+  vlam: svg('<path d="M12 3c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2.6 1.4-4 2.5-5 .3 1.8 1 2.6 2 3 0-3 .5-5.5.5-8z"/>'),
+  schild: svg('<path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"/>'),
+  kruis: svg('<path d="M9.5 4h5v5.5H20v5h-5.5V20h-5v-5.5H4v-5h5.5z"/>'),
+  ster: svg('<path d="m12 4 2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z"/>'),
+  euro: svg('<path d="M17 6.5a6 6 0 1 0 0 11M5 10.5h9M5 13.5h9"/>'),
   bliksem: svg('<path d="M13 3 6 13h5l-1 8 7-10h-5z"/>'),
   auto: svg('<path d="M5 16v2.5M19 16v2.5"/><path d="M3.5 16v-3.2l2-4.6A2 2 0 0 1 7.3 7h9.4a2 2 0 0 1 1.8 1.2l2 4.6V16z"/><path d="M4 12.5h16"/><circle cx="7.5" cy="14.3" r=".6"/><circle cx="16.5" cy="14.3" r=".6"/>'),
   munt: svg('<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2a3.4 3.4 0 1 0 0 5.6M8.5 11h5M8.5 13.2h5"/>'),

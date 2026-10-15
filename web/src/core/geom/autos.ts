@@ -1,5 +1,5 @@
 import { V3, lerp, clamp } from '../math';
-import { MeshBouwer, MeshData } from './mesh';
+import { MeshBouwer, MeshData, samenvoegen } from './mesh';
 import type { VoertuigSoort } from '../verkeer/verkeer';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -30,7 +30,8 @@ interface Vorm {
   planAchter?: number;
 }
 
-const VORMEN: Record<Exclude<VoertuigSoort, 'vrachtwagen' | 'bus'>, Vorm> = {
+type Personen = 'hatchback' | 'sedan' | 'stationwagen' | 'suv' | 'bestelbus';
+const VORMEN: Record<Personen, Vorm> = {
   hatchback: { L: 4.15, W: 1.78, wb: 2.6, r: 0.31, bodem: 0.17, neus: 0.72, gordel: 0.92, dak: 1.46, kont: 0.95, c0: 0.04, c1: 0.2, c2: 0.62, c3: 0.73, plan: 6 },
   sedan: { L: 4.75, W: 1.83, wb: 2.85, r: 0.32, bodem: 0.16, neus: 0.7, gordel: 0.9, dak: 1.44, kont: 0.98, c0: 0.14, c1: 0.28, c2: 0.6, c3: 0.71, plan: 7 },
   stationwagen: { L: 4.8, W: 1.83, wb: 2.85, r: 0.32, bodem: 0.17, neus: 0.72, gordel: 0.93, dak: 1.48, kont: 0.97, c0: 0.03, c1: 0.06, c2: 0.6, c3: 0.71, plan: 7 },
@@ -362,7 +363,7 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
   return mb.bouw();
 }
 
-function vrachtwagen(laag: boolean): MeshData {
+function vrachtwagen(laag: boolean, brandweer = false): MeshData {
   const mb = new MeshBouwer();
   const L = 9.6, W = 2.5;
   // Cabine voorop (gelakt), laadbak (wit) erachter.
@@ -386,7 +387,22 @@ function vrachtwagen(laag: boolean): MeshData {
   for (const s of [-1, 1]) mb.quad('autoglas', { x: xf - 0.3, y: 2.0, z: s * (W / 2 + 0.005) }, { x: xf - 1.2, y: 2.0, z: s * (W / 2 + 0.005) }, { x: xf - 1.2, y: 2.85, z: s * (W / 2 + 0.005) }, { x: xf - 0.35, y: 2.85, z: s * (W / 2 + 0.005) }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
   // Laadbak.
   const bakL = L - cabL - 0.25;
-  mb.blok('laadbak', 'laadbak', { x: -L / 2 + bakL / 2, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, bakL, W, 1.05, 3.75, true);
+  mb.blok(brandweer ? 'autolak' : 'laadbak', brandweer ? 'autolak' : 'laadbak', { x: -L / 2 + bakL / 2, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, bakL, W, 1.05, brandweer ? 3.15 : 3.75, true);
+  if (brandweer && !laag) {
+    // Rolluiken (vakken), reflecterende strepen, ladder op het dak.
+    for (const s of [-1, 1]) {
+      const z = s * (W / 2 + 0.006);
+      for (let i = 0; i < 4; i++) {
+        const x0 = -L / 2 + 0.3 + i * (bakL - 0.5) / 4, x1 = x0 + (bakL - 0.5) / 4 - 0.12;
+        mb.quad('velg', { x: x0, y: 1.25, z }, { x: x1, y: 1.25, z }, { x: x1, y: 2.85, z }, { x: x0, y: 2.85, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+      }
+      mb.quad('kenteken', { x: -L / 2, y: 1.08, z }, { x: L / 2 - 0.1, y: 1.08, z }, { x: L / 2 - 0.1, y: 1.2, z }, { x: -L / 2, y: 1.2, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+      mb.quad('turbinewit', { x: -L / 2, y: 2.95, z }, { x: L / 2 - 2.6, y: 2.95, z }, { x: L / 2 - 2.6, y: 3.05, z }, { x: -L / 2, y: 3.05, z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    }
+    for (const z of [-0.45, 0.45]) kastje(mb, 'velg', { x: -0.6, y: 3.42, z }, L - 1.6, 0.1, 0.08);
+    for (let x = -L / 2 + 1.2; x < L / 2 - 2.2; x += 0.45) kastje(mb, 'velg', { x, y: 3.42, z: 0 }, 0.05, 0.05, 0.9);
+    for (const x of [-L / 2 + 1.5, L / 2 - 3]) kastje(mb, 'autotrim', { x, y: 3.25, z: 0 }, 0.2, 0.2, 1.0);
+  }
   mb.blok('autotrim', 'autotrim', { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, L - 0.4, 1.0, 0.55, 1.05, true);
   for (const x of [L / 2 - 1.3, -L / 2 + 2.4, -L / 2 + 1.1]) for (const z of [-1.0, 1.0]) wiel(mb, x, z, 0.5, 0.32, laag, 'vracht');
   if (!laag) {
@@ -430,21 +446,79 @@ function bus(laag: boolean): MeshData {
   return mb.bouw();
 }
 
+/** Band langs de zijkant van een personenauto/bus (striping), tussen hoogtes y0 en y1. */
+function band(mb: MeshBouwer, v: Vorm, mat: string, y0: number, y1: number, u0 = 0.06, u1 = 0.94, blok = 0) {
+  const n = 24;
+  for (const s of [-1, 1]) for (let i = 0; i < n; i++) {
+    const ua = lerp(u0, u1, i / n), ub = lerp(u0, u1, (i + 1) / n);
+    // Blokken (geblokt patroon): om en om twee rijen.
+    const rijen = blok ? [[y0, (y0 + y1) / 2, i % 2], [(y0 + y1) / 2, y1, (i + 1) % 2]] : [[y0, y1, 1]];
+    for (const [ya, yb, aan] of rijen) {
+      if (!aan) continue;
+      const za = s * (plan(v, ua) / 2 + 0.006), zb = s * (plan(v, ub) / 2 + 0.006);
+      mb.quad(mat, { x: (ua - 0.5) * v.L, y: ya, z: za }, { x: (ub - 0.5) * v.L, y: ya, z: zb }, { x: (ub - 0.5) * v.L, y: yb, z: zb }, { x: (ua - 0.5) * v.L, y: yb, z: za }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    }
+  }
+}
+
+/** Lichtbalk op het dak (zwaailichten uit; de brandende lampen zijn een aparte laag). */
+function lichtbalk(mb: MeshBouwer, x: number, y: number, breed: number) {
+  kastje(mb, 'autotrim', { x, y: y + 0.05, z: 0 }, 0.32, 0.1, breed);
+  for (const z of [-breed / 2 + 0.2, breed / 2 - 0.2]) kastje(mb, 'zwaailichtUit', { x, y: y + 0.15, z }, 0.26, 0.12, 0.34);
+}
+
 /** Mesh voor een voertuigsoort (laag = eenvoudig, voor ver weg). */
 export function voertuigMesh(soort: VoertuigSoort, laag = false): MeshData {
   if (soort === 'vrachtwagen') return vrachtwagen(laag);
+  if (soort === 'brandweer') {
+    const m = vrachtwagen(laag, true);
+    if (laag) return m;
+    const mb = new MeshBouwer();
+    lichtbalk(mb, 9.6 / 2 - 1.2, 3.2, 1.9);
+    return samenvoegen([m, mb.bouw()]);
+  }
   if (soort === 'bus') return bus(laag);
+  if (soort === 'politie' || soort === 'ambulance') {
+    const basis: Personen = soort === 'politie' ? 'stationwagen' : 'bestelbus';
+    const v = VORMEN[basis];
+    const m = personenauto(basis, laag);
+    if (laag) return m;
+    const mb = new MeshBouwer();
+    if (soort === 'politie') {
+      // Nederlandse politiestriping: blauwe band met oranje lijn erboven.
+      band(mb, v, 'politieblauw', 0.42, 0.68, 0.08, 0.92);
+      band(mb, v, 'politieoranje', 0.7, 0.76, 0.08, 0.92);
+      lichtbalk(mb, (v.c1 + v.c2) / 2 * v.L - v.L / 2, v.dak, 1.2);
+    } else {
+      band(mb, v, 'ambulanceblauw', 0.55, 0.95, 0.06, 0.95, 1);
+      lichtbalk(mb, (v.c3 - 0.5) * v.L - 0.35, v.dak, 1.6);
+    }
+    return samenvoegen([m, mb.bouw()]);
+  }
   return personenauto(soort, laag);
+}
+
+/** Brandende zwaailichten (blauw), voor de knipperende laag. */
+export function zwaailichten(soort: VoertuigSoort): MeshData {
+  const mb = new MeshBouwer();
+  let x = 0, y = 0, breed = 1.2;
+  if (soort === 'brandweer') { x = 9.6 / 2 - 1.2; y = 3.2; breed = 1.9; }
+  else if (soort === 'politie') { const v = VORMEN.stationwagen; x = (v.c1 + v.c2) / 2 * v.L - v.L / 2; y = v.dak; }
+  else if (soort === 'ambulance') { const v = VORMEN.bestelbus; x = (v.c3 - 0.5) * v.L - 0.35; y = v.dak; breed = 1.6; }
+  for (const z of [-breed / 2 + 0.2, breed / 2 - 0.2]) kastje(mb, 'zwaailicht', { x, y: y + 0.15, z }, 0.28, 0.14, 0.36);
+  return mb.bouw();
 }
 
 /** Plekken van de remlichten (voor een aparte, oplichtende laag). */
 export function remlichten(soort: VoertuigSoort): MeshData {
   const mb = new MeshBouwer();
-  if (soort === 'vrachtwagen' || soort === 'bus') {
+  if (soort === 'vrachtwagen' || soort === 'bus' || soort === 'brandweer') {
     const L = soort === 'bus' ? 12 : 9.6;
     for (const s of [-1, 1]) kastje(mb, 'remlicht', { x: -L / 2 - 0.03, y: soort === 'bus' ? 0.95 : 1.2, z: s * 1.0 }, 0.04, 0.16, 0.32);
     return mb.bouw();
   }
+  if (soort === 'politie') soort = 'stationwagen';
+  if (soort === 'ambulance') soort = 'bestelbus';
   const v = VORMEN[soort];
   const hA = soort === 'bestelbus' ? 0.95 : Math.min(v.kont, v.gordel) - 0.1;
   for (const s of [-1, 1]) {

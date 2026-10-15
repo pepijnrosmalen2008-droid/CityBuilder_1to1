@@ -4,8 +4,8 @@ import { WEGTYPEN, totaleBreedte } from './wegen/typen';
 // - OZB + rioolheffing + afvalstoffenheffing per woning: ca. € 1.100
 // - OZB niet-woningen: grofweg € 350 per arbeidsplaats
 // - Algemene uitkering uit het Gemeentefonds: ca. € 1.400 per inwoner
-// - Voorzieningen (onderwijshuisvesting, zorg, groen, veiligheid, bestuur): ca. € 1.700 per inwoner (spelbalans;
-//   stroom, water en afval zijn aparte posten: onderhoud van eigen voorzieningen of inkoop)
+// - Overige voorzieningen (onderwijshuisvesting, sociaal domein, groen, bestuur): ca. € 1.450 per inwoner (spelbalans;
+//   stroom, water, afval, brandweer, politie en zorg zijn aparte posten in het spel)
 // - Wegonderhoud: ca. € 3 per m² verharding
 // In het spel wordt per maand (30 dagen) afgerekend.
 
@@ -28,7 +28,7 @@ export const STANDAARD = {
   woonlastenPerWoning: 1100,
   ozbPerBaan: 350,
   gemeentefondsPerInwoner: 1400,
-  voorzieningenPerInwoner: 1700,
+  voorzieningenPerInwoner: 1450,
   wegPerM2: 3,
 };
 

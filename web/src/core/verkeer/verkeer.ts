@@ -15,11 +15,12 @@ import type { Wereld } from '../wereld';
 // eraan komt (rechts gaat voor, hogere weg gaat voor, rechtdoor gaat voor linksaf).
 // ════════════════════════════════════════════════════════════════════════════════════
 
-export type VoertuigSoort = 'hatchback' | 'sedan' | 'stationwagen' | 'suv' | 'bestelbus' | 'vrachtwagen' | 'bus';
+export type VoertuigSoort = 'hatchback' | 'sedan' | 'stationwagen' | 'suv' | 'bestelbus' | 'vrachtwagen' | 'bus' | 'politie' | 'ambulance' | 'brandweer';
 
 export const AFMETING: Record<VoertuigSoort, { l: number; b: number }> = {
   hatchback: { l: 4.15, b: 1.78 }, sedan: { l: 4.75, b: 1.83 }, stationwagen: { l: 4.8, b: 1.83 }, suv: { l: 4.6, b: 1.9 },
   bestelbus: { l: 5.3, b: 2.0 }, vrachtwagen: { l: 9.6, b: 2.5 }, bus: { l: 12, b: 2.55 },
+  politie: { l: 4.8, b: 1.83 }, ambulance: { l: 5.3, b: 2.0 }, brandweer: { l: 9.6, b: 2.5 },
 };
 
 /** Lakkleuren (sRGB) met hun aandeel in het Nederlandse wagenpark. */
@@ -46,9 +47,14 @@ export interface Voertuig {
   rem: boolean;
   /** Seconden sinds het vertrek (voor in- en uitvoegen). */
   leeftijd: number;
+  /** Hulpdienst met zwaailicht en sirene (rijdt door rood, mag harder). */
+  sirene?: boolean;
+  /** Wordt aangeroepen bij aankomst op de bestemming. */
+  opAankomst?: (v: Voertuig) => void;
 }
 
-interface Plek { seg: number; zijde: 1 | -1; p: V2; gewicht: number }
+/** Herkomst of bestemming: kant van een wegstuk en een punt (gebouw, voorziening). */
+export interface Plek { seg: number; zijde: 1 | -1; p: V2; gewicht: number }
 
 const S0 = 2.2; // minimale afstand tot de voorligger (m)
 
@@ -276,23 +282,49 @@ export class Verkeer {
     if (!route) return false;
     const laatste = route[route.length - 1];
     const doel = doelen.find(d => d.seg === laatste.seg && d.r === laatste.r)!;
-    // Ruimte op de strook om in te voegen.
+    return !!this.maak(soort, start, route, doel.s, !!buitenVan, !!van);
+  }
+
+  /** Voertuig op de weg zetten (als er ruimte is om in te voegen). */
+  private maak(soort: VoertuigSoort, start: { baan: Baan; s: number }, route: { seg: number; r: 'A' | 'B' }[], doelS: number, vanBuiten: boolean, vanGebouw: boolean): Voertuig | null {
     const b = start.baan;
-    for (const o of this.voertuigen.values()) if (o.spoor === b.id && Math.abs(o.s - start.s) < 9) return false;
+    for (const o of this.voertuigen.values()) if (o.spoor === b.id && Math.abs(o.s - start.s) < 9) return null;
     const f = AFMETING[soort];
     const vracht = soort === 'vrachtwagen' || soort === 'bus';
     const v: Voertuig = {
       id: this.volgende++, soort, lak: this.lak(soort), lengte: f.l,
-      spoor: b.id, s: start.s, v: buitenVan ? b.vmax * 0.8 : 0, a: 0,
-      route, ri: 0, doelS: doel.s,
+      spoor: b.id, s: start.s, v: vanBuiten ? b.vmax * 0.8 : 0, a: 0,
+      route, ri: 0, doelS,
       v0f: vracht ? 0.85 : soort === 'bestelbus' ? 0.95 : 0.9 + this.rng.next() * 0.2,
       amax: vracht ? 0.8 : soort === 'bestelbus' ? 1.3 : 1.4 + this.rng.next() * 0.8,
       bc: vracht ? 2.0 : 2.6, T: vracht ? 1.7 : 1.0 + this.rng.next() * 0.6,
-      res: 0, wacht: 0, vast: 0, zij: van ? (van.zijde === 1 ? 1 : 1) * 2.2 : 0, rem: false, leeftijd: 0,
+      res: 0, wacht: 0, vast: 0, zij: vanGebouw ? 2.2 : 0, rem: false, leeftijd: 0,
     };
     this.voertuigen.set(v.id, v);
     this.ritten++;
-    return true;
+    return v;
+  }
+
+  /**
+   * Een voertuig gericht sturen (hulpdiensten): van een plek naar een plek. Geeft het voertuig, of
+   * null als er nu geen route of geen ruimte is (dan later opnieuw proberen).
+   */
+  stuur(soort: VoertuigSoort, van: Plek, naar: Plek, sirene: boolean, opAankomst: (v: Voertuig) => void): Voertuig | null {
+    if (this.versie !== this.w.net.versie) return null;
+    const start = this.toegang(van);
+    if (!start) return null;
+    const doelen = this.doelOpties(naar).map(d => ({ ...d, extra: sirene ? 0 : d.extra }));
+    if (!doelen.length) return null;
+    const route = this.route({ seg: start.baan.seg, r: start.baan.richting, s: start.s }, doelen);
+    if (!route) return null;
+    const laatste = route[route.length - 1];
+    const doel = doelen.find(d => d.seg === laatste.seg && d.r === laatste.r)!;
+    const v = this.maak(soort, start, route, doel.s, false, true);
+    if (!v) return null;
+    v.sirene = sirene; v.opAankomst = opAankomst;
+    if (sirene) { v.v0f = 1.3; v.amax = Math.max(v.amax, 2.2); v.T = 0.8; }
+    this.ritten--;
+    return v;
   }
 
   // ─── Rijden ──────────────────────────────────────────────────────────────────
@@ -353,8 +385,9 @@ export class Verkeer {
   private mag(v: Voertuig, c: Verbinding, rest: number): boolean {
     if (v.res === c.id) return true;
     const licht = this.stroken.lichtVoor(c.knoop, c.bron);
-    if (licht === 'rood') return false;
-    if (licht === 'oranje' && rest > (v.v * v.v) / (2 * 3.5) + 1.5) return false;
+    // Met zwaailicht en sirene mag je door rood (wel opletten voor kruisend verkeer).
+    if (licht === 'rood' && !v.sirene) return false;
+    if (licht === 'oranje' && !v.sirene && rest > (v.v * v.v) / (2 * 3.5) + 1.5) return false;
     // Ruimte op de doelstrook (niet het kruispunt blokkeren).
     const doel = this.stroken.baan(c.naar);
     // Niet het kruispunt op als er achter het kruispunt geen plek is voor iedereen die al die kant op gaat.
@@ -544,7 +577,7 @@ export class Verkeer {
       let veilig = 0;
       while (veilig++ < 4) {
         const cur = this.spoor(v.spoor)!;
-        if (cur.soort === 'baan' && v.ri >= v.route.length - 1 && v.s >= v.doelS - 0.3) { this.verwijder(v); break; }
+        if (cur.soort === 'baan' && v.ri >= v.route.length - 1 && v.s >= v.doelS - 0.3) { v.opAankomst?.(v); this.verwijder(v); break; }
         if (v.s < cur.lengte) break;
         if (cur.soort === 'baan') {
           if (v.res && this.stroken.verbinding(v.res)?.van === cur.id) { v.s -= cur.lengte; v.spoor = v.res; }

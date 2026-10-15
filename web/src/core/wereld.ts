@@ -12,6 +12,8 @@ import { Namen, stadsnaam } from './namen';
 import { Economie, Grondstof } from './economie';
 import { Verkeer } from './verkeer/verkeer';
 import { Voorzieningen } from './voorzieningen';
+import { Hulpdiensten } from './hulpdiensten';
+import { Grondwaarde } from './waarde';
 import { Tarieven, Maandstaat, maandstaat, wegOppervlak, tariefEffect } from './begroting';
 
 /** Perceel op een gevelstrook: van booglengte s0 tot s1 langs de straat, zo diep als de strook. */
@@ -52,6 +54,8 @@ export interface Gebouw {
   cap: Capaciteit;
   /** Bedrijfshal die lokale grondstoffen verwerkt. */
   specialisatie?: Grondstof;
+  /** Niveau 1-5 (opgeknapt door hoge grondwaarde en goede voorzieningen). */
+  niveau?: number;
 }
 
 export interface Statistiek {
@@ -128,10 +132,14 @@ export class Wereld {
     this.economie = new Economie(this);
     this.verkeer = new Verkeer(this);
     this.voorzieningen = new Voorzieningen(this);
+    this.hulpdiensten = new Hulpdiensten(this);
+    this.grondwaarde = new Grondwaarde(this);
   }
   economie: Economie;
   verkeer: Verkeer;
   voorzieningen: Voorzieningen;
+  hulpdiensten: Hulpdiensten;
+  grondwaarde: Grondwaarde;
 
   meld(tekst: string, soort: Nieuws['soort']) {
     this.nieuws.push({ id: this.nieuwsId++, dag: this.dagen, tekst, soort });
@@ -554,6 +562,8 @@ export class Wereld {
 
     this.economie.stap(dt);
     this.voorzieningen.stap(dt);
+    this.hulpdiensten.stap(dt);
+    this.grondwaarde.stap(dt);
 
     // Maandafrekening (30 dagen).
     this.maandKlok += dt / SECONDEN_PER_DAG;
@@ -599,17 +609,24 @@ export class Wereld {
   get tevredenheid(): number {
     const s = this.stat, v = this.vraag;
     if (s.inwoners < 1) return 75;
-    let t = 82 - this.voorzieningen.tekortAandeel * 70 - s.werkloosheid * 160 - Math.max(0, v.detailhandel - 0.6) * 25 - Math.max(0, v.wonen - 0.85) * 10;
+    // Hoe groter de stad, hoe meer inwoners verwachten van brandweer, politie en zorg.
+    const h = this.hulpdiensten.stat, eis = Math.min(1, s.inwoners / 3000);
+    let t = 84 - this.voorzieningen.tekortAandeel * 70 - h.misdaad * 22 * eis - (1 - h.gezondheid) * 14 * eis - (1 - h.brandveiligheid) * 8 * eis - s.werkloosheid * 160 - Math.max(0, v.detailhandel - 0.6) * 25 - Math.max(0, v.wonen - 0.85) * 10;
     return Math.round(Math.max(5, Math.min(100, t)));
   }
 
   berekenStatistiek() {
     let inw = 0, won = 0, d = 0, h = 0, kk = 0, ii = 0, o = 0, klaar = 0, bouw = 0;
+    // Belastingwaarde: hoger niveau = hogere WOZ/OZB.
+    let wonWOZ = 0, banenWOZ = 0;
     for (const g of this.gebouwen.values()) {
       if (!g.klaar) { bouw++; continue; }
       klaar++;
       const b = g.bezetting, c = g.cap;
       inw += c.bewoners * b; won += c.woningen;
+      const f = 0.75 + 0.125 * (g.niveau ?? 1);
+      wonWOZ += c.woningen * f;
+      banenWOZ += (c.banen.detailhandel + c.banen.horeca + c.banen.kantoor + c.banen.industrie + c.banen.overig) * b * f;
       d += c.banen.detailhandel * b; h += c.banen.horeca * b; kk += c.banen.kantoor * b; ii += c.banen.industrie * b; o += c.banen.overig * b;
     }
     let winning = 0;
@@ -631,7 +648,8 @@ export class Wereld {
     };
     let m2 = 0;
     for (const sg of this.net.segmenten.values()) m2 += wegOppervlak(sg.type, sg.lengte);
-    this.prognose = maandstaat(this.tarieven, won, Math.round(banen), Math.round(inw), m2, this.exportHeffing, this.voorzieningen.onderhoud, this.voorzieningen.inkoopKosten);
+    void banenWOZ;
+    this.prognose = maandstaat(this.tarieven, wonWOZ, Math.round(banenWOZ + winning), Math.round(inw), m2, this.exportHeffing, this.voorzieningen.onderhoud, this.voorzieningen.inkoopKosten);
   }
 
   // ─── Opslaan (engine-onafhankelijk JSON-formaat) ────────────────────────────

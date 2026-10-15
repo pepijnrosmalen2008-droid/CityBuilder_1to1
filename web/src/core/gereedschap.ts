@@ -58,6 +58,8 @@ export class Gereedschap {
   private meldingKlok = 0;
   grondstof: Grondstof = 'landbouw';
   dienst: DienstSoort = 'windmolen';
+  /** Geselecteerd gebouw of voorziening (Kijken). */
+  selectie: { soort: 'gebouw' | 'dienst'; id: number } | null = null;
   private gebiedPunten: V2[] = [];
   private hoofd: HoofdPlek | null = null;
 
@@ -73,7 +75,7 @@ export class Gereedschap {
     if (fout) this.melding = fout; else { this.gebiedPunten = []; this.hoofd = null; }
   }
 
-  zetModus(m: Modus) { this.modus = m; this.annuleer(); this.melding = ''; }
+  zetModus(m: Modus) { this.modus = m; this.annuleer(); this.melding = ''; if (m !== 'kijk') this.selectie = null; }
   annuleer() { this.start = null; this.ctrl = null; this.raak = null; this.ref = null; this.schilderen = false; this.gebiedPunten = []; this.hoofd = null; }
 
   /** Begin op p: onthoud de richting van een aansluitende weg (doorlopen en hoeksnappen). */
@@ -323,6 +325,12 @@ export class Gereedschap {
         if (fout) this.melding = fout;
         return;
       }
+      case 'kijk': {
+        const vz = w.voorzieningen.dienstOp(p);
+        const g = vz ? null : w.gebouwOp(p);
+        this.selectie = vz ? { soort: 'dienst', id: vz.id } : g ? { soort: 'gebouw', id: g.id } : null;
+        return;
+      }
       case 'sloop': {
         const vz = w.voorzieningen.dienstOp(p);
         if (vz) { w.voorzieningen.sloop(vz.id); return; }
@@ -454,6 +462,13 @@ export class Gereedschap {
         if (s) return { soort: 'markeer', segment: s.seg.id, kleur: '#ff6b6b', tekst: `${WEGTYPEN[s.seg.type].naam} slopen` };
         const gb = w.economie.gebiedOp(p);
         return gb ? { soort: 'markeer', gebied: gb.id, kleur: '#ff6b6b', tekst: `${GRONDSTOFFEN[gb.soort].naam}gebied opheffen` } : { soort: 'geen' };
+      }
+      case 'kijk': {
+        // Onder de muis: licht oplichten wat je kunt aanklikken.
+        const vz = w.voorzieningen.dienstOp(p);
+        if (vz) return { soort: 'markeer', dienst: vz.id, kleur: '#74c0fc', tekst: DIENSTEN[vz.soort].naam };
+        const g = w.gebouwOp(p);
+        return g ? { soort: 'markeer', gebouw: g.id, kleur: '#74c0fc', tekst: '' } : { soort: 'geen' };
       }
       default: return { soort: 'geen' };
     }

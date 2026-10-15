@@ -9,6 +9,9 @@ import { TextuurBron } from './render/texturen';
 import { Materialen } from './render/materialen';
 import { VerkeerWeergave } from './render/verkeer';
 import { DienstWeergave } from './render/diensten';
+import { InfoLaag, InfoSoort, INFO_NAAM, INFO_LEGENDA } from './render/infolaag';
+import { InfoPaneel } from './ui/infopaneel';
+import { ICOON } from './ui/iconen';
 import { Rijstroken } from './core/verkeer/rijstroken';
 import { TerreinWeergave } from './render/terrein';
 import { StadWeergave } from './render/stad';
@@ -52,6 +55,8 @@ async function start() {
   sfeer.scene.add(verkeer.groep);
   const diensten = new DienstWeergave(wereld, mats);
   sfeer.scene.add(diensten.groep);
+  const infoLaag = new InfoLaag(wereld);
+  sfeer.scene.add(infoLaag.groep);
   const maxVerkeer = () => ({ laag: 300, midden: 650, hoog: 1100 } as Record<string, number>)[sfeer.niveau] ?? 600;
   const camera = new StadCamera(sfeer.camera, sfeer.renderer.domElement, wereld.terrein);
   const plek = test && TEST_PLEKKEN[test];
@@ -72,6 +77,7 @@ async function start() {
   const werkbalk = new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; }, wereld.voorzieningen);
   const ecoPaneel = new EconomiePaneel(wereld);
   werkbalk.opEconomie = () => ecoPaneel.wissel();
+  werkbalk.hulpStat = () => wereld.hulpdiensten.stat;
 
   // Muis → grondpunt.
   const tip = document.getElementById('tip')!, melding = document.getElementById('melding')!;
@@ -126,6 +132,23 @@ async function start() {
   klaar.onclick = () => { if (gereedschap.modus === 'gebied') gereedschap.rondGebiedAf(); else gereedschap.terug(); };
   document.body.appendChild(klaar);
 
+  // Infopaneel (Kijken: klik op een gebouw of voorziening).
+  const infoPaneel = new InfoPaneel(wereld);
+  infoPaneel.sluit = () => { gereedschap.selectie = null; };
+  infoPaneel.sloop = (soort, id) => { if (soort === 'gebouw') wereld.verwijderGebouw(id); else wereld.voorzieningen.sloop(id); gereedschap.selectie = null; };
+  let selectieNu = '';
+  // Infoweergaven (knoppen links).
+  const infoKnoppen = document.createElement('div');
+  infoKnoppen.id = 'infoknoppen'; infoKnoppen.className = 'paneel';
+  const INFO_ICOON: Record<InfoSoort, string> = { verkeer: ICOON.auto, stroom: ICOON.bliksem, water: ICOON.druppel, afval: ICOON.vuilnis, brand: ICOON.vlam, politie: ICOON.schild, zorg: ICOON.kruis, grondwaarde: ICOON.euro, niveau: ICOON.ster };
+  const tekenInfo = () => {
+    infoKnoppen.innerHTML = (Object.keys(INFO_NAAM) as InfoSoort[]).map(k => `<button class="knop rond ${infoLaag.soort === k ? 'aan' : ''}" data-info="${k}" title="${INFO_NAAM[k]}">${INFO_ICOON[k]}</button>`).join('') +
+      (infoLaag.soort ? `<div class="info-legenda"><b>${INFO_NAAM[infoLaag.soort]}</b><span>${INFO_LEGENDA[infoLaag.soort]}</span></div>` : '');
+    infoKnoppen.querySelectorAll<HTMLElement>('[data-info]').forEach(b => (b.onclick = () => { const k = b.dataset.info as InfoSoort; infoLaag.zet(infoLaag.soort === k ? null : k); tekenInfo(); }));
+  };
+  tekenInfo();
+  document.body.appendChild(infoKnoppen);
+
   // Zoomknoppen (vooral voor telefoons).
   const zoom = document.createElement('div');
   zoom.id = 'zoomknoppen';
@@ -149,11 +172,24 @@ async function start() {
     // Fotomodus (voor geautomatiseerde screenshots zonder GPU): alles opbouwen, één frame renderen.
     for (let i = 0; i < 200 && stad.bezig; i++) stad.werkBij(1e9);
     // Verkeer een minuut laten rijden voor de foto.
-    if (!param.has('geenverkeer')) { const sn = wereld.snelheid; wereld.snelheid = 1; wereld.verkeer.max = maxVerkeer(); for (let i = 0; i < Number(param.get('verkeer') ?? 600); i++) wereld.verkeer.stap(0.1); wereld.snelheid = sn; }
+    if (param.has('brand')) {
+      // Testbrand in het gebouw het dichtst bij het camerapunt.
+      let best = null as null | { id: number; d: number };
+      for (const g of wereld.gebouwen.values()) { const d = Math.hypot(g.centrum.x - camera.doel.x, g.centrum.z - camera.doel.z); if (g.klaar && (!best || d < best.d)) best = { id: g.id, d }; }
+      if (best) wereld.hulpdiensten.steekAan(best.id, 0.5);
+    }
+    if (!param.has('geenverkeer')) {
+      const sn = wereld.snelheid; wereld.snelheid = 1; wereld.verkeer.max = maxVerkeer();
+      const n = Number(param.get('verkeer') ?? 600);
+      // ?sim: de hele simulatie (ook hulpdiensten), anders alleen het verkeer.
+      for (let i = 0; i < n; i++) { if (param.has('sim')) wereld.stap(0.1); else wereld.verkeer.stap(0.1); }
+      wereld.snelheid = sn;
+    }
     if (param.has('naauto')) {
       // Camera op een voertuig (voor controle van de modellen): ?naauto=soort,afstand,yaw,pitch
       const [soort, af, yaw, pitch] = (param.get('naauto') ?? '').split(',');
-      const v = [...wereld.verkeer.voertuigen.values()].find(x => (!soort || x.soort === soort) && x.v > 3);
+      const alle = [...wereld.verkeer.voertuigen.values()].filter(x => !soort || x.soort === soort);
+      const v = alle.find(x => x.v > 3) ?? alle[0];
       const sp = v && wereld.verkeer.stroken.sporen.get(v.spoor);
       if (v && sp) { const pos = Rijstroken.op(sp, v.s - v.lengte / 2); camera.zet(pos.x, pos.z, Number(af || 12), Number(yaw || 30), Number(pitch || 25)); }
     }
@@ -166,7 +202,7 @@ async function start() {
     const verberg = (param.get('verberg') ?? '').split(',');
     if (verberg.includes('zones')) stad.zones.mesh.visible = false;
     if (verberg.includes('ao') && sfeer.ao) sfeer.ao.enabled = false;
-    if (verberg.includes('ui')) for (const id of ['hud', 'werkbalk', 'zoomknoppen']) document.getElementById(id)!.style.display = 'none';
+    if (verberg.includes('ui')) for (const id of ['hud', 'werkbalk', 'zoomknoppen', 'infoknoppen']) document.getElementById(id)!.style.display = 'none';
     if (verberg.includes('ui')) { hulp.style.display = 'none'; document.getElementById('nieuws')?.remove(); }
     sfeer.volg(camera.doel, camera.afstand);
     const t0 = performance.now();
@@ -191,7 +227,7 @@ async function start() {
     camera.stap(dt);
     wereld.verkeer.max = maxVerkeer();
     wereld.stap(dt);
-    verkeer.werkBij(sfeer.camera.position);
+    verkeer.werkBij(sfeer.camera.position, dt);
     if (diensten.werkBij(dt, sfeer.camera, wereld.snelheid)) sfeer.schaduwVuil();
     const grond = grondOnder();
     gereedschap.beweeg(grond);
@@ -203,8 +239,14 @@ async function start() {
     terrein.werkBij();
     terrein.tik(tijd);
     if (stad.props.werkBij(sfeer.camera.position, dt)) sfeer.schaduwVuil();
-    const vb = gereedschap.voorbeeld();
+    let vb = gereedschap.voorbeeld();
+    // Geselecteerd gebouw blijft gemarkeerd.
+    const sel = gereedschap.selectie;
+    if (vb.soort === 'geen' && sel) vb = sel.soort === 'gebouw' ? { soort: 'markeer', gebouw: sel.id, kleur: '#4dabf7', tekst: '' } : { soort: 'markeer', dienst: sel.id, kleur: '#4dabf7', tekst: '' };
     voorbeeld.toon(vb);
+    const selSleutel = sel ? `${sel.soort}${sel.id}` : '';
+    if (selSleutel !== selectieNu) { selectieNu = selSleutel; infoPaneel.toon(sel); }
+    infoLaag.werkBij(dt);
     const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' || vb.soort === 'dienst' ? vb.tekst : '';
     tip.style.display = tekst && grond ? 'block' : 'none';
     tip.textContent = tekst;
@@ -216,7 +258,7 @@ async function start() {
     stad.economie.toonKaart(gereedschap.modus === 'gebied' ? gereedschap.grondstof : null);
     melding.textContent = gereedschap.melding;
     hudKlok += dt;
-    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); ecoPaneel.werkBij(); werkbalk.werkBijBalans(); }
+    if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); ecoPaneel.werkBij(); werkbalk.werkBijBalans(); infoPaneel.werkBij(); }
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.render();
     labels.werkBij(dt, camera.afstand);

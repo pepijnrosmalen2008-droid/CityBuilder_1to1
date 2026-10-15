@@ -14,15 +14,19 @@ import type { Wereld } from './wereld';
 // ════════════════════════════════════════════════════════════════════════════════════
 
 export type Nut = 'stroom' | 'water' | 'riool' | 'afval';
-export type DienstSoort = 'windmolen' | 'zonnepark' | 'gascentrale' | 'pompstation' | 'rwzi' | 'stortplaats' | 'afvalcentrale';
+export type DienstSoort = 'windmolen' | 'zonnepark' | 'gascentrale' | 'pompstation' | 'rwzi' | 'stortplaats' | 'afvalcentrale' | 'brandweer' | 'politie' | 'ziekenhuis' | 'gezondheidscentrum';
+export type DienstGroep = 'stroom' | 'water' | 'afval' | 'veiligheid' | 'zorg';
+export type DekkingSoort = 'brand' | 'politie' | 'zorg';
 
 export interface DienstInfo {
-  naam: string; groep: 'stroom' | 'water' | 'afval';
+  naam: string; groep: DienstGroep;
   /** Breedte langs de weg en diepte (m). */
   b: number; d: number;
   kosten: number; onderhoud: number; // euro, euro per maand
   levert: Partial<Record<Nut, number>>; // MW, m³/dag, m³/dag, ton/jaar
   uitleg: string;
+  /** Hulpdienst: soort dekking, bereik over de weg (m), aantal voertuigen, kwaliteit (0-1). */
+  dekking?: { soort: DekkingSoort; bereik: number; voertuigen: number; kwaliteit: number };
 }
 
 export const DIENSTEN: Record<DienstSoort, DienstInfo> = {
@@ -33,6 +37,10 @@ export const DIENSTEN: Record<DienstSoort, DienstInfo> = {
   rwzi: { naam: 'Rioolwaterzuivering', groep: 'water', b: 100, d: 80, kosten: 11_000_000, onderhoud: 34_000, levert: { riool: 9000 }, uitleg: 'Zuivert 9.000 m³ afvalwater per dag.' },
   stortplaats: { naam: 'Afvalstortplaats', groep: 'afval', b: 140, d: 110, kosten: 3_500_000, onderhoud: 18_000, levert: { afval: 15000 }, uitleg: '15.000 ton afval per jaar.' },
   afvalcentrale: { naam: 'Afvalenergiecentrale', groep: 'afval', b: 90, d: 80, kosten: 45_000_000, onderhoud: 130_000, levert: { afval: 60000, stroom: 6 }, uitleg: '60.000 ton per jaar en 6 MW stroom.' },
+  brandweer: { naam: 'Brandweerkazerne', groep: 'veiligheid', b: 50, d: 40, kosten: 4_500_000, onderhoud: 45_000, levert: {}, uitleg: 'Drie tankautospuiten. Dekking tot ~2 km over de weg.', dekking: { soort: 'brand', bereik: 2000, voertuigen: 3, kwaliteit: 1 } },
+  politie: { naam: 'Politiebureau', groep: 'veiligheid', b: 44, d: 36, kosten: 6_000_000, onderhoud: 50_000, levert: {}, uitleg: 'Vier surveillancewagens. Dekking tot ~1,8 km.', dekking: { soort: 'politie', bereik: 1800, voertuigen: 4, kwaliteit: 1 } },
+  ziekenhuis: { naam: 'Ziekenhuis', groep: 'zorg', b: 120, d: 90, kosten: 42_000_000, onderhoud: 140_000, levert: {}, uitleg: 'Spoedeisende hulp en vijf ambulances. Dekking tot ~4 km.', dekking: { soort: 'zorg', bereik: 4000, voertuigen: 5, kwaliteit: 1 } },
+  gezondheidscentrum: { naam: 'Gezondheidscentrum', groep: 'zorg', b: 36, d: 30, kosten: 2_800_000, onderhoud: 18_000, levert: {}, uitleg: 'Huisartsen en apotheek in de wijk, één ambulancepost. Dekking ~1,2 km.', dekking: { soort: 'zorg', bereik: 1200, voertuigen: 1, kwaliteit: 0.65 } },
 };
 
 export const NUT_EENHEID: Record<Nut, string> = { stroom: 'MW', water: 'm³/dag', riool: 'm³/dag', afval: 'ton/jaar' };

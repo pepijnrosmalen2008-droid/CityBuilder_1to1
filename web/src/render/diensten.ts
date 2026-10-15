@@ -35,6 +35,9 @@ export class DienstWeergave {
   private rotorGeo: THREE.Mesh | null = null;
   private iconen: Record<Nut, THREE.InstancedMesh>;
   private m = new THREE.Matrix4();
+  private vlam: THREE.InstancedMesh;
+  private rook: THREE.InstancedMesh;
+  private tijd = 0;
 
   constructor(private w: Wereld, private mats: Materialen) {
     const geo = new THREE.PlaneGeometry(1, 1);
@@ -45,6 +48,18 @@ export class DienstWeergave {
       return im;
     };
     this.iconen = { stroom: maak('stroom'), water: maak('water'), riool: maak('riool'), afval: maak('afval') };
+    // Vuur en rook (billboards).
+    const tex = (binnen: string, buiten: string) => {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const g = c.getContext('2d')!;
+      const r = g.createRadialGradient(32, 36, 2, 32, 32, 30);
+      r.addColorStop(0, binnen); r.addColorStop(1, buiten);
+      g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    };
+    this.vlam = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: tex('rgba(255,240,170,1)', 'rgba(255,90,0,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), 2000);
+    this.rook = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: tex('rgba(45,43,40,0.9)', 'rgba(70,68,64,0)'), transparent: true, depthWrite: false }), 2000);
+    for (const im of [this.vlam, this.rook]) { im.count = 0; im.frustumCulled = false; im.userData.geenAO = true; this.groep.add(im); }
     for (const d of w.voorzieningen.diensten.values()) this.bouw(d.id);
   }
 
@@ -106,6 +121,38 @@ export class DienstWeergave {
       this.iconen[nut].setMatrixAt(n[nut]++, this.m);
     }
     for (const x of Object.keys(n) as Nut[]) { this.iconen[x].count = n[x]; this.iconen[x].visible = n[x] > 0; this.iconen[x].instanceMatrix.needsUpdate = true; }
+    // Branden: vlammen die met de ernst meegroeien en flakkeren, rook die opstijgt en uitwaaiert.
+    this.tijd += dt;
+    let nv = 0, nr = 0;
+    for (const inc of this.w.hulpdiensten.incidenten.values()) {
+      if (inc.soort !== 'brand') continue;
+      const g = this.w.gebouwen.get(inc.gebouw);
+      if (!g) continue;
+      const top = g.y + totaleHoogte(g.lagen);
+      const e = Math.min(1, inc.ernst);
+      const zaad = inc.id * 1.7;
+      for (let k = 0; k < 10 && nv < 2000; k++) {
+        const a = zaad + k * 2.4;
+        const ox = Math.cos(a) * g.breedte * 0.3, oz = Math.sin(a) * 5;
+        const fl = 0.75 + 0.25 * Math.sin(this.tijd * 9 + k * 1.3);
+        const h = (5 + e * 14) * fl;
+        p.set(g.centrum.x + ox, top - 1 + h * 0.45, g.centrum.z + oz);
+        s.set(h * 0.6, h, h * 0.6);
+        this.m.compose(p, q, s);
+        this.vlam.setMatrixAt(nv++, this.m);
+      }
+      for (let k = 0; k < 14 && nr < 2000; k++) {
+        const fase = (this.tijd * 0.12 + k / 14 + zaad) % 1;
+        const hgt = fase * (25 + 45 * e);
+        p.set(g.centrum.x + fase * 12 + Math.sin(k + this.tijd * 0.5) * 3, top + 4 + hgt, g.centrum.z + fase * 6);
+        const gr = (7 + fase * 26) * (0.5 + e);
+        s.set(gr, gr, gr);
+        this.m.compose(p, q, s);
+        this.rook.setMatrixAt(nr++, this.m);
+      }
+    }
+    this.vlam.count = nv; this.vlam.visible = nv > 0; this.vlam.instanceMatrix.needsUpdate = true;
+    this.rook.count = nr; this.rook.visible = nr > 0; this.rook.instanceMatrix.needsUpdate = true;
     return veranderd;
   }
 }

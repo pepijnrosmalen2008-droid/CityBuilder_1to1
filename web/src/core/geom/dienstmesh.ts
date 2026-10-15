@@ -203,6 +203,63 @@ export function bouwDienst(d: Dienst, hoogte: H): MeshData {
       hek(Y);
       break;
     }
+    case 'brandweer': {
+      grond(mb, 'erfverharding', d.voet, hoogte);
+      // Kazerne: bakstenen gebouw met drie rode uitrukdeuren aan de straatkant, slangentoren.
+      doos('muur:baksteenRood', 'dakgrind', -4, -2, 36, 20, Y, Y + 8.5);
+      doos('dakgrind', 'trimDonker', -4, -2, 36.4, 20.4, Y + 8.5, Y + 9);
+      doos('muur:baksteenRood', 'dakpannenAntraciet', 18, -6, 5, 5, Y, Y + 18);
+      for (let i = 0; i < 3; i++) {
+        const a = -16 + i * 8.5, c = 8.02;
+        const p0 = P(a - 2.2, c), p1 = P(a + 2.2, c);
+        mb.quad('remklauw', { x: p0.x, y: Y, z: p0.z }, { x: p1.x, y: Y, z: p1.z }, { x: p1.x, y: Y + 4.6, z: p1.z }, { x: p0.x, y: Y + 4.6, z: p0.z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: v.x, y: 0, z: v.z });
+        // Opstelplaats: gele lijnen links en rechts.
+        for (const da of [-2.4, 2.3]) {
+          const q0 = P(a + da, c + 1), q1 = P(a + da + 0.12, c + 1), q2 = P(a + da + 0.12, c + 11), q3 = P(a + da, c + 11);
+          mb.quad('kraan', { x: q0.x, y: hoogte(q0.x, q0.z) + 0.13, z: q0.z }, { x: q1.x, y: hoogte(q1.x, q1.z) + 0.13, z: q1.z }, { x: q2.x, y: hoogte(q2.x, q2.z) + 0.13, z: q2.z }, { x: q3.x, y: hoogte(q3.x, q3.z) + 0.13, z: q3.z }, [0, 0], [1, 0], [1, 1], [0, 1], OP);
+        }
+      }
+      // Ramen boven de deuren.
+      const r0 = P(-20, 8.03), r1 = P(12, 8.03);
+      mb.quad('raam', { x: r0.x, y: Y + 5.6, z: r0.z }, { x: r1.x, y: Y + 5.6, z: r1.z }, { x: r1.x, y: Y + 7.6, z: r1.z }, { x: r0.x, y: Y + 7.6, z: r0.z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: v.x, y: 0, z: v.z });
+      break;
+    }
+    case 'politie': {
+      grond(mb, 'stoeptegels', d.voet, hoogte);
+      doos('gevel:modernDonker', 'dakgrind', -4, -4, 30, 18, Y, Y + 12);
+      doos('politieblauw', 'politieblauw', -4, -4, 30.2, 18.2, Y + 12, Y + 13.2);
+      doos('glas', 'trimDonker', -4, 6, 8, 3, Y, Y + 3.6);
+      const vlag = P(10, 12);
+      cilinder(mb, 'metaal', { x: vlag.x, y: Y, z: vlag.z }, { x: vlag.x, y: Y + 9, z: vlag.z }, 0.06, 0.05, 6);
+      doos('politieblauw', 'politieblauw', 10.7, 12, 1.4, 0.03, Y + 7.6, Y + 8.6);
+      break;
+    }
+    case 'ziekenhuis': {
+      grond(mb, 'stoeptegels', d.voet, hoogte);
+      doos('gevel:betonband', 'dakgrind', -10, -12, 74, 34, Y, Y + 26);
+      doos('gevel:vliesgevel', 'dakgrind', 32, -4, 30, 40, Y, Y + 16);
+      doos('gevel:stuc', 'dakgrind', -30, 22, 30, 16, Y, Y + 10);
+      // Helikopterplatform op het dak.
+      const h = P(-10, -12);
+      cilinder(mb, 'beton', { x: h.x, y: Y + 26, z: h.z }, { x: h.x, y: Y + 26.6, z: h.z }, 10, 10, 20);
+      doos('markering', 'markering', -12.5, -12, 0.8, 7, Y + 26.62, Y + 26.64);
+      doos('markering', 'markering', -7.5, -12, 0.8, 7, Y + 26.62, Y + 26.64);
+      doos('markering', 'markering', -10, -12, 5, 0.8, Y + 26.62, Y + 26.64);
+      // Ingang met luifel en ambulance-ingang.
+      doos('trimDonker', 'trimDonker', 0, 7, 14, 5, Y + 4, Y + 4.4);
+      doos('glas', 'trimDonker', 0, 5.2, 10, 1.5, Y, Y + 4);
+      doos('remklauw', 'remklauw', 32, 16.3, 10, 0.3, Y + 4.5, Y + 5.5);
+      break;
+    }
+    case 'gezondheidscentrum': {
+      grond(mb, 'stoeptegels', d.voet, hoogte);
+      doos('gevel:baksteenGeel', 'dakgrind', -2, -2, 26, 16, Y, Y + 7.5);
+      doos('glas', 'trimDonker', -6, 6.2, 6, 1.2, Y, Y + 3.2);
+      // Groen apotheekkruis aan de gevel.
+      doos('verkeerslichtGroen', 'verkeerslichtGroen', 6, 6.4, 1.6, 0.2, Y + 4.4, Y + 5.0);
+      doos('verkeerslichtGroen', 'verkeerslichtGroen', 6, 6.4, 0.6, 0.2, Y + 3.9, Y + 5.5);
+      break;
+    }
   }
   return mb.bouw();
 }

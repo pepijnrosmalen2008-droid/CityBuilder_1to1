@@ -20,7 +20,15 @@ const DIENST_ICOON: Record<DienstSoort, string> = {
   rwzi: '<svg viewBox="0 0 86 46"><ellipse cx="28" cy="28" rx="18" ry="9" fill="#adb5bd"/><ellipse cx="28" cy="27" rx="14" ry="6.5" fill="#5c7a54"/><rect x="50" y="20" width="26" height="16" fill="#adb5bd"/><rect x="53" y="23" width="20" height="10" fill="#5c7a54"/></svg>',
   stortplaats: '<svg viewBox="0 0 86 46"><path d="M8 40l16-22h30l18 22z" fill="#8a7a63"/><rect x="32" y="12" width="10" height="7" fill="#fcc419"/></svg>',
   afvalcentrale: '<svg viewBox="0 0 86 46"><rect x="12" y="18" width="40" height="24" fill="#495057"/><rect x="58" y="4" width="7" height="38" fill="#e9ecef"/><rect x="14" y="30" width="14" height="10" fill="#868e96"/></svg>',
+  brandweer: '<svg viewBox="0 0 86 46"><rect x="10" y="16" width="46" height="26" fill="#b5462e"/><rect x="58" y="4" width="10" height="38" fill="#a33d28"/><rect x="14" y="26" width="10" height="16" fill="#e03131"/><rect x="28" y="26" width="10" height="16" fill="#e03131"/><rect x="42" y="26" width="10" height="16" fill="#e03131"/></svg>',
+  politie: '<svg viewBox="0 0 86 46"><rect x="18" y="10" width="50" height="32" fill="#343a40"/><rect x="18" y="8" width="50" height="5" fill="#1c3f94"/><rect x="38" y="30" width="10" height="12" fill="#74c0fc"/><path d="M43 16l5 3v4c0 4-3 6-5 7-2-1-5-3-5-7v-4z" fill="#ffd43b"/></svg>',
+  ziekenhuis: '<svg viewBox="0 0 86 46"><rect x="10" y="12" width="44" height="30" fill="#dee2e6"/><rect x="54" y="20" width="22" height="22" fill="#a5d8ff"/><rect x="27" y="17" width="10" height="20" fill="#e03131"/><rect x="22" y="22" width="20" height="10" fill="#e03131"/></svg>',
+  gezondheidscentrum: '<svg viewBox="0 0 86 46"><rect x="18" y="16" width="50" height="26" fill="#e9c46a"/><rect x="38" y="22" width="10" height="16" fill="#2f9e44"/><rect x="35" y="25" width="16" height="10" fill="#2f9e44"/></svg>',
 };
+
+const GROEPEN: { id: import('../core/voorzieningen').DienstGroep; naam: string }[] = [
+  { id: 'stroom', naam: 'Stroom' }, { id: 'water', naam: 'Water' }, { id: 'afval', naam: 'Afval' }, { id: 'veiligheid', naam: 'Brandweer & politie' }, { id: 'zorg', naam: 'Zorg' },
+];
 
 const GRONDSTOF_ICOON: Record<Grondstof, string> = {
   landbouw: '<svg viewBox="0 0 86 46"><path d="M14 34h58" stroke="#8a6b3c" stroke-width="3"/><path d="M20 34c0-8 3-14 6-18M30 34c0-9 2-15 5-20M40 34c0-8 3-15 6-19M50 34c0-9 2-15 5-20M60 34c0-8 3-14 6-18" stroke="#c0d36b" stroke-width="2.4" fill="none"/><circle cx="26" cy="15" r="2.6" fill="#e9c46a"/><circle cx="35" cy="13" r="2.6" fill="#e9c46a"/><circle cx="46" cy="14" r="2.6" fill="#e9c46a"/><circle cx="55" cy="13" r="2.6" fill="#e9c46a"/><circle cx="66" cy="15" r="2.6" fill="#e9c46a"/></svg>',
@@ -29,7 +37,7 @@ const GRONDSTOF_ICOON: Record<Grondstof, string> = {
   delfstoffen: '<svg viewBox="0 0 86 46"><path d="M10 38l14-16 12 16z" fill="#d9a066"/><path d="M30 38l14-12 12 12z" fill="#adb5bd"/><path d="M52 38l12-18 14 18z" fill="#d9a066"/><path d="M8 38h72" stroke="#6c757d" stroke-width="2"/></svg>',
 };
 
-const DIENST_VOLGORDE: DienstSoort[] = ['windmolen', 'zonnepark', 'gascentrale', 'pompstation', 'rwzi', 'stortplaats', 'afvalcentrale'];
+const DIENST_VOLGORDE: DienstSoort[] = ['windmolen', 'zonnepark', 'gascentrale', 'pompstation', 'rwzi', 'stortplaats', 'afvalcentrale', 'brandweer', 'politie', 'ziekenhuis', 'gezondheidscentrum'];
 
 const STROOKKLEUR: Record<string, string> = { stoep: '#9aa0a6', fiets: '#a8473b', auto: '#3b3f45', gedeeld: '#7b4a3a', bus: '#7a3f35', tram: '#55575c', berm: '#5f8d3e', middenberm: '#5f8d3e', vluchtstrook: '#4a4e55' };
 
@@ -82,7 +90,7 @@ export class Werkbalk {
       if (/^[1-9]$/.test(k)) {
         const i = Number(k) - 1;
         if (this.g.modus === 'zone' && ZONES[i]) { this.g.zone = ZONES[i].id; this.teken(); }
-        else if (this.g.modus === 'dienst' && DIENST_VOLGORDE[i]) { this.g.dienst = DIENST_VOLGORDE[i]; this.teken(); }
+        else if (this.g.modus === 'dienst' && this.inGroep()[i]) { this.g.dienst = this.inGroep()[i]; this.teken(); }
         else if (this.g.modus === 'gebied' && i < 4) { this.g.grondstof = (Object.keys(GRONDSTOFFEN) as Grondstof[])[i]; this.teken(); }
         else if ((this.g.modus === 'weg' || this.g.modus === 'opwaarderen') && WEGTYPE_VOLGORDE[i]) { this.g.wegtype = WEGTYPE_VOLGORDE[i]; this.teken(); }
       }
@@ -112,8 +120,8 @@ export class Werkbalk {
       items = (Object.values(GRONDSTOFFEN)).map((x, i) => `<div class="item ${g.grondstof === x.id ? 'aan' : ''}" data-gs="${x.id}">${GRONDSTOF_ICOON[x.id]}<div class="item-naam">${x.naam}</div><div class="item-sub">${i + 1} · ${x.product.toLowerCase()}</div></div>`).join('');
       opties = `<button class="knop" data-eco>Overzicht economie</button>`;
     } else if (g.modus === 'dienst') {
-      items = DIENST_VOLGORDE.map((id, i) => { const d = DIENSTEN[id]; const lev = Object.entries(d.levert).map(([n, x]) => `${(x as number).toLocaleString('nl-NL')} ${NUT_EENHEID[n as Nut]}`).join(' + '); return `<div class="item ${g.dienst === id ? 'aan' : ''}" data-d="${id}" title="${d.uitleg}">${DIENST_ICOON[id]}<div class="item-naam">${d.naam}</div><div class="item-sub">${i + 1} · € ${(d.kosten / 1e6).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} mln · ${lev}</div></div>`; }).join('');
-      opties = `<div class="balans" data-balans></div>`;
+      items = this.inGroep().map((id, i) => { const d = DIENSTEN[id]; const lev = d.dekking ? `${(d.dekking.bereik / 1000).toLocaleString('nl-NL')} km · ${d.dekking.voertuigen} wagen${d.dekking.voertuigen > 1 ? 's' : ''}` : Object.entries(d.levert).map(([n, x]) => `${(x as number).toLocaleString('nl-NL')} ${NUT_EENHEID[n as Nut]}`).join(' + '); return `<div class="item ${g.dienst === id ? 'aan' : ''}" data-d="${id}" title="${d.uitleg}">${DIENST_ICOON[id]}<div class="item-naam">${d.naam}</div><div class="item-sub">${i + 1} · € ${(d.kosten / 1e6).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} mln · ${lev}</div></div>`; }).join('');
+      opties = `<div class="groep">${GROEPEN.map(x => `<button class="knop ${this.groep === x.id ? 'aan' : ''}" data-grp="${x.id}">${x.naam}</button>`).join('')}</div><div class="balans" data-balans></div>`;
     } else if (g.modus === 'sloop') {
       items = `<div class="item-sub" style="padding:14px">Klik op een weg of gebouw om het te slopen. Je krijgt een kwart van de wegkosten terug.</div>`;
     } else {
@@ -129,6 +137,7 @@ export class Werkbalk {
     this.el.querySelector<HTMLElement>('[data-af]')?.addEventListener('click', () => { g.afronden = !g.afronden; this.teken(); });
     this.el.querySelector<HTMLElement>('[data-hl]')?.addEventListener('click', () => { g.hulplijnen = !g.hulplijnen; this.teken(); });
     this.el.querySelectorAll<HTMLElement>('[data-d]').forEach(e => (e.onclick = () => { g.dienst = e.dataset.d as DienstSoort; this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-grp]').forEach(e => (e.onclick = () => { this.groep = e.dataset.grp as typeof this.groep; g.dienst = this.inGroep()[0]; this.teken(); }));
     this.werkBijBalans();
     this.el.querySelectorAll<HTMLElement>('[data-gs]').forEach(e => (e.onclick = () => { g.grondstof = e.dataset.gs as Grondstof; g.annuleer(); this.teken(); }));
     this.el.querySelector<HTMLElement>('[data-eco]')?.addEventListener('click', () => this.opEconomie());
@@ -136,12 +145,27 @@ export class Werkbalk {
   }
 
   /** Balans van stroom, water, riool en afval (in het tabblad Voorzieningen). */
+  /** Stadscijfers van de hulpdiensten (voor het tabblad). */
+  hulpStat: () => { brandveiligheid: number; misdaad: number; gezondheid: number; branden: number; afgebrand: number } = () => ({ brandveiligheid: 0, misdaad: 0, gezondheid: 0, branden: 0, afgebrand: 0 });
+
+  private groep: import('../core/voorzieningen').DienstGroep = 'stroom';
+  private inGroep() { return DIENST_VOLGORDE.filter(id => DIENSTEN[id].groep === this.groep); }
+
   werkBijBalans() {
     const el = this.el.querySelector<HTMLElement>('[data-balans]');
     if (!el) return;
+    if (this.groep === 'veiligheid' || this.groep === 'zorg') {
+      const h = this.hulpStat();
+      const balk = (naam: string, x: number, goed: boolean) => `<span class="nut ${goed ? '' : 'tekort'}"><b>${naam}</b><i><u style="width:${Math.round(x * 100)}%"></u></i>${Math.round(x * 100)}%</span>`;
+      el.innerHTML = this.groep === 'veiligheid'
+        ? balk('Brandveiligheid', h.brandveiligheid, h.brandveiligheid > 0.6) + balk('Veiligheid', 1 - h.misdaad, h.misdaad < 0.3) + `<span class="nut">${h.branden} branden, ${h.afgebrand} afgebrand</span>`
+        : balk('Gezondheidszorg', h.gezondheid, h.gezondheid > 0.6);
+      return;
+    }
     const b = this.v.balans;
     const fmt = (x: number, n: Nut) => n === 'stroom' ? x.toLocaleString('nl-NL', { maximumFractionDigits: 1 }) : Math.round(x).toLocaleString('nl-NL');
-    el.innerHTML = (['stroom', 'water', 'riool', 'afval'] as Nut[]).map(n => {
+    const nuts: Nut[] = this.groep === 'stroom' ? ['stroom'] : this.groep === 'water' ? ['water', 'riool'] : ['afval'];
+    el.innerHTML = nuts.map(n => {
       const x = b[n], ok = x.tekort <= x.verbruik * 0.01;
       const vol = x.verbruik > 0 ? Math.min(1, x.productie / x.verbruik) : 1;
       return `<span class="nut ${ok ? '' : 'tekort'}" title="${NUT_NAAM[n]}: productie ${fmt(x.productie, n)} / verbruik ${fmt(x.verbruik, n)} ${NUT_EENHEID[n]}${x.inkoop > 0 ? `, inkoop ${fmt(x.inkoop, n)}` : ''}${x.tekort > 0 ? `, tekort ${fmt(x.tekort, n)}` : ''}"><b>${NUT_NAAM[n]}</b><i><u style="width:${Math.round(vol * 100)}%"></u></i>${fmt(x.productie, n)} / ${fmt(x.verbruik, n)} ${NUT_EENHEID[n]}${x.inkoop > 0.001 ? ` <small>(+${fmt(x.inkoop, n)} inkoop)</small>` : ''}</span>`;

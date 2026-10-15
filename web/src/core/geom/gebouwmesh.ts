@@ -146,6 +146,7 @@ export function bouwGebouw(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[
     case 'bedrijfshal': hal(mb, g, r); break;
   }
   if (g.vorm !== 'rijwoningen' && g.ankers.length) inrichting(mb, g, r, hoogte, props);
+  if (g.vorm !== 'rijwoningen') platDak(mb, g);
   return { mesh: mb.bouw(), props };
 }
 
@@ -206,9 +207,20 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
       const m = { x: (rd.a.x + rd.b.x) / 2 + rd.n.x * 0.32, z: (rd.a.z + rd.b.z) / 2 + rd.n.z * 0.32 };
       doos(mb, 'metaal', 'metaal', m, rd.t, rd.L, 0.18, H - 0.32, H - 0.16);
     }
+    // Niveau 3+: zonnepanelen op het voordakvlak (in plaats van een dakkapel).
+    const panelen = (g.niveau ?? 1) >= 3;
+    if (panelen) for (const an of g.ankers) {
+      const P = (d: number, s: number) => { const p = { x: an.p.x + an.n.x * d + an.t.x * s, z: an.p.z + an.n.z * d + an.t.z * s }; return { x: p.x, y: dakH(p, 'voor') + 0.07, z: p.z }; };
+      const kol = Math.max(1, Math.floor((w - 1) / 1.05)), rij = Math.max(1, Math.floor((g.diepte / 2 - 1.2) / 1.75 * 1.05));
+      for (let i = 0; i < kol; i++) for (let j = 0; j < Math.min(3, rij); j++) {
+        const s0 = -kol * 1.05 / 2 + i * 1.05 + 0.03, d0 = 0.7 + j * 1.75 * 0.75;
+        const a = P(d0, s0), b = P(d0, s0 + 1.0), c = P(d0 + 1.25, s0 + 1.0), e = P(d0 + 1.25, s0);
+        mb.quad('zonnepaneel', a, b, c, e, [0, 0], [1, 0], [1, 1], [0, 1], { x: -an.n.x, y: 1.2, z: -an.n.z });
+      }
+    }
     // Dakkapellen en schoorstenen.
     for (const an of g.ankers) {
-      if (r.next() > 0.45) continue;
+      if (panelen || r.next() > 0.45) continue;
       const bw = Math.min(2.6, w - 1.4);
       if (bw < 1.2) continue;
       const c = { x: an.p.x + an.n.x * 1.7, z: an.p.z + an.n.z * 1.7 };
@@ -671,5 +683,38 @@ function inrichting(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[])
       hek(P(d0, -h), P(d1, -h)); hek(P(d1, -h), P(d1, h)); hek(P(d1, h), P(d0, h));
       break;
     }
+  }
+}
+
+/**
+ * Hoger niveau op een plat dak: vanaf niveau 3 zonnepanelen (op het zuiden, licht schuin),
+ * vanaf niveau 4 bij flats en kantoren een groen dak met een dakterras.
+ */
+function platDak(mb: MeshBouwer, g: Gebouw) {
+  const n = g.niveau ?? 1;
+  if (n < 3) return;
+  const H = g.y + totaleHoogte(g.lagen);
+  const vrij = inzet(g.voet, 1.6);
+  const kern = g.vorm === 'kantoortoren' ? inzet(g.voet, Math.min(6, g.diepte * 0.3)) : null;
+  const xs = vrij.map(p => p.x), zs = vrij.map(p => p.z);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+  const groen = n >= 4 && (g.vorm === 'appartementen' || g.vorm === 'kantoortoren');
+  if (groen && Math.abs(getekendOppervlak(vrij)) > 40) vlak(mb, 'tuin', vrij, H + 0.12);
+  const midden = zwaartepunt(g.voet);
+  for (let x = x0; x < x1 - 1; x += 1.15) for (let z = z0; z < z1 - 1.6; z += 2.4) {
+    const hoeken = [{ x, z }, { x: x + 1.05, z }, { x: x + 1.05, z: z + 1.6 }, { x, z: z + 1.6 }];
+    if (!hoeken.every(p => puntInPolygoon(p, vrij))) continue;
+    if (kern && hoeken.some(p => puntInPolygoon(p, kern))) continue;
+    // Bij een groen dak alleen panelen op de helft (de andere helft is het terras).
+    if (groen && x + 0.5 < midden.x) continue;
+    const y = H + (groen ? 0.2 : 0.1);
+    // Schuin naar het zuiden (+z): noordkant hoger.
+    mb.quad('zonnepaneel', { x, y: y + 0.55, z }, { x: x + 1.05, y: y + 0.55, z }, { x: x + 1.05, y: y + 0.15, z: z + 1.6 }, { x, y: y + 0.15, z: z + 1.6 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 1, z: 0.3 });
+  }
+  if (groen) {
+    // Dakterras: houten vlonder en een paar plantenbakken.
+    const c = { x: (x0 + midden.x) / 2, z: midden.z };
+    doos(mb, 'hout', 'hout', c, { x: 1, z: 0 }, Math.min(6, (midden.x - x0) * 0.8), Math.min(5, (z1 - z0) * 0.6), H, H + 0.25);
+    for (const dz of [-1, 1]) doos(mb, 'haag', 'beton', { x: c.x, z: c.z + dz * Math.min(3, (z1 - z0) * 0.35) }, { x: 1, z: 0 }, 2.5, 0.6, H, H + 0.9);
   }
 }
