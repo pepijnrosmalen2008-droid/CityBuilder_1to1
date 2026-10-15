@@ -232,6 +232,13 @@ export class Voorzieningen {
   }
 
   haalEvents() { const e = this.events; this.events = []; return e; }
+
+  naarJson() { return { diensten: [...this.diensten.values()], volgende: this.volgende }; }
+  laadJson(j: { diensten: Dienst[]; volgende: number }) {
+    this.diensten = new Map(j.diensten.map(d => [d.id, d]));
+    this.volgende = j.volgende;
+    this.klok = 99;
+  }
 }
 
 function leeg(): Balans { return { productie: 0, verbruik: 0, inkoop: 0, tekort: 0 }; }

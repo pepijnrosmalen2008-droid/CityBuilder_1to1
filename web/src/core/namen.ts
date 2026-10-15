@@ -27,6 +27,9 @@ export class Namen {
   private snelweg = 1;
   constructor(seed: number) { this.rng = new Rng(seed * 31 + 7); }
 
+  naarJson() { return { gebruikt: [...this.gebruikt], snelweg: this.snelweg }; }
+  laadJson(j: { gebruikt: string[]; snelweg: number }) { this.gebruikt = new Set(j.gebruikt); this.snelweg = j.snelweg; }
+
   straat(type: WegTypeId): string {
     if (type === 'snelweg') return `A${[1, 2, 4, 12, 27, 28, 50][this.snelweg++ % 7]}`;
     for (let poging = 0; poging < 40; poging++) {

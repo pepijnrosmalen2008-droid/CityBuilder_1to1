@@ -326,6 +326,9 @@ export class Hulpdiensten {
     this.stat.misdaad = n ? Math.min(1, mis / n) : 0;
   }
 
+  naarJson() { return { stat: this.stat }; }
+  laadJson(j: { stat: Hulpdiensten['stat'] }) { this.stat = { ...this.stat, ...j.stat }; this.klok = 99; }
+
   /** Aantal voertuigen van een station dat onderweg is. */
   onderweg(station: number) { return this.bezet(station); }
 }

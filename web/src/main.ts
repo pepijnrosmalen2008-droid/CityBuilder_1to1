@@ -20,6 +20,7 @@ import { Hud } from './ui/hud';
 import { Werkbalk } from './ui/werkbalk';
 import { StraatLabels } from './ui/labels';
 import { EconomiePaneel } from './ui/economiepaneel';
+import { bewaar, laad, laadInfo } from './opslag';
 
 const param = new URLSearchParams(location.search);
 const laadTekst = document.getElementById('laad-tekst')!, laadBalk = document.getElementById('laad-voortgang')!;
@@ -35,17 +36,34 @@ async function start() {
   bron.anisotropie = sfeer.renderer.capabilities.getMaxAnisotropy();
   const mats = new Materialen(bron);
 
+  // Startkeuze: doorgaan met de opgeslagen stad, een nieuwe stad of de voorbeeldstad.
+  const vrij = !param.has('shot') && !param.has('demo') && !param.has('test') && !param.has('seed') && !param.has('nieuw');
+  let keuzeStart: 'doorgaan' | 'nieuw' | 'voorbeeld' = 'nieuw';
+  const info = vrij ? await laadInfo() : null;
+  if (info) {
+    const kaart = document.querySelector('.laad-kaart')!;
+    const keuzes = document.createElement('div');
+    keuzes.className = 'startkeuze';
+    keuzes.innerHTML = `<button class="knop hoofd" data-s="doorgaan"><b>Doorgaan met ${info.naam}</b><span>${info.inwoners.toLocaleString('nl-NL')} inwoners · ${info.datum} · opgeslagen ${new Date(info.opgeslagen).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></button><button class="knop" data-s="nieuw"><b>Nieuwe stad</b></button><button class="knop" data-s="voorbeeld"><b>Voorbeeldstad</b></button>`;
+    kaart.appendChild(keuzes);
+    laadTekst.textContent = 'Kies hoe je wilt beginnen';
+    keuzeStart = await new Promise(ok => keuzes.querySelectorAll<HTMLElement>('[data-s]').forEach(b => (b.onclick = () => ok(b.dataset.s as typeof keuzeStart))));
+    keuzes.remove();
+  }
+  const opgeslagenStad = keuzeStart === 'doorgaan' ? await laad<ReturnType<Wereld['naarJson']>>() : null;
+
   await voortgang('Landschap vormen…', 0.1);
-  const wereld = new Wereld(Number(param.get('seed') ?? 1));
+  const wereld = new Wereld(opgeslagenStad?.seed ?? Number(param.get('seed') ?? 1));
   await voortgang('Texturen maken…', 0.35);
   const terrein = new TerreinWeergave(wereld.terrein, bron);
   await terrein.init();
   sfeer.scene.add(terrein.groep);
 
-  const demo = param.has('demo');
+  const demo = param.has('demo') || keuzeStart === 'voorbeeld';
   const test = param.get('test');
   if (test) { bouwTestKruisingen(wereld); wereld.snelheid = 0; }
   if (demo) { await voortgang('Voorbeeldstad bouwen…', 0.55); bouwVoorbeeldstad(wereld, Number(param.get('groei') ?? 1800)); }
+  else if (opgeslagenStad) { await voortgang('Stad laden…', 0.55); wereld.laadJson(opgeslagenStad); }
   else if (!test) legStartweg(wereld);
 
   await voortgang('Bossen planten…', 0.7);
@@ -61,8 +79,10 @@ async function start() {
   const camera = new StadCamera(sfeer.camera, sfeer.renderer.domElement, wereld.terrein);
   const plek = test && TEST_PLEKKEN[test];
   // Nieuwe kaart: begin bij het eind van de snelweg.
-  const eind = [...wereld.net.knopen.values()].sort((a, b) => b.p.x - a.p.x)[0];
-  const start = eind ? `${eind.p.x - 40},${eind.p.z},380,90,35` : "-150,0,520,30,48";
+  const eind = opgeslagenStad && wereld.gebouwen.size ? null : [...wereld.net.knopen.values()].sort((a, b) => b.p.x - a.p.x)[0];
+  let mid = { x: -150, z: 0 };
+  if (opgeslagenStad && wereld.gebouwen.size) { let x = 0, z = 0; for (const g of wereld.gebouwen.values()) { x += g.centrum.x; z += g.centrum.z; } mid = { x: x / wereld.gebouwen.size, z: z / wereld.gebouwen.size }; }
+  const start = eind ? `${eind.p.x - 40},${eind.p.z},380,90,35` : `${mid.x},${mid.z},520,30,48`;
   const c = (param.get('cam') ?? (plek ? `${plek[0]},${plek[1]},95,0,88` : demo ? '-260,-60,420,215,38' : start)).split(',').map(Number);
   camera.zet(c[0], c[1], c[2], c[3], c[4]);
   stad.werkBij(1e9);
@@ -219,6 +239,26 @@ async function start() {
     document.body.dataset.klaar = '1';
     return;
   }
+
+  // Opslaan: knop in het menu, automatisch elke twee minuten en bij het verlaten van de pagina.
+  let bezigMetOpslaan = false;
+  const opslaan = async (handmatig = false) => {
+    if (bezigMetOpslaan || param.has('test')) return;
+    bezigMetOpslaan = true;
+    try {
+      await bewaar(wereld.naarJson(), { naam: wereld.naam, inwoners: wereld.stat.inwoners, datum: hud.datumTekst() });
+      hud.meldOpgeslagen(`Opgeslagen om ${new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`);
+      if (handmatig) gereedschap.melding = 'Stad opgeslagen';
+    } catch (e) { console.warn('opslaan mislukt', e); hud.meldOpgeslagen('Opslaan lukte niet in deze browser'); }
+    bezigMetOpslaan = false;
+  };
+  hud.opStad = wat => {
+    if (wat === 'opslaan') { void opslaan(true); return; }
+    if (wat === 'nieuw' && !confirm('Een nieuwe stad beginnen? Je huidige stad blijft bewaard tot je de nieuwe opslaat.')) return;
+    location.search = wat === 'nieuw' ? '?nieuw=1' : '?demo=1';
+  };
+  setInterval(() => { if (!document.hidden) void opslaan(); }, 120_000);
+  addEventListener('visibilitychange', () => { if (document.hidden) void opslaan(); });
 
   let vorige = performance.now(), hudKlok = 0, tijd = 0;
   const lus = (nu: number) => {

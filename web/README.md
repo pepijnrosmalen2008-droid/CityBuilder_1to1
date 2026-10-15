@@ -36,7 +36,7 @@ hierheen).
 
 | Toets / muis | Functie |
 |---|---|
-| X / Z / G / N / U / B / Esc | Wegen / Zones / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Voorzieningen (stroom, water, afval) / Opwaarderen / Slopen / Kijken |
+| X / Z / G / N / U / B / Esc | Wegen / Zones / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Voorzieningen (stroom, water, afval, hulpdiensten) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
 | C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend) |
 | PgUp / PgDn | Hoogte van de weg in stappen van 4 m: viaduct (omhoog) of tunnel (omlaag); wegen op verschillende hoogte kruisen zonder kruispunt |

@@ -1,0 +1,18 @@
+import { Wereld } from '../../src/core/wereld';
+import { bouwVoorbeeldstad } from '../../src/core/demo';
+import { gzipSync } from 'zlib';
+const w = new Wereld(1);
+bouwVoorbeeldstad(w, Number(process.argv[2] ?? 600));
+const rond = (_k: string, v: unknown) => typeof v === 'number' ? Math.round(v * 100) / 100 : v;
+const t0 = Date.now();
+const tekst = JSON.stringify(w.naarJson(), rond);
+console.log('opslaan', Date.now() - t0, 'ms;', (tekst.length / 1e6).toFixed(2), 'MB JSON,', (gzipSync(tekst).length / 1e6).toFixed(2), 'MB gzip');
+const t1 = Date.now();
+const w2 = new Wereld(1);
+w2.laadJson(JSON.parse(tekst));
+console.log('laden', Date.now() - t1, 'ms');
+const tel = (x: Wereld) => ({ seg: x.net.segmenten.size, kav: x.kavels.size, geb: x.gebouwen.size, inw: x.stat.inwoners, geld: Math.round(x.geld), diensten: x.voorzieningen.diensten.size, bedrijven: x.economie.bedrijven.size, gekapt: x.bomen.gekapt().length });
+console.log('voor ', JSON.stringify(tel(w)));
+console.log('na   ', JSON.stringify(tel(w2)));
+for (let i = 0; i < 200; i++) w2.stap(0.25);
+console.log('na 50 s spelen', JSON.stringify(tel(w2)), 'saldo', Math.round(w2.prognose.saldo));

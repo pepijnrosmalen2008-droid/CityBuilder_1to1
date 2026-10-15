@@ -101,6 +101,17 @@ export class Terrein {
     this.markeer(x0, z0, x1, z1);
   }
 
+  /** Grondverzet (verschil met het oorspronkelijke terrein), voor opslaan. */
+  wijzigingen(): { i: number[]; h: number[] } {
+    const r = { i: [] as number[], h: [] as number[] };
+    for (let k = 0; k < this.h.length; k++) if (Math.abs(this.h[k] - this.h0[k]) > 0.005) { r.i.push(k); r.h.push(Math.round(this.h[k] * 100) / 100); }
+    return r;
+  }
+  laadWijzigingen(w: { i: number[]; h: number[] }) {
+    for (let k = 0; k < w.i.length; k++) this.h[w.i[k]] = w.h[k];
+    this.markeer(-this.grootte / 2, -this.grootte / 2, this.grootte / 2, this.grootte / 2);
+  }
+
   markeer(x0: number, z0: number, x1: number, z1: number) { this.vuil.push({ x0, z0, x1, z1 }); }
   haalVuil() { const v = this.vuil; this.vuil = []; return v; }
 

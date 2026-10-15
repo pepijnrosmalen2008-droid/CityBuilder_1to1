@@ -256,9 +256,9 @@ export class Wereld {
 
   // ─── Gevelstroken en percelen ───────────────────────────────────────────────
 
-  private herbouwStroken(segIds: Set<number>, gebieden: Box[]) {
+  private herbouwStroken(segIds: Set<number>, gebieden: Box[], extraZwervers: Kavel[] = []) {
     // Oude stroken van deze segmenten (en van verdwenen segmenten) weg; de kavels erop zoeken een nieuw thuis.
-    const zwervers: Kavel[] = [];
+    const zwervers: Kavel[] = [...extraZwervers];
     for (const [sleutel, st] of this.stroken) {
       if (segIds.has(st.seg) || !this.net.segmenten.has(st.seg)) {
         this.stroken.delete(sleutel);
@@ -654,13 +654,51 @@ export class Wereld {
 
   // ─── Opslaan (engine-onafhankelijk JSON-formaat) ────────────────────────────
 
+  /** Volledige stand van de stad als JSON (engine-onafhankelijk; ook voor een andere engine). */
   naarJson() {
     return {
-      versie: 2, seed: this.seed, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
+      versie: 3, seed: this.seed, naam: this.naam, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
+      tarieven: this.tarieven, mijlpaal: this.mijlpaal, maandKlok: this.maandKlok, vorigeMaand: this.vorigeMaand,
+      gemeld: [...this.gemeld], nieuws: this.nieuws.slice(0, 20), nieuwsId: this.nieuwsId,
+      terrein: this.terrein.wijzigingen(), bomen: this.bomen.gekapt(), namen: this.namen.naarJson(),
       net: this.net.naarJson(),
       kavels: [...this.kavels.values()],
       gebouwen: [...this.gebouwen.values()],
+      economie: this.economie.naarJson(),
+      voorzieningen: this.voorzieningen.naarJson(),
+      hulpdiensten: this.hulpdiensten.naarJson(),
     };
+  }
+
+  /** Een opgeslagen stad laden in deze (nieuwe, lege) wereld met dezelfde seed. */
+  laadJson(j: ReturnType<Wereld['naarJson']>) {
+    this.naam = j.naam; this.dagen = j.dagen; this.geld = j.geld; this.volgende = j.volgende;
+    this.tarieven = j.tarieven; this.mijlpaal = j.mijlpaal; this.maandKlok = j.maandKlok; this.vorigeMaand = j.vorigeMaand;
+    this.gemeld = new Set(j.gemeld); this.nieuws = j.nieuws ?? []; this.nieuwsId = j.nieuwsId ?? 1;
+    this.terrein.laadWijzigingen(j.terrein);
+    this.bomen.laadGekapt(j.bomen);
+    this.namen.laadJson(j.namen);
+    this.net.vanJson(j.net);
+    // Eerst de kavels en gebouwen terug; daarna de gevelstroken opnieuw berekenen en de kavels
+    // daarop terugzetten (zoals na het verleggen van een weg).
+    this.kavels = new Map(j.kavels.map(k => [k.id, k]));
+    this.gebouwen = new Map(j.gebouwen.map(g => [g.id, g]));
+    const ev = this.net.haalEvents();
+    for (const e of ev) this.events.push(e);
+    // Gevelstroken opnieuw berekenen; de opgeslagen kavels passen er precies op.
+    for (const sg of this.net.segmenten.values()) {
+      this.segBox.set(sg.id, boxVan(sg.pad, halveBreedte(sg.type)));
+      for (const z of [1, -1] as const) { const st = maakStrook(this.net, this.terrein, sg, z); if (st) this.stroken.set(stroomSleutel(sg.id, z), st); }
+    }
+    for (const g of [...this.gebouwen.values()]) {
+      if (!this.kavels.has(g.kavel)) { this.gebouwen.delete(g.id); continue; }
+      this.events.push({ soort: 'gebouw+', id: g.id });
+    }
+    for (const k of this.kavels.values()) this.events.push({ soort: 'kavel~', id: k.id });
+    this.economie.laadJson(j.economie);
+    this.voorzieningen.laadJson(j.voorzieningen);
+    this.hulpdiensten.laadJson(j.hulpdiensten);
+    this.berekenStatistiek();
   }
 }
 

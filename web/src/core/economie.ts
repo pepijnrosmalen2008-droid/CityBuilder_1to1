@@ -310,6 +310,16 @@ export class Economie {
 
   haalEvents() { const e = this.events; this.events = []; return e; }
 
+  naarJson() { return { gebieden: [...this.gebieden.values()], bedrijven: [...this.bedrijven.values()], volgende: this.volgende }; }
+  laadJson(j: { gebieden: Gebied[]; bedrijven: Bedrijf[]; volgende: number }) {
+    this.gebieden = new Map(j.gebieden.map(g => [g.id, g]));
+    this.bedrijven = new Map(j.bedrijven.map(b => [b.id, b]));
+    this.volgende = j.volgende;
+    for (const g of this.gebieden.values()) this.events.push({ soort: 'gebied+', id: g.id });
+    for (const b of this.bedrijven.values()) this.events.push({ soort: 'bedrijf+', id: b.id });
+    this.berekenKetens();
+  }
+
   /** Productieketens per maand: winning → lokale verwerking → export. */
   stap(dt: number) {
     for (const b of this.bedrijven.values()) {

@@ -1,0 +1,26 @@
+// Opslagtest in de browser: voorbeeldstad, opslaan, herladen, doorgaan, vergelijken.
+import { chromium } from 'playwright-core';
+const [basis = 'http://localhost:5173/', uit] = process.argv.slice(2);
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 760 } });
+const page = await ctx.newPage();
+const fouten = [];
+page.on('pageerror', e => fouten.push(e.message));
+const tel = () => page.evaluate(() => { const w = window.__stad.wereld; return { geb: w.gebouwen.size, kav: w.kavels.size, seg: w.net.segmenten.size, inw: w.stat.inwoners, diensten: w.voorzieningen.diensten.size, naam: w.naam }; });
+await page.goto(basis + '?demo&groei=300&kwaliteit=laag');
+await page.waitForSelector('#laden.weg', { timeout: 900000 });
+await page.evaluate(() => { window.__stad.wereld.snelheid = 0; });
+const voor = await tel();
+await page.click('[data-instel]');
+await page.click('[data-stad="opslaan"]');
+await page.waitForTimeout(4000);
+console.log('voor', JSON.stringify(voor));
+await page.goto(basis + '?kwaliteit=laag');
+await page.waitForSelector('.startkeuze', { timeout: 120000 });
+console.log('startkeuze:', (await page.innerText('.startkeuze')).replace(/\n+/g, ' | '));
+if (uit) await page.screenshot({ path: uit });
+await page.click('[data-s="doorgaan"]');
+await page.waitForSelector('#laden.weg', { timeout: 900000 });
+console.log('na  ', JSON.stringify(await tel()));
+console.log(fouten.length ? 'FOUTEN:\n' + fouten.join('\n') : 'geen fouten');
+await browser.close();

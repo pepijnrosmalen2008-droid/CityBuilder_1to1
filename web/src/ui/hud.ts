@@ -19,6 +19,17 @@ export class Hud {
   private schuiversGetekend = false;
   private menu!: HTMLElement;
 
+  /** Opslaan / nieuwe stad / voorbeeldstad (gezet door main). */
+  opStad: (wat: 'opslaan' | 'nieuw' | 'voorbeeld') => void = () => {};
+
+  /** Melding in het menu (bijv. 'Opgeslagen om 14:02'). */
+  meldOpgeslagen(tekst: string) { const el = this.menu.querySelector('[data-opgeslagen]'); if (el) el.textContent = tekst; }
+
+  datumTekst() {
+    const d = new Date(2026, 0, 1 + Math.floor(this.w.dagen));
+    return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
   constructor(private w: Wereld, private regelaar: KwaliteitRegelaar) {
     this.el.innerHTML = `
       <div class="kaart stadskaart paneel">
@@ -57,7 +68,9 @@ export class Hud {
       const opties: [Keuze, string, string][] = [['auto', 'Automatisch', 'Past zich aan je apparaat aan'], ['laag', 'Laag', 'Snel, ook op oudere laptops'], ['midden', 'Midden', 'Zachte schaduwen, gloed'], ['hoog', 'Hoog', 'Ambient occlusion, scherpste schaduw']];
       this.menu.innerHTML = `<div class="menu-kop">Grafische kwaliteit</div>` + opties.map(([k, n, u]) =>
         `<button class="optie ${this.regelaar.keuze === k ? 'aan' : ''}" data-k="${k}"><b>${n}</b><span>${u}</span></button>`).join('') +
-        `<div class="fps">Nu: <b data-fps>–</b></div>`;
+        `<div class="fps">Nu: <b data-fps>–</b></div>` +
+        `<div class="menu-kop" style="margin-top:12px">Stad</div><button class="optie" data-stad="opslaan"><b>Opslaan</b><span data-opgeslagen>Wordt ook elke twee minuten automatisch bewaard</span></button><button class="optie" data-stad="nieuw"><b>Nieuwe stad</b><span>Begin opnieuw op een lege kaart</span></button><button class="optie" data-stad="voorbeeld"><b>Voorbeeldstad</b><span>Een stad van 10.000 inwoners om te verkennen</span></button>`;
+      this.menu.querySelectorAll<HTMLElement>('[data-stad]').forEach(b => (b.onclick = () => this.opStad(b.dataset.stad as 'opslaan' | 'nieuw' | 'voorbeeld')));
       this.fpsEl = this.menu.querySelector('[data-fps]')!;
       this.menu.querySelectorAll<HTMLElement>('[data-k]').forEach(b => (b.onclick = () => { this.regelaar.kies(b.dataset.k as Keuze); tekenMenu(); }));
     };

@@ -64,6 +64,10 @@ export class Bomen {
       }
   }
 
+  /** Gekapte bomen (voor opslaan). */
+  gekapt(): number[] { const r: number[] = []; for (let i = 0; i < this.n; i++) if (!this.levend[i]) r.push(i); return r; }
+  laadGekapt(lijst: number[]) { for (const i of lijst) if (i < this.n) { this.levend[i] = 0; this.vuileVakken.add(this.vak(this.x[i], this.z[i])); } }
+
   wisInPolygoon(poly: V2[], marge = 0) {
     let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
     for (const p of poly) { x0 = Math.min(x0, p.x); z0 = Math.min(z0, p.z); x1 = Math.max(x1, p.x); z1 = Math.max(z1, p.z); }
