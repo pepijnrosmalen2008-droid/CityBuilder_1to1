@@ -5,6 +5,9 @@ import { WEGTYPEN, WegTypeId, halveBreedte } from './wegen/typen';
 import { Bomen } from './bomen';
 import { Rng } from './rng';
 import { Capaciteit, Functie, GebouwVorm, Zone, berekenCapaciteit, verdiepingHoogte, KENGETALLEN } from './zones';
+import { Bouwstijl, GebouwType, kiesStijl, ontwerpKeuze } from './stijlen';
+import type { GevelStijl } from './geom/gebouwmesh';
+import { Districten, MAX_LAGEN, BELEID_KOSTEN } from './districten';
 import { Strook, maakStrook, band, opStrook, verdeel, stroomSleutel, STROOK_DIEPTE } from './percelen';
 import { afstandTotLijn, getekendOppervlak, knipHalfvlak, zwaartepunt } from './poly';
 import { puntInPolygoon } from './math';
@@ -56,6 +59,14 @@ export interface Gebouw {
   specialisatie?: Grondstof;
   /** Niveau 1-5 (opgeknapt door hoge grondwaarde en goede voorzieningen). */
   niveau?: number;
+  /** Bouwstijl, type en gevel (zie stijlen.ts). */
+  stijl?: Bouwstijl; type?: GebouwType; gevel?: GevelStijl;
+  /** Aantal panden langs de straat (grachtpanden: elk een eigen gevel) en hun grenzen op de stoeprand. */
+  panden?: number; pandGrenzen?: Anker[];
+  /** In de steigers: verbouwing naar een hoger niveau of een andere stijl (zoals in CS2). */
+  verbouw?: { voortgang: number; niveau: number; stijl?: Bouwstijl };
+  /** Dakbeleid van het district bij het bouwen van de mesh. */
+  dakBeleid?: { groen: boolean; zon: boolean };
 }
 
 export interface Statistiek {
@@ -135,6 +146,7 @@ export class Wereld {
     this.hulpdiensten = new Hulpdiensten(this);
     this.grondwaarde = new Grondwaarde(this);
   }
+  districten = new Districten();
   economie: Economie;
   verkeer: Verkeer;
   voorzieningen: Voorzieningen;
@@ -384,23 +396,44 @@ export class Wereld {
 
   // ─── Gebouwen ───────────────────────────────────────────────────────────────
 
-  private ontwerp(reeks: Kavel[], seed: number): Gebouw | null {
+  /**
+   * Hoogste aantal lagen dat hier past: de regels van het district, en een geleidelijke skyline:
+   * per buurpand mag je 2 lagen hoger plus 1 laag per 12 m afstand. Zo staat er geen toren naast
+   * een rijtjeshuis, maar loopt de stad op naar het centrum.
+   */
+  maxLagen(c: V2, zelf = 0): number {
+    const d = this.districten.van(c);
+    let max = d ? MAX_LAGEN[d.beleid.hoogte] : 99;
+    for (const g of this.gebouwen.values()) {
+      if (g.id === zelf) continue;
+      const dx = g.centrum.x - c.x, dz = g.centrum.z - c.z;
+      if (Math.abs(dx) > 130 || Math.abs(dz) > 130) continue;
+      const afstand = Math.hypot(dx, dz);
+      if (afstand > 130) continue;
+      max = Math.min(max, g.lagen.length + 2 + Math.floor(afstand / 12));
+    }
+    return max;
+  }
+
+  private ontwerp(reeks: Kavel[], seed: number, niveau = 1, vasteStijl?: Bouwstijl): Gebouw | null {
     const r = new Rng(seed);
     const k = reeks[0], zone = k.zone;
     const st = this.stroken.get(k.strook);
     if (!st) return null;
     const s0 = Math.min(...reeks.map(x => x.s0)), s1 = Math.max(...reeks.map(x => x.s1));
     const lengte = s1 - s0;
-    let vorm: GebouwVorm, lagen: number, diepte: number, terug: number, eenheden = 1;
-    switch (zone) {
-      case 'wonenLaag': vorm = 'rijwoningen'; lagen = r.next() < 0.65 ? 2 : 3; eenheden = Math.max(1, Math.round(lengte / 5.4));
-        diepte = r.range(9, 10.5); terug = r.range(3, 5); break;
-      case 'wonenHoog': vorm = 'appartementen'; lagen = reeks.length > 1 ? r.int(5, 11) : r.int(4, 7); diepte = r.range(12, 15); terug = r.range(2.5, 5); break;
-      case 'gemengd': vorm = 'winkelsMetWonen'; lagen = r.int(3, 5); diepte = r.range(12, 16); terug = 0.2; break;
-      case 'kantoor': vorm = 'kantoortoren'; lagen = reeks.length > 1 ? r.int(6, 18) : r.int(4, 8); diepte = r.range(16, 22); terug = r.range(3, 5); break;
-      case 'industrie': vorm = 'bedrijfshal'; lagen = 1; diepte = r.range(20, 30); terug = r.range(5, 8); break;
-      default: return null;
-    }
+    const district = this.districten.van(k.voor);
+    const stijl: Bouwstijl = vasteStijl ?? (district && district.stijl !== 'gemengd' ? district.stijl : kiesStijl(niveau, r));
+    const keuze = ontwerpKeuze(zone, stijl, niveau, reeks.length > 1, r);
+    if (!keuze) return null;
+    const VORM: Record<string, GebouwVorm> = { wonenLaag: 'rijwoningen', wonenHoog: 'appartementen', gemengd: 'winkelsMetWonen', kantoor: 'kantoortoren', industrie: 'bedrijfshal' };
+    const vorm = VORM[zone];
+    let lagen = keuze.lagen;
+    if (vorm !== 'bedrijfshal') lagen = Math.max(vorm === 'rijwoningen' ? 2 : 3, Math.min(lagen, this.maxLagen(zwaartepunt(k.poly), k.gebouw)));
+    let diepte = r.range(keuze.diepte[0], keuze.diepte[1]);
+    const terug = r.range(keuze.terug[0], keuze.terug[1]);
+    const panden = keuze.eenheid ? Math.max(1, Math.round(lengte / keuze.eenheid)) : 1;
+    const eenheden = vorm === 'rijwoningen' ? panden : 1;
     const mid = opStrook(st, (s0 + s1) / 2);
     diepte = Math.min(diepte, mid.d - terug - 1.5);
     if (diepte < 6) return null;
@@ -420,7 +453,7 @@ export class Wereld {
     // Gevellijn (stoeprand) iets voorbij het perceel, voor het herkennen van voor- en achtergevels.
     const voorLijn: V2[] = [];
     for (let s = s0 - 6; s <= s1 + 6.01; s += Math.min(2, (lengte + 12) / 4)) voorLijn.push(opStrook(st, s).p);
-    const dak = vorm === 'rijwoningen' ? {
+    const dak = vorm === 'rijwoningen' && keuze.type !== 'grachtpand' ? {
       voor: opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte / 2, d - 1))),
       achter: opZij(band(st, s0, s1, terug + diepte / 2, (d: number) => Math.min(terug + diepte, d - 1))),
     } : undefined;
@@ -430,6 +463,8 @@ export class Wereld {
       ankers.push({ p: { x: q.p.x + q.n.x * terug, z: q.p.z + q.n.z * terug }, n: q.n, t: q.t, d: q.d });
     }
     for (let i = 1; i < eenheden; i++) { const q = opStrook(st, s0 + i * lengte / eenheden); grenzen.push({ p: q.p, n: q.n, t: q.t, d: q.d }); }
+    const pandGrenzen: Anker[] = [];
+    if (keuze.eenheid) for (let i = 0; i <= panden; i++) { const q = opStrook(st, s0 + i * lengte / panden); pandGrenzen.push({ p: q.p, n: q.n, t: q.t, d: q.d }); }
     const perceel = band(st, s0, s1, 0, STROOK_DIEPTE);
     const zijden: Anker[] = [s0, s1].map(sv => { const q = opStrook(st, sv); return { p: q.p, n: q.n, t: q.t, d: q.d }; });
     let y = -Infinity, yGrond = Infinity;
@@ -442,7 +477,9 @@ export class Wereld {
       centrum: zwaartepunt(voet), voor: { x: -mid.n.x, z: -mid.n.z }, breedte: lengte,
       y: y + 0.15, yGrond, lagen: ls, eenheden, seed: Math.floor(r.next() * 2 ** 31),
       voortgang: 0, klaar: false, bezetting: 0,
-      cap: berekenCapaciteit(vorm, opp, ls.map(l => l.functie), eenheden),
+      cap: berekenCapaciteit(vorm, opp, ls.map(l => l.functie), eenheden, keuze.type === 'grachtpand' ? Math.max(1, lagen - 2) : 1),
+      niveau, stijl: keuze.stijl, type: keuze.type, gevel: keuze.gevel, panden, pandGrenzen,
+      dakBeleid: district ? { groen: district.beleid.groen, zon: district.beleid.zon } : undefined,
     };
   }
 
@@ -492,6 +529,47 @@ export class Wereld {
     return null;
   }
 
+  // ─── Verbouwen (opwaarderen zoals in Cities: Skylines 2) ───────────────────────
+
+  /** Het gebouw gaat in de steigers; de bewoners blijven. Daarna komt het terug in de stijl van het nieuwe niveau. */
+  startVerbouw(g: Gebouw, niveau: number, stijl?: Bouwstijl) {
+    if (g.verbouw || !g.klaar) return;
+    g.verbouw = { voortgang: 0, niveau, stijl };
+    this.events.push({ soort: 'gebouw~', id: g.id });
+  }
+
+  private rondVerbouwAf(g: Gebouw) {
+    const v = g.verbouw!;
+    delete g.verbouw;
+    const reeks = g.kavels.map(id => this.kavels.get(id)).filter((k): k is Kavel => !!k);
+    const stijl = v.stijl ?? (g.stijl && this.rng.next() < 0.6 ? g.stijl : undefined);
+    const nieuw = reeks.length ? this.ontwerp(reeks, g.seed + v.niveau * 977, v.niveau, stijl) : null;
+    if (nieuw) {
+      this.volgende--;
+      const { id, bezetting, specialisatie } = g;
+      Object.assign(g, nieuw, { id, bezetting, specialisatie, klaar: true, voortgang: 1 });
+    } else g.niveau = v.niveau;
+    this.events.push({ soort: 'gebouw~', id: g.id });
+  }
+
+  private districtKlok = 0;
+  private volgDistricten() {
+    for (const g of this.gebouwen.values()) {
+      if (!g.klaar) continue;
+      const d = this.districten.van(g.centrum);
+      const groen = !!d?.beleid.groen, zon = !!d?.beleid.zon;
+      if (!!g.dakBeleid?.groen !== groen || !!g.dakBeleid?.zon !== zon) { g.dakBeleid = { groen, zon }; this.events.push({ soort: 'gebouw~', id: g.id }); }
+      if (d && d.stijl !== 'gemengd' && g.stijl !== d.stijl && !g.verbouw && !d.beleid.beschermd && this.rng.next() < 0.05) this.startVerbouw(g, g.niveau ?? 1, d.stijl);
+    }
+  }
+
+  /** Maandelijkse subsidie voor het districtsbeleid (groene daken, zonnepanelen). */
+  get beleidKosten(): number {
+    let k = 0;
+    for (const g of this.gebouwen.values()) { if (g.dakBeleid?.groen) k += BELEID_KOSTEN.groen; if (g.dakBeleid?.zon) k += BELEID_KOSTEN.zon; }
+    return k;
+  }
+
   // ─── Simulatie ──────────────────────────────────────────────────────────────
 
   vraagVoor(z: Zone) {
@@ -516,6 +594,10 @@ export class Wereld {
     this.dagen += dt / SECONDEN_PER_DAG;
 
     for (const g of this.gebouwen.values()) {
+      if (g.klaar && g.verbouw) {
+        g.verbouw.voortgang += dt / (12 + 1.5 * g.lagen.length);
+        if (g.verbouw.voortgang >= 1) this.rondVerbouwAf(g);
+      }
       if (!g.klaar) {
         const duur = 8 + 1.6 * g.lagen.length;
         const oud = Math.floor(g.voortgang * g.lagen.length * 2);
@@ -556,6 +638,10 @@ export class Wereld {
         }
       }
     }
+
+    // Districten: dakbeleid bijwerken en panden geleidelijk in de stijl van het district verbouwen.
+    this.districtKlok += dt;
+    if (this.districtKlok > 5) { this.districtKlok = 0; this.volgDistricten(); }
 
     this.statKlok += dtEcht;
     if (this.statKlok >= 0.5) { this.statKlok = 0; this.berekenStatistiek(); }
@@ -649,7 +735,7 @@ export class Wereld {
     let m2 = 0;
     for (const sg of this.net.segmenten.values()) m2 += wegOppervlak(sg.type, sg.lengte);
     void banenWOZ;
-    this.prognose = maandstaat(this.tarieven, wonWOZ, Math.round(banenWOZ + winning), Math.round(inw), m2, this.exportHeffing, this.voorzieningen.onderhoud, this.voorzieningen.inkoopKosten);
+    this.prognose = maandstaat(this.tarieven, wonWOZ, Math.round(banenWOZ + winning), Math.round(inw), m2, this.exportHeffing, this.voorzieningen.onderhoud + this.beleidKosten, this.voorzieningen.inkoopKosten);
   }
 
   // ─── Opslaan (engine-onafhankelijk JSON-formaat) ────────────────────────────
@@ -657,7 +743,7 @@ export class Wereld {
   /** Volledige stand van de stad als JSON (engine-onafhankelijk; ook voor een andere engine). */
   naarJson() {
     return {
-      versie: 3, seed: this.seed, naam: this.naam, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
+      versie: 4, seed: this.seed, naam: this.naam, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
       tarieven: this.tarieven, mijlpaal: this.mijlpaal, maandKlok: this.maandKlok, vorigeMaand: this.vorigeMaand,
       gemeld: [...this.gemeld], nieuws: this.nieuws.slice(0, 20), nieuwsId: this.nieuwsId,
       terrein: this.terrein.wijzigingen(), bomen: this.bomen.gekapt(), namen: this.namen.naarJson(),
@@ -667,6 +753,7 @@ export class Wereld {
       economie: this.economie.naarJson(),
       voorzieningen: this.voorzieningen.naarJson(),
       hulpdiensten: this.hulpdiensten.naarJson(),
+      districten: this.districten.naarJson(),
     };
   }
 
@@ -698,6 +785,7 @@ export class Wereld {
     this.economie.laadJson(j.economie);
     this.voorzieningen.laadJson(j.voorzieningen);
     this.hulpdiensten.laadJson(j.hulpdiensten);
+    this.districten.laadJson(j.districten);
     this.berekenStatistiek();
   }
 }

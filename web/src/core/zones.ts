@@ -39,7 +39,7 @@ export interface Capaciteit {
 }
 export const banenTotaal = (c: Capaciteit) => c.banen.detailhandel + c.banen.horeca + c.banen.kantoor + c.banen.industrie + c.banen.overig;
 
-export function berekenCapaciteit(vorm: GebouwVorm, footprint: number, lagen: Functie[], eenheden: number): Capaciteit {
+export function berekenCapaciteit(vorm: GebouwVorm, footprint: number, lagen: Functie[], eenheden: number, woningenPerEenheid = 1): Capaciteit {
   const c: Capaciteit = { vloer: 0, woningen: 0, bewoners: 0, banen: { detailhandel: 0, horeca: 0, kantoor: 0, industrie: 0, overig: 0 } };
   const netto = 0.82; // bvo → bruikbaar (trappenhuizen, gangen, wanden)
   let woonVloer = 0;
@@ -52,7 +52,7 @@ export function berekenCapaciteit(vorm: GebouwVorm, footprint: number, lagen: Fu
     }
   }
   if (woonVloer > 0) {
-    c.woningen = vorm === 'rijwoningen' ? eenheden : Math.max(1, Math.round(woonVloer / (KENGETALLEN.woningBvo[vorm] ?? KENGETALLEN.woningBvo.anders)));
+    c.woningen = vorm === 'rijwoningen' ? eenheden * woningenPerEenheid : Math.max(1, Math.round(woonVloer / (KENGETALLEN.woningBvo[vorm] ?? KENGETALLEN.woningBvo.anders)));
     c.bewoners = Math.round(c.woningen * (KENGETALLEN.huishouden[vorm] ?? KENGETALLEN.huishouden.anders));
   }
   return c;

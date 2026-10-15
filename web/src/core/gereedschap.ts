@@ -12,7 +12,7 @@ import { PERCEEL_BREEDTE, vrijeDiepte } from './percelen';
 // Gereedschap met abstracte invoer: de render-/ui-laag geeft het grondpunt onder de muis en de
 // knoppen door; dit bestand bepaalt wat er gebeurt en welk voorbeeld getekend moet worden.
 
-export type Modus = 'weg' | 'zone' | 'gebied' | 'dienst' | 'opwaarderen' | 'sloop' | 'kijk';
+export type Modus = 'weg' | 'zone' | 'district' | 'gebied' | 'dienst' | 'opwaarderen' | 'sloop' | 'kijk';
 
 /** Tekenstijl van het wegengereedschap (zoals in Cities: Skylines). */
 export type Stijl = 'recht' | 'bocht' | 'vrij';
@@ -45,6 +45,9 @@ export class Gereedschap {
   get bocht() { return this.stijl === 'bocht'; }
   zone: Zone = 'wonenLaag';
   penseel = 22;
+  /** District waarmee geschilderd wordt (0 = gum). */
+  district = 0;
+  gum = false;
   melding = '';
   private start: V2 | null = null;
   private ctrl: V2 | null = null;
@@ -301,6 +304,9 @@ export class Gereedschap {
         return;
       }
       case 'zone': this.schilderen = true; this.schilder(p); return;
+      case 'district':
+        if (!this.gum && !w.districten.lijst.has(this.district)) { this.melding = 'Maak eerst een district (Nieuw district)'; return; }
+        this.schilderen = true; this.schilder(p); return;
       case 'gebied': {
         const pp = this.gebiedPunten;
         if (!pp.length) {
@@ -354,11 +360,14 @@ export class Gereedschap {
     return false;
   }
 
-  private schilder(p: V2) { this.wereld.zoneer(p, this.penseel, this.zone); }
+  private schilder(p: V2) {
+    if (this.modus === 'district') this.wereld.districten.schilder(p, this.penseel * 1.5, this.gum ? 0 : this.district);
+    else this.wereld.zoneer(p, this.penseel, this.zone);
+  }
 
   stap(dt: number) {
     if (this.melding) { this.meldingKlok += dt; if (this.meldingKlok > 2.5) { this.melding = ''; this.meldingKlok = 0; } } else this.meldingKlok = 0;
-    if (this.modus === 'zone' && this.schilderen && this.muis) {
+    if ((this.modus === 'zone' || this.modus === 'district') && this.schilderen && this.muis) {
       this.schilderKlok += dt;
       if (this.schilderKlok > 0.05) { this.schilderKlok = 0; this.schilder({ x: this.muis.x, z: this.muis.z }); }
     }
@@ -424,6 +433,7 @@ export class Gereedschap {
         };
       }
       case 'zone': return { soort: 'penseel', m, r: this.penseel, kleur: zoneKleur(this.zone) };
+      case 'district': return { soort: 'penseel', m, r: this.penseel * 1.5, kleur: this.gum ? '#ffffff' : w.districten.lijst.get(this.district)?.kleur ?? '#ffffff' };
       case 'gebied': {
         const t = w.terrein;
         const info = GRONDSTOFFEN[this.grondstof];

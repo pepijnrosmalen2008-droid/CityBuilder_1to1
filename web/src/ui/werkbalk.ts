@@ -1,6 +1,6 @@
 import { Gereedschap, Modus, Stijl } from '../core/gereedschap';
 
-const STIJL_ICOON: Record<Stijl | 'op', string> = {
+const WEG_STIJL_ICOON: Record<Stijl | 'op', string> = {
   recht: '<svg viewBox="0 0 24 24" class="si"><path d="M4 19 20 5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="4" cy="19" r="2.4" fill="currentColor"/><circle cx="20" cy="5" r="2.4" fill="currentColor"/></svg>',
   bocht: '<svg viewBox="0 0 24 24" class="si"><path d="M4 20C4 9 9 4 20 4" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="4" cy="20" r="2.4" fill="currentColor"/><circle cx="20" cy="4" r="2.4" fill="currentColor"/><circle cx="4" cy="4" r="1.6" fill="none" stroke="currentColor"/></svg>',
   vrij: '<svg viewBox="0 0 24 24" class="si"><path d="M3 18c4 0 4-10 9-10s5 8 9 6" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/></svg>',
@@ -11,6 +11,22 @@ import { ZONES, Zone } from '../core/zones';
 import { ICOON } from './iconen';
 import { GRONDSTOFFEN, Grondstof } from '../core/economie';
 import { DIENSTEN, DienstSoort, NUT_EENHEID, NUT_NAAM, Nut, Voorzieningen } from '../core/voorzieningen';
+import { Districten, Hoogtegrens, BELEID_KOSTEN } from '../core/districten';
+import { BOUWSTIJLEN, DistrictStijl } from '../core/stijlen';
+
+const STIJL_KEUZE: { id: DistrictStijl; naam: string; uitleg: string }[] = [
+  { id: 'gemengd', naam: 'Gemengd', uitleg: 'De ontwikkelaar kiest; hogere niveaus worden vaker nieuwbouw.' },
+  ...(['klassiek', 'gracht', 'naoorlogs', 'nieuwbouw'] as const).map(id => ({ id, naam: BOUWSTIJLEN[id].naam, uitleg: BOUWSTIJLEN[id].uitleg })),
+];
+
+/** Klein plaatje per bouwstijl (silhouet). */
+const STIJL_ICOON: Record<DistrictStijl, string> = {
+  gemengd: '<svg viewBox="0 0 86 46"><path d="M12 40V24l8-6 8 6v16zM32 40V12h14v28zM50 40V20h12v20zM66 40V28l6-5 6 5v12z" fill="#adb5bd"/></svg>',
+  klassiek: '<svg viewBox="0 0 86 46"><path d="M10 40V24l12-10 12 10v16zM34 40V24l12-10 12 10v16zM58 40V24l12-10 12 10v16z" fill="#c2553a"/><path d="M10 24l12-10 12 10M34 24l12-10 12 10M58 24l12-10 12 10" stroke="#7a2e1f" stroke-width="2" fill="none"/></svg>',
+  gracht: '<svg viewBox="0 0 86 46"><path d="M10 40V14h3v-3h3v-3h4v3h3v3h3v26zM28 40V16l3-4V6h6v6l3 4v24zM44 40V18c0-4 3-4 3-8s3-4 4-4 4 0 4 4 3 4 3 8v22zM62 40V12h16v28z" fill="#8a3b28"/><path d="M28 40V16l3-4V6h6v6l3 4v24z" fill="#e9ecef"/></svg>',
+  naoorlogs: '<svg viewBox="0 0 86 46"><rect x="8" y="16" width="70" height="24" fill="#e0c98a"/><path d="M8 22h70M8 28h70M8 34h70" stroke="#5c7cfa" stroke-width="2"/><rect x="40" y="16" width="6" height="24" fill="#adb5bd"/></svg>',
+  nieuwbouw: '<svg viewBox="0 0 86 46"><path d="M10 40V20l10-8 10 8v20z" fill="#343a40"/><path d="M34 40V10h20v30z" fill="#f1f3f5"/><path d="M58 40V18h18v22z" fill="#a0784a"/><path d="M36 18h16M36 26h16M36 34h16" stroke="#74c0fc" stroke-width="2"/></svg>',
+};
 
 const DIENST_ICOON: Record<DienstSoort, string> = {
   windmolen: '<svg viewBox="0 0 86 46"><path d="M43 44V14" stroke="#e9ecef" stroke-width="2.6"/><circle cx="43" cy="13" r="2.4" fill="#e9ecef"/><path d="M43 13 41 1h3zM43 13l11 6-2 2zM43 13l-11 6 1 2z" fill="#e9ecef"/></svg>',
@@ -79,6 +95,7 @@ export class Werkbalk {
       const k = e.key.toLowerCase();
       if (k === 'escape') { if (!this.g.terug()) this.kies('kijk'); }
       if (k === 'z') this.kies('zone');
+      if (k === 'k') this.kies('district');
       if (k === 'g') this.kies('gebied');
       if (k === 'n') this.kies('dienst');
       if (k === 'x') this.kies('weg');
@@ -94,28 +111,59 @@ export class Werkbalk {
         else if (this.g.modus === 'gebied' && i < 4) { this.g.grondstof = (Object.keys(GRONDSTOFFEN) as Grondstof[])[i]; this.teken(); }
         else if ((this.g.modus === 'weg' || this.g.modus === 'opwaarderen') && WEGTYPE_VOLGORDE[i]) { this.g.wegtype = WEGTYPE_VOLGORDE[i]; this.teken(); }
       }
-      if ((k === '+' || k === '=') && this.g.modus === 'zone') { this.g.penseel = Math.min(80, this.g.penseel + 4); this.teken(); }
-      if (k === '-' && this.g.modus === 'zone') { this.g.penseel = Math.max(6, this.g.penseel - 4); this.teken(); }
+      if ((k === '+' || k === '=') && (this.g.modus === 'zone' || this.g.modus === 'district')) { this.g.penseel = Math.min(80, this.g.penseel + 4); this.teken(); }
+      if (k === '-' && (this.g.modus === 'zone' || this.g.modus === 'district')) { this.g.penseel = Math.max(6, this.g.penseel - 4); this.teken(); }
     });
     this.teken();
   }
 
-  kies(m: Modus) { this.g.zetModus(m); this.opZoneModus(m === 'zone'); this.teken(); }
+  /** Districten van de wereld (gezet door main.ts). */
+  districten: Districten | null = null;
+  /** Wordt aangeroepen als de districtsmodus aan of uit gaat (voor de kaartlaag). */
+  opDistrictModus: (aan: boolean) => void = () => {};
+
+  kies(m: Modus) { this.g.zetModus(m); this.opZoneModus(m === 'zone'); this.opDistrictModus(m === 'district'); this.teken(); }
+
+  /** Tabblad Districten: lijst, en voor het gekozen district naam, stijl en regels. */
+  private districtTab(): { items: string; opties: string } {
+    const g = this.g, ds = this.districten;
+    if (!ds) return { items: '', opties: '' };
+    const lijst = [...ds.lijst.values()];
+    const items = lijst.map(d => `<div class="item ${!g.gum && g.district === d.id ? 'aan' : ''}" data-dist="${d.id}">${STIJL_ICOON[d.stijl]}<div class="item-naam"><span class="dist-kleur" style="background:${d.kleur}"></span>${esc(d.naam)}</div><div class="item-sub">${STIJL_KEUZE.find(x => x.id === d.stijl)!.naam}</div></div>`).join('')
+      + `<div class="item" data-dist-nieuw><svg viewBox="0 0 86 46"><path d="M43 12v22M32 23h22" stroke="#e9ecef" stroke-width="4" stroke-linecap="round"/></svg><div class="item-naam">Nieuw district</div><div class="item-sub">daarna schilderen</div></div>`
+      + `<div class="item ${g.gum ? 'aan' : ''}" data-dist-gum><svg viewBox="0 0 86 46"><path d="M28 34l18-20 12 10-14 14H32z" fill="#ffa8a8"/><path d="M28 34h34" stroke="#e9ecef" stroke-width="2"/></svg><div class="item-naam">Gum</div><div class="item-sub">district weghalen</div></div>`;
+    const d = g.gum ? null : ds.lijst.get(g.district);
+    let opties = `<span>Penseel</span><button class="knop" data-p="-4">−</button><span style="color:#e9eef5;font-weight:600">${Math.round(g.penseel * 1.5)} m</span><button class="knop" data-p="4">+</button>`;
+    if (d) {
+      const hg = (id: Hoogtegrens, naam: string) => `<button class="knop ${d.beleid.hoogte === id ? 'aan' : ''}" data-hg="${id}">${naam}</button>`;
+      const sch = (k: 'beschermd' | 'groen' | 'zon', naam: string, tip: string) => `<button class="knop schakel ${d.beleid[k] ? 'aan' : ''}" data-bel="${k}" title="${tip}">${naam}</button>`;
+      opties = `<input class="dist-naam" data-dnaam value="${esc(d.naam)}" maxlength="28" aria-label="Naam van het district">`
+        + `<div class="groep">${STIJL_KEUZE.map(x => `<button class="knop ${d.stijl === x.id ? 'aan' : ''}" data-dstijl="${x.id}" title="${x.uitleg}">${x.naam}</button>`).join('')}</div>`
+        + `<div class="groep"><span>Hoogte</span>${hg('vrij', 'Vrij')}${hg('midden', 'Max 6')}${hg('laag', 'Max 3')}</div>`
+        + sch('beschermd', 'Beschermd stadsgezicht', 'Panden houden hun uiterlijk, ook als ze een niveau stijgen')
+        + sch('groen', 'Groene daken', `Hogere grondwaarde; € ${BELEID_KOSTEN.groen} per pand per maand`)
+        + sch('zon', 'Zonnepanelen', `Een derde minder stroom van het net; € ${BELEID_KOSTEN.zon} per pand per maand`)
+        + opties + `<button class="knop gevaar" data-dweg title="District opheffen">Opheffen</button>`;
+    }
+    return { items, opties };
+  }
 
   teken() {
     const g = this.g;
-    const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, gebied: ICOON.fabriek, dienst: ICOON.bliksem, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog };
+    const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, district: ICOON.district, gebied: ICOON.fabriek, dienst: ICOON.bliksem, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog };
     const tab = (m: Modus, naam: string, toets: string) => `<button class="knop tab ${g.modus === m ? 'aan' : ''}" data-m="${m}"><span class="ic">${ic[m]}</span><span class="tab-tekst">${naam}</span><span class="toets">${toets}</span></button>`;
     let items = '', opties = '';
     if (g.modus === 'weg' || g.modus === 'opwaarderen') {
       items = WEGTYPE_VOLGORDE.map((id, i) => `<div class="item ${g.wegtype === id ? 'aan' : ''}" data-w="${id}">${dwarsprofiel(id)}<div class="item-naam">${WEGTYPEN[id].naam}</div><div class="item-sub">${i + 1} · € ${WEGTYPEN[id].kosten}/m</div></div>`).join('');
-      const st = (id: Stijl, naam: string) => `<button class="knop ${g.modus === 'weg' && g.stijl === id ? 'aan' : ''}" data-st="${id}" title="${naam} (C wisselt)">${STIJL_ICOON[id]}<span class="tab-tekst">${naam}</span></button>`;
-      opties = `<div class="groep">${st('recht', 'Recht')}${st('bocht', 'Bocht')}${st('vrij', 'Vrij')}<button class="knop ${g.modus === 'opwaarderen' ? 'aan' : ''}" data-op title="Opwaarderen (U)">${STIJL_ICOON.op}<span class="tab-tekst">Opwaarderen</span></button></div>`;
+      const st = (id: Stijl, naam: string) => `<button class="knop ${g.modus === 'weg' && g.stijl === id ? 'aan' : ''}" data-st="${id}" title="${naam} (C wisselt)">${WEG_STIJL_ICOON[id]}<span class="tab-tekst">${naam}</span></button>`;
+      opties = `<div class="groep">${st('recht', 'Recht')}${st('bocht', 'Bocht')}${st('vrij', 'Vrij')}<button class="knop ${g.modus === 'opwaarderen' ? 'aan' : ''}" data-op title="Opwaarderen (U)">${WEG_STIJL_ICOON.op}<span class="tab-tekst">Opwaarderen</span></button></div>`;
       if (g.modus === 'weg') opties += `<div class="groep hoogte"><button class="knop" data-h="-1" title="Lager (PgDn)">▼</button><span class="waarde">${g.niveau === 0 ? 'maaiveld' : g.niveau > 0 ? '+' + g.niveau + ' m' : g.niveau + ' m'}</span><button class="knop" data-h="1" title="Hoger (PgUp)">▲</button></div>` +
         `<button class="knop schakel ${g.afronden ? 'aan' : ''}" data-af title="Knikken in rechte wegen automatisch afronden">Afronden</button><button class="knop schakel ${g.hulplijnen ? 'aan' : ''}" data-hl title="Hulplijnen en snappen (H)">Hulplijnen</button>`;
     } else if (g.modus === 'zone') {
       items = ZONES.map(z => `<div class="item ${g.zone === z.id ? 'aan' : ''}" data-z="${z.id}">${zoneIcoon(z.id, z.kleur)}<div class="item-naam">${z.naam}</div><div class="item-sub">${z.toets}</div></div>`).join('');
       opties = `<span>Penseel</span><button class="knop" data-p="-4">−</button><span style="color:#e9eef5;font-weight:600">${g.penseel} m</span><button class="knop" data-p="4">+</button>`;
+    } else if (g.modus === 'district') {
+      ({ items, opties } = this.districtTab());
     } else if (g.modus === 'gebied') {
       items = (Object.values(GRONDSTOFFEN)).map((x, i) => `<div class="item ${g.grondstof === x.id ? 'aan' : ''}" data-gs="${x.id}">${GRONDSTOF_ICOON[x.id]}<div class="item-naam">${x.naam}</div><div class="item-sub">${i + 1} · ${x.product.toLowerCase()}</div></div>`).join('');
       opties = `<button class="knop" data-eco>Overzicht economie</button>`;
@@ -127,7 +175,7 @@ export class Werkbalk {
     } else {
       items = `<div class="item-sub" style="padding:14px">Kies een gereedschap. Camera: WASD of middelste muisknop = schuiven, rechts slepen of Q/E = draaien, R/F = kantelen, scrollen = zoomen. Spatie = pauze.</div>`;
     }
-    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('gebied', 'Economie', 'G')}${tab('dienst', 'Voorzieningen', 'N')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('kijk', 'Kijken', 'Esc')}</div>${opties ? `<div class="opties">${opties}</div>` : ''}<div class="items">${items}</div>`;
+    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('district', 'Districten', 'K')}${tab('gebied', 'Economie', 'G')}${tab('dienst', 'Voorzieningen', 'N')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('kijk', 'Kijken', 'Esc')}</div>${opties ? `<div class="opties">${opties}</div>` : ''}<div class="items">${items}</div>`;
     this.el.querySelectorAll<HTMLElement>('[data-m]').forEach(e => (e.onclick = () => this.kies(e.dataset.m as Modus)));
     this.el.querySelectorAll<HTMLElement>('[data-w]').forEach(e => (e.onclick = () => { g.wegtype = e.dataset.w as WegTypeId; this.teken(); }));
     this.el.querySelectorAll<HTMLElement>('[data-z]').forEach(e => (e.onclick = () => { g.zone = e.dataset.z as Zone; this.teken(); }));
@@ -142,6 +190,17 @@ export class Werkbalk {
     this.el.querySelectorAll<HTMLElement>('[data-gs]').forEach(e => (e.onclick = () => { g.grondstof = e.dataset.gs as Grondstof; g.annuleer(); this.teken(); }));
     this.el.querySelector<HTMLElement>('[data-eco]')?.addEventListener('click', () => this.opEconomie());
     this.el.querySelectorAll<HTMLElement>('[data-p]').forEach(e => (e.onclick = () => { g.penseel = Math.max(6, Math.min(80, g.penseel + Number(e.dataset.p))); this.teken(); }));
+    // Districten.
+    const ds = this.districten, huidig = ds?.lijst.get(g.district);
+    const gewijzigd = () => { if (ds) ds.versie++; this.teken(); };
+    this.el.querySelectorAll<HTMLElement>('[data-dist]').forEach(e => (e.onclick = () => { g.district = Number(e.dataset.dist); g.gum = false; this.teken(); }));
+    this.el.querySelector<HTMLElement>('[data-dist-nieuw]')?.addEventListener('click', () => { if (!ds) return; g.district = ds.nieuw().id; g.gum = false; this.teken(); });
+    this.el.querySelector<HTMLElement>('[data-dist-gum]')?.addEventListener('click', () => { g.gum = true; this.teken(); });
+    this.el.querySelectorAll<HTMLElement>('[data-dstijl]').forEach(e => (e.onclick = () => { if (huidig) { huidig.stijl = e.dataset.dstijl as DistrictStijl; gewijzigd(); } }));
+    this.el.querySelectorAll<HTMLElement>('[data-hg]').forEach(e => (e.onclick = () => { if (huidig) { huidig.beleid.hoogte = e.dataset.hg as Hoogtegrens; gewijzigd(); } }));
+    this.el.querySelectorAll<HTMLElement>('[data-bel]').forEach(e => (e.onclick = () => { if (huidig) { const k = e.dataset.bel as 'beschermd' | 'groen' | 'zon'; huidig.beleid[k] = !huidig.beleid[k]; gewijzigd(); } }));
+    this.el.querySelector<HTMLInputElement>('[data-dnaam]')?.addEventListener('change', e => { if (huidig) { huidig.naam = (e.target as HTMLInputElement).value.trim() || huidig.naam; gewijzigd(); } });
+    this.el.querySelector<HTMLElement>('[data-dweg]')?.addEventListener('click', () => { if (ds && huidig) { ds.verwijder(huidig.id); g.district = 0; this.teken(); } });
   }
 
   /** Balans van stroom, water, riool en afval (in het tabblad Voorzieningen). */
@@ -177,3 +236,5 @@ export class Werkbalk {
     return [document.getElementById('werkbalk')!, ...document.querySelectorAll('.kaart')].some(el => { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; });
   }
 }
+
+const esc = (t: string) => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c]);

@@ -140,12 +140,13 @@ export class Voorzieningen {
   binnen(p: V2) { for (const d of this.diensten.values()) if (puntInPolygoon(p, d.voet)) return true; return false; }
 
   /** Verbruik van een gebouw. */
-  static verbruik(g: { cap: { bewoners: number; woningen: number; banen: Record<string, number> }; bezetting: number }): Record<Nut, number> {
+  static verbruik(g: { cap: { bewoners: number; woningen: number; banen: Record<string, number> }; bezetting: number; dakBeleid?: { zon: boolean } }): Record<Nut, number> {
     const b = g.cap.banen, f = Math.max(0.15, g.bezetting);
     const kantoor = (b.kantoor ?? 0) + (b.overig ?? 0), winkel = (b.detailhandel ?? 0) + (b.horeca ?? 0), ind = b.industrie ?? 0;
     const stroom = (g.cap.woningen * 0.00038 + kantoor * 0.0007 + winkel * 0.0011 + ind * 0.003) * f;
     const water = (g.cap.bewoners * 0.13 + (kantoor + winkel) * 0.04 + ind * 0.25) * f;
-    return { stroom, water, riool: water * 0.95, afval: (g.cap.bewoners * 0.45 + (kantoor + winkel) * 0.15 + ind * 0.6) * f };
+    // Zonnepanelen verplicht (districtsbeleid): een derde minder stroom van het net.
+    return { stroom: g.dakBeleid?.zon ? stroom * 0.67 : stroom, water, riool: water * 0.95, afval: (g.cap.bewoners * 0.45 + (kantoor + winkel) * 0.15 + ind * 0.6) * f };
   }
 
   stap(dt: number) {

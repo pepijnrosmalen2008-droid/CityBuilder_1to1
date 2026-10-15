@@ -1,0 +1,13 @@
+import { Wereld } from '../../src/core/wereld';
+import { bouwVoorbeeldstad } from '../../src/core/demo';
+const w = new Wereld(1);
+bouwVoorbeeldstad(w);
+w.berekenStatistiek();
+const s = w.stat;
+console.log('stat', { inw: s.inwoners, won: s.woningen, banen: s.banen, wl: s.werkloosheid.toFixed(2), D: s.banenD, K: s.banenK, I: s.banenI });
+console.log('vraag', w.vraag);
+console.log('prognose', JSON.stringify(w.prognose));
+const lagen: Record<string, number[]> = {};
+for (const g of w.gebouwen.values()) (lagen[g.zone] ??= []).push(g.lagen.length);
+for (const [z, l] of Object.entries(lagen)) console.log(z, 'n', l.length, 'gem', (l.reduce((a, b) => a + b, 0) / l.length).toFixed(1), 'max', Math.max(...l));
+console.log('beleid', w.beleidKosten, 'verbouw', [...w.gebouwen.values()].filter(g => g.verbouw).length);

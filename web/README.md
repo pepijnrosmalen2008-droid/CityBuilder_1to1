@@ -40,6 +40,14 @@ hierheen).
 
 `src/core/waarde.ts`: grondwaarde per gebouw uit dekking, nutsvoorzieningen, winkels op loopafstand, water in de buurt, vervuiling en verkeerslawaai. Volle gebouwen met genoeg grondwaarde (voor niveau 3-4 ook brandweer, zorg en politie) knappen op tot niveau 5: meer OZB, zonnepanelen en groene daken. Zonder voorzieningen verloederen ze weer.
 
+## Bouwstijlen, districten en opwaarderen
+
+- `src/core/stijlen.ts`: vier bouwstijlen (jaren dertig, grachtengordel, naoorlogs, nieuwbouw) met per zone en niveau een eigen gebouwtype, hoogte en gevel: rijtjes met erkers, grachtenpanden met trap-, hals- en klokgevels, pakhuizen, naoorlogse rijtjes met luifels, portiek- en galerijflats, wederopbouwwinkels, sheddaken, nieuwbouw met hout en glazen balkons, kantoortorens met sokkel en kroon. Zonder voorschrift kiest de ontwikkelaar; hogere niveaus worden vaker nieuwbouw.
+- `src/core/districten.ts`: districten schilderen (K), met een naam, een optionele bouwstijl en regels: hoogtegrens (max 6 of 3 lagen), beschermd stadsgezicht, groene daken en verplichte zonnepanelen (kosten subsidie, panelen geven een derde minder stroomverbruik). Panden die niet bij de stijl van het district passen, worden geleidelijk verbouwd.
+- Hoogte: per buurpand hooguit 2 lagen hoger plus 1 laag per 12 m afstand, zodat de skyline geleidelijk oploopt.
+- Opwaarderen zoals in CS2: een pand dat een niveau stijgt gaat in de steigers (bewoners blijven) en komt terug als ontwerp van het nieuwe niveau, vaak hoger en in een nieuwere stijl.
+- Meshes van de nieuwe types: `src/core/geom/stijlmesh.ts`.
+
 ## Info en opslaan
 
 - Kijken (Esc) en klik op een gebouw of voorziening: infopaneel met adres, bewoners/banen, grondwaarde met factoren, wat er nodig is voor het volgende niveau, voorzieningen en dekking.
@@ -50,7 +58,7 @@ hierheen).
 
 | Toets / muis | Functie |
 |---|---|
-| X / Z / G / N / U / B / Esc | Wegen / Zones / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Voorzieningen (stroom, water, afval, hulpdiensten) / Opwaarderen / Slopen / Kijken |
+| X / Z / K / G / N / U / B / Esc | Wegen / Zones / Districten / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Voorzieningen (stroom, water, afval, hulpdiensten) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
 | C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend) |
 | PgUp / PgDn | Hoogte van de weg in stappen van 4 m: viaduct (omhoog) of tunnel (omlaag); wegen op verschillende hoogte kruisen zonder kruispunt |

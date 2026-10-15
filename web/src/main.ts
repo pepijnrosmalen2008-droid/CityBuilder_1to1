@@ -9,6 +9,7 @@ import { TextuurBron } from './render/texturen';
 import { Materialen } from './render/materialen';
 import { VerkeerWeergave } from './render/verkeer';
 import { DienstWeergave } from './render/diensten';
+import { DistrictLaag } from './render/districtlaag';
 import { InfoLaag, InfoSoort, INFO_NAAM, INFO_LEGENDA } from './render/infolaag';
 import { InfoPaneel } from './ui/infopaneel';
 import { ICOON } from './ui/iconen';
@@ -75,6 +76,8 @@ async function start() {
   sfeer.scene.add(diensten.groep);
   const infoLaag = new InfoLaag(wereld);
   sfeer.scene.add(infoLaag.groep);
+  const districtLaag = new DistrictLaag(wereld, sfeer.camera);
+  sfeer.scene.add(districtLaag.groep);
   const maxVerkeer = () => ({ laag: 300, midden: 650, hoog: 1100 } as Record<string, number>)[sfeer.niveau] ?? 600;
   const camera = new StadCamera(sfeer.camera, sfeer.renderer.domElement, wereld.terrein);
   const plek = test && TEST_PLEKKEN[test];
@@ -98,6 +101,8 @@ async function start() {
   const ecoPaneel = new EconomiePaneel(wereld);
   werkbalk.opEconomie = () => ecoPaneel.wissel();
   werkbalk.hulpStat = () => wereld.hulpdiensten.stat;
+  werkbalk.districten = wereld.districten;
+  werkbalk.opDistrictModus = aan => districtLaag.toon(aan);
 
   // Muis → grondpunt.
   const tip = document.getElementById('tip')!, melding = document.getElementById('melding')!;
@@ -198,6 +203,12 @@ async function start() {
       for (const g of wereld.gebouwen.values()) { const d = Math.hypot(g.centrum.x - camera.doel.x, g.centrum.z - camera.doel.z); if (g.klaar && (!best || d < best.d)) best = { id: g.id, d }; }
       if (best) wereld.hulpdiensten.steekAan(best.id, 0.5);
     }
+    if (param.has('verbouw')) {
+      // Test: panden rond het camerapunt in de steigers zetten.
+      const bij = [...wereld.gebouwen.values()].filter(g => g.klaar).sort((a, b) => Math.hypot(a.centrum.x - camera.doel.x, a.centrum.z - camera.doel.z) - Math.hypot(b.centrum.x - camera.doel.x, b.centrum.z - camera.doel.z));
+      for (const g of bij.slice(0, 12)) wereld.startVerbouw(g, Math.min(5, (g.niveau ?? 1) + 1));
+      stad.werkBij(1e9);
+    }
     if (!param.has('geenverkeer')) {
       const sn = wereld.snelheid; wereld.snelheid = 1; wereld.verkeer.max = maxVerkeer();
       const n = Number(param.get('verkeer') ?? 600);
@@ -228,6 +239,8 @@ async function start() {
     const t0 = performance.now();
     sfeer.render();
     if (!verberg.includes('labels')) labels.werkBij(1, camera.afstand);
+    if (param.has('districten')) { werkbalk.kies('district'); }
+    districtLaag.werkBij(camera.afstand);
     // Statistiek van alleen de scène (zonder nabewerking), incl. schaduwpass.
     sfeer.renderer.info.autoReset = false; sfeer.renderer.info.reset();
     sfeer.renderer.shadowMap.needsUpdate = true;
@@ -302,6 +315,7 @@ async function start() {
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.render();
     labels.werkBij(dt, camera.afstand);
+    districtLaag.werkBij(camera.afstand);
     requestAnimationFrame(lus);
   };
   requestAnimationFrame(lus);

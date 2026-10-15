@@ -3,24 +3,25 @@ import { Rng } from '../rng';
 import { Gebouw, Anker, totaleHoogte } from '../wereld';
 import { MeshBouwer, MeshData, Prop } from './mesh';
 import { cilinder } from './props';
+import { DakInfo, grachtpanden, rijParams, erker, luifel, houtAccent, portiekflat, galerijflat, appModern, wederopbouwLuifel, bovenBalkons, kantoor30, kantoorToren, sheddak, steigers } from './stijlmesh';
 import { afstandTotLijn, driehoeken, getekendOppervlak, verfijn, zwaartepunt } from '../poly';
 import { puntInPolygoon } from '../math';
 
 // Gebouwen op de vorm van hun perceel: elke rand van de footprint wordt een voor-, achter- of
 // zijgevel; daken volgen de gevellijn (ook in bochten en op hoeken in verstek).
 
-export const GEVELSTIJLEN = ['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'stuc', 'modernDonker', 'vliesgevel', 'betonband'] as const;
+export const GEVELSTIJLEN = ['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'stuc', 'modernDonker', 'vliesgevel', 'betonband', 'grachtRood', 'grachtDonker', 'naoorlogsGeel', 'naoorlogsGrijs', 'betonPaneel', 'witStuc', 'antraciet', 'nieuwRood', 'houtGevel'] as const;
 export type GevelStijl = typeof GEVELSTIJLEN[number];
 export const PUIEN = 4, LUIFELS = 4, HALTINTEN = 4;
 
-type H = (x: number, z: number) => number;
-const OP: V3 = { x: 0, y: 1, z: 0 };
+export type H = (x: number, z: number) => number;
+export const OP: V3 = { x: 0, y: 1, z: 0 };
 const NEER: V3 = { x: 0, y: -1, z: 0 };
 
-interface Rand { a: V2; b: V2; n: V2; t: V2; L: number; soort: 'voor' | 'achter' | 'zij' }
+export interface Rand { a: V2; b: V2; n: V2; t: V2; L: number; soort: 'voor' | 'achter' | 'zij' }
 
 /** Randen van de footprint met naar buiten wijzende normaal en hun soort. */
-function randen(g: Gebouw, poly = g.voet): Rand[] {
+export function randen(g: Gebouw, poly = g.voet): Rand[] {
   const A = getekendOppervlak(poly);
   const r: Rand[] = [];
   for (let i = 0; i < poly.length; i++) {
@@ -30,10 +31,12 @@ function randen(g: Gebouw, poly = g.voet): Rand[] {
     const t = { x: dx / L, z: dz / L };
     const n = A > 0 ? { x: t.z, z: -t.x } : { x: -t.z, z: t.x };
     const m = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
-    const d = afstandTotLijn(m, g.voorLijn).d;
-    // Een rand die naar de straat kijkt en op de rooilijn ligt is een voorgevel.
-    const naarStraat = afstandTotLijn({ x: m.x + n.x * 2, z: m.z + n.z * 2 }, g.voorLijn).d < d - 1.5;
-    const vanStraat = afstandTotLijn({ x: m.x + n.x * 2, z: m.z + n.z * 2 }, g.voorLijn).d > d + 1.5;
+    // Richting naar het dichtstbijzijnde punt van de gevellijn (stoeprand): werkt ook als de gevel vlak
+    // op de stoeprand staat (winkels, grachtenpanden).
+    const c = dichtstbij(m, g.voorLijn);
+    const d = Math.hypot(c.x - m.x, c.z - m.z);
+    const naar = d > 1e-3 ? (n.x * (c.x - m.x) + n.z * (c.z - m.z)) / d : 1;
+    const naarStraat = naar > 0.7, vanStraat = naar < -0.7;
     // Hoekpand: de gevel langs de zijstraat telt ook als voorgevel (ramen, geen blinde muur).
     const zijstraat = (g.zijStraat ?? []).some(z => Math.abs((m.x - z.o.x) * z.n.x + (m.z - z.o.z) * z.n.z) < 0.3 && n.x * z.n.x + n.z * z.n.z < -0.9);
     const soort = zijstraat || (naarStraat && d < g.terug + 1.2) ? 'voor' : vanStraat ? 'achter' : 'zij';
@@ -42,11 +45,22 @@ function randen(g: Gebouw, poly = g.voet): Rand[] {
   return r;
 }
 
-const P3 = (p: V2, y: number): V3 => ({ x: p.x, y, z: p.z });
-const N3 = (n: V2): V3 => ({ x: n.x, y: 0, z: n.z });
+export function dichtstbij(p: V2, lijn: V2[]): V2 {
+  let best = lijn[0], bd = Infinity;
+  for (let i = 0; i < lijn.length - 1; i++) {
+    const a = lijn[i], b = lijn[i + 1], dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / L2));
+    const q = { x: a.x + dx * t, z: a.z + dz * t }, d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2;
+    if (d < bd) { bd = d; best = q; }
+  }
+  return best;
+}
+
+export const P3 = (p: V2, y: number): V3 => ({ x: p.x, y, z: p.z });
+export const N3 = (n: V2): V3 => ({ x: n.x, y: 0, z: n.z });
 
 /** Wand langs een rand; gevelmaterialen krijgen UV's in traveeën en verdiepingen. */
-function wand(mb: MeshBouwer, mat: string, r: Rand, y0: number, y1: number, laagVan: number, laagTot: number, travee = 3, uitstek = 0) {
+export function wand(mb: MeshBouwer, mat: string, r: Rand, y0: number, y1: number, laagVan: number, laagTot: number, travee = 3, uitstek = 0) {
   const a = { x: r.a.x + r.n.x * uitstek, z: r.a.z + r.n.z * uitstek }, b = { x: r.b.x + r.n.x * uitstek, z: r.b.z + r.n.z * uitstek };
   if (mat.startsWith('gevel:')) {
     const n = Math.max(1, Math.round(r.L / travee));
@@ -57,7 +71,7 @@ function wand(mb: MeshBouwer, mat: string, r: Rand, y0: number, y1: number, laag
 }
 
 /** Plat vlak (dak, vloer) als driehoeken; UV in meters. */
-function vlak(mb: MeshBouwer, mat: string, poly: V2[], y: number | ((p: V2) => number), boven = true, uv?: (p: V2) => [number, number]) {
+export function vlak(mb: MeshBouwer, mat: string, poly: V2[], y: number | ((p: V2) => number), boven = true, uv?: (p: V2) => [number, number]) {
   const tri = driehoeken(poly);
   const Y = typeof y === 'number' ? () => y : y;
   for (let i = 0; i < tri.length; i += 3) {
@@ -68,7 +82,7 @@ function vlak(mb: MeshBouwer, mat: string, poly: V2[], y: number | ((p: V2) => n
 }
 
 /** Polygoon naar binnen verschuiven (verstek per hoek). */
-function inzet(poly: V2[], w: number): V2[] {
+export function inzet(poly: V2[], w: number): V2[] {
   const A = getekendOppervlak(poly), n = poly.length;
   return poly.map((p, i) => {
     const a = poly[(i + n - 1) % n], b = poly[(i + 1) % n];
@@ -81,15 +95,15 @@ function inzet(poly: V2[], w: number): V2[] {
     return { x: p.x + m.x * w / k, z: p.z + m.z * w / k };
   });
 }
-const norm = (v: V2): V2 => { const l = Math.hypot(v.x, v.z) || 1; return { x: v.x / l, z: v.z / l }; };
+export const norm = (v: V2): V2 => { const l = Math.hypot(v.x, v.z) || 1; return { x: v.x / l, z: v.z / l }; };
 
 /** Doos rond punt c met assen t (langs) en n (diepte). */
-function doos(mb: MeshBouwer, zij: string, top: string, c: V2, t: V2, b: number, d: number, y0: number, y1: number, bodem = false) {
+export function doos(mb: MeshBouwer, zij: string, top: string, c: V2, t: V2, b: number, d: number, y0: number, y1: number, bodem = false) {
   mb.blok(zij, top, { x: c.x, y: 0, z: c.z }, N3(t), N3({ x: -t.z, z: t.x }), b, d, y0, y1, bodem);
 }
 
 /** Opstaande dakrand langs de hele omtrek. */
-function dakrand(mb: MeshBouwer, poly: V2[], y: number, h: number, w: number, mat: string) {
+export function dakrand(mb: MeshBouwer, poly: V2[], y: number, h: number, w: number, mat: string) {
   const binnen = inzet(poly, w);
   const n = poly.length, A = getekendOppervlak(poly);
   for (let i = 0; i < n; i++) {
@@ -126,7 +140,7 @@ export function bouwGebouw(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[
   const mb = new MeshBouwer();
   const props: Prop[] = [];
   const r = new Rng(g.seed);
-  const stijl = stijlVoor(g, r);
+  const stijl = (g.gevel ?? stijlVoor(g, r)) as GevelStijl;
   const Y = g.y;
 
   const grondMat = g.zone === 'industrie' ? 'erfverharding' : g.zone === 'kantoor' || g.zone === 'gemengd' ? 'stoeptegels' : 'tuin';
@@ -138,28 +152,49 @@ export function bouwGebouw(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[
   const plint = stijl.startsWith('baksteen') ? 'plint' : 'beton';
   for (const rd of randen(g)) wand(mb, plint, rd, g.yGrond - 0.6, Y, 0, 0, 3, 0.04);
 
-  switch (g.vorm) {
-    case 'rijwoningen': rijwoningen(mb, g, r, stijl, hoogte, props); break;
-    case 'appartementen': appartementen(mb, g, r, stijl, props); break;
-    case 'winkelsMetWonen': winkels(mb, g, r, stijl); break;
-    case 'kantoortoren': kantoor(mb, g, r, stijl, props); break;
-    case 'bedrijfshal': hal(mb, g, r); break;
+  let dak: DakInfo | null = { poly: g.voet, y: g.y + totaleHoogte(g.lagen) };
+  switch (g.type) {
+    case 'grachtpand': grachtpanden(mb, g, hoogte, 'wonen'); rijErf(mb, g, r, hoogte, props, g.breedte / g.eenheden, false); dak = null; break;
+    case 'grachtblok': grachtpanden(mb, g, hoogte, 'wonen'); dak = null; break;
+    case 'grachtWinkel': grachtpanden(mb, g, hoogte, 'winkel'); dak = null; break;
+    case 'grachtKantoor': grachtpanden(mb, g, hoogte, 'kantoor'); dak = null; break;
+    case 'pakhuis': grachtpanden(mb, g, hoogte, 'pakhuis'); dak = null; break;
+    case 'portiekflat': dak = portiekflat(mb, g, r); break;
+    case 'galerijflat': dak = galerijflat(mb, g); break;
+    case 'appModern': dak = appModern(mb, g, r, props); break;
+    case 'wederopbouw': winkels(mb, g, r, stijl, false); wederopbouwLuifel(mb, g); break;
+    case 'gemengdModern': winkels(mb, g, r, stijl); bovenBalkons(mb, g); break;
+    case 'kantoor30': dak = kantoor30(mb, g); break;
+    case 'kantoorBeton': case 'kantoorGlas': dak = kantoorToren(mb, g); break;
+    case 'sheddak': dak = sheddak(mb, g); break;
+    default:
+      switch (g.vorm) {
+        case 'rijwoningen': rijwoningen(mb, g, r, stijl, hoogte, props); dak = null; break;
+        case 'appartementen': appartementen(mb, g, r, stijl, props); break;
+        case 'winkelsMetWonen': winkels(mb, g, r, stijl); break;
+        case 'kantoortoren': kantoor(mb, g, r, stijl, props); break;
+        case 'bedrijfshal': hal(mb, g, r); dak = null; break;
+      }
   }
   if (g.vorm !== 'rijwoningen' && g.ankers.length) inrichting(mb, g, r, hoogte, props);
-  if (g.vorm !== 'rijwoningen') platDak(mb, g);
-  if (g.vorm !== 'rijwoningen' && g.vorm !== 'bedrijfshal' && (g.niveau ?? 1) < 3) dakInstallaties(mb, g);
+  if (dak) {
+    platDak(mb, g, dak);
+    const n = g.niveau ?? 1;
+    if (n < 3 && !g.dakBeleid?.zon && !g.dakBeleid?.groen) dakInstallaties(mb, g, dak);
+  }
+  if (g.verbouw) steigers(mb, g, hoogte);
   return { mesh: mb.bouw(), props };
 }
 
 /** Luchtbehandelingskasten en afvoeren op een plat dak (vanaf niveau 3 liggen er zonnepanelen). */
-function dakInstallaties(mb: MeshBouwer, g: Gebouw) {
-  const H = g.y + totaleHoogte(g.lagen);
-  const vrij = inzet(g.voet, 2.2);
+function dakInstallaties(mb: MeshBouwer, g: Gebouw, dak: DakInfo) {
+  const H = dak.y;
+  const vrij = inzet(dak.poly, 2.2);
   if (Math.abs(getekendOppervlak(vrij)) < 40) return;
   const r = new Rng(g.seed + 77);
   const c = zwaartepunt(vrij);
   const t = randen(g).find(x => x.soort === 'voor')?.t ?? { x: 1, z: 0 }, n = { x: -t.z, z: t.x };
-  const kern = g.vorm === 'kantoortoren' ? inzet(g.voet, Math.min(6, g.diepte * 0.3)) : null;
+  const kern = g.vorm === 'kantoortoren' && !g.type ? inzet(g.voet, Math.min(6, g.diepte * 0.3)) : null;
   const geplaatst: V2[] = [];
   const doel = 2 + r.int(0, 3);
   for (let i = 0; i < 30 && geplaatst.length < doel; i++) {
@@ -188,15 +223,18 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
   const Y = g.y, H = Y + totaleHoogte(g.lagen), lagen = g.lagen.length;
   const gevel = `gevel:${stijl}`, muur = `muur:${stijl}`;
   const w = g.breedte / g.eenheden;
-  const plat = r.next() < 0.1 || !g.dak;
-  const dakMat = r.next() < 0.3 ? 'dakpannenAntraciet' : 'dakpannen';
+  const rp = rijParams(g, r);
+  const plat = r.next() < rp.platKans || !g.dak;
+  const dakMat = rp.dakMat ?? (r.next() < 0.3 ? 'dakpannenAntraciet' : 'dakpannen');
+  const helling = rp.helling * Math.PI / 180;
   for (const rd of randen(g)) wand(mb, rd.soort === 'zij' ? muur : gevel, rd, Y, H, 0, lagen, w / 2);
 
   if (plat) {
     vlak(mb, 'dakgrind', g.voet, H);
-    dakrand(mb, g.voet, H - 0.05, 0.45, 0.25, 'trim');
+    dakrand(mb, g.voet, H - 0.05, rp.dakrand === 'trimDonker' ? 0.7 : 0.45, 0.25, rp.dakrand);
+    if (g.dakBeleid?.groen || (g.niveau ?? 1) >= 5 || ((g.niveau ?? 1) === 4 && g.seed % 3 === 0)) vlak(mb, 'tuin', inzet(g.voet, 0.4), H + 0.1);
   } else {
-    const tan = Math.tan(42 * Math.PI / 180);
+    const tan = Math.tan(helling);
     const nokD = g.terug + g.diepte / 2;
     const dakH = (p: V2, helft: 'voor' | 'achter') => {
       const d = afstandTotLijn(p, g.voorLijn).d;
@@ -206,7 +244,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
     const uvDak = (helft: 'voor' | 'achter') => (p: V2): [number, number] => {
       const q = afstandTotLijn(p, g.voorLijn, g.voorLijn.map((_, i) => i * 2));
       const d = helft === 'voor' ? q.d - g.terug : g.terug + g.diepte - q.d;
-      return [q.s, d / Math.cos(42 * Math.PI / 180)];
+      return [q.s, d / Math.cos(helling)];
     };
     for (const helft of ['voor', 'achter'] as const) {
       const poly = g.dak![helft];
@@ -240,7 +278,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
       doos(mb, 'metaal', 'metaal', m, rd.t, rd.L, 0.18, H - 0.32, H - 0.16);
     }
     // Niveau 3+: zonnepanelen op het voordakvlak (in plaats van een dakkapel).
-    const panelen = (g.niveau ?? 1) >= 3;
+    const panelen = (g.niveau ?? 1) >= 3 || !!g.dakBeleid?.zon;
     if (panelen) for (const an of g.ankers) {
       const P = (d: number, s: number) => { const p = { x: an.p.x + an.n.x * d + an.t.x * s, z: an.p.z + an.n.z * d + an.t.z * s }; return { x: p.x, y: dakH(p, 'voor') + 0.07, z: p.z }; };
       const kol = Math.max(1, Math.floor((w - 1) / 1.05)), rij = Math.max(1, Math.floor((g.diepte / 2 - 1.2) / 1.75 * 1.05));
@@ -252,7 +290,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
     }
     // Dakkapellen en schoorstenen.
     for (const an of g.ankers) {
-      if (panelen || r.next() > 0.45) continue;
+      if (panelen || r.next() > rp.dakkapel) continue;
       const bw = Math.min(2.6, w - 1.4);
       if (bw < 1.2) continue;
       const c = { x: an.p.x + an.n.x * 1.7, z: an.p.z + an.n.z * 1.7 };
@@ -268,7 +306,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
       mb.quad('dakgrind', P3(L(vr, -bw / 2 - 0.1), top), P3(L(vr, bw / 2 + 0.1), top), P3(L(ac, bw / 2 + 0.1), top), P3(L(ac, -bw / 2 - 0.1), top), [0, 0], [1, 0], [1, 1], [0, 1], OP);
     }
     for (let i = 0; i < g.ankers.length; i += 2) {
-      if (r.next() > 0.5) continue;
+      if (!rp.schoorsteen || r.next() > 0.5) continue;
       const an = g.ankers[i];
       const c = { x: an.p.x + an.n.x * (g.diepte * 0.62) + an.t.x * w * 0.3, z: an.p.z + an.n.z * (g.diepte * 0.62) + an.t.z * w * 0.3 };
       const yN = H + (g.diepte / 2) * tan;
@@ -276,8 +314,20 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
     }
   }
 
+  // Per woning: erker, luifel of houten gevelstuk, afhankelijk van stijl en niveau.
+  for (const an of g.ankers) {
+    if (rp.erker && g.terug > 2.2 && r.next() < 0.7) erker(mb, an, Y, w, muur);
+    if (rp.luifel) luifel(mb, an, Y, w);
+    if (rp.hout) houtAccent(mb, an, Y, w, Math.min(H - Y, 5.9));
+  }
+  rijErf(mb, g, r, hoogte, props, w, true);
+}
+
+/** Voortuinen, achtertuinen en erfgrenzen van een rij woningen. */
+function rijErf(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[], w: number, deuren: boolean) {
+  const Y = g.y;
   // Voordeuren, stoepjes, tuinpaden, hagen, schuttingen, schuurtjes, bomen.
-  g.ankers.forEach((an, i) => deur(mb, an, Y, (g.seed + i * 7) % 5));
+  if (deuren) g.ankers.forEach((an, i) => deur(mb, an, Y, (g.seed + i * 7) % 5));
   for (const an of g.ankers) tuin(mb, g, an, w, r, hoogte, props);
   // Erfgrenzen: heg in de voortuin, schutting in de achtertuin tot het einde van het perceel.
   const binnenPerceel = (p: V2) => puntInPolygoon(p, g.perceel);
@@ -342,7 +392,7 @@ function plaat(mb: MeshBouwer, mat: string, an: Anker, d0: number, d1: number, s
 }
 
 /** Struik: afgeplatte bol van een paar lagen (goedkoop, één materiaal). */
-function struik(mb: MeshBouwer, c: V2, y: number, r: number, h: number) {
+export function struik(mb: MeshBouwer, c: V2, y: number, r: number, h: number) {
   cilinder(mb, 'haag', { x: c.x, y, z: c.z }, { x: c.x, y: y + h * 0.55, z: c.z }, r * 0.75, r, 7);
   cilinder(mb, 'haag', { x: c.x, y: y + h * 0.55, z: c.z }, { x: c.x, y: y + h, z: c.z }, r, r * 0.35, 7);
 }
@@ -414,7 +464,7 @@ function tuin(mb: MeshBouwer, g: Gebouw, an: Anker, w: number, r: Rng, hoogte: H
   }
 }
 
-function deur(mb: MeshBouwer, an: Anker, Y: number, kleur: number) {
+export function deur(mb: MeshBouwer, an: Anker, Y: number, kleur: number) {
   const uit = { x: -an.n.x, z: -an.n.z };
   const p = (s: number, d: number) => ({ x: an.p.x + an.t.x * s + uit.x * d, z: an.p.z + an.t.z * s + uit.z * d });
   const q = (mat: string, s0: number, s1: number, y0: number, y1: number, d: number) =>
@@ -427,7 +477,7 @@ function deur(mb: MeshBouwer, an: Anker, Y: number, kleur: number) {
 
 // ─── Appartementen ───────────────────────────────────────────────────────────────
 
-function appartementen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, props: Prop[]) {
+export function appartementen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, props: Prop[]) {
   const Y = g.y, H = Y + totaleHoogte(g.lagen), lagen = g.lagen.length;
   const rd = randen(g);
   for (const x of rd) wand(mb, x.soort === 'zij' ? `muur:${stijl}` : `gevel:${stijl}`, x, Y, H, 0, lagen);
@@ -471,7 +521,7 @@ function appartementen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, pro
 
 // ─── Winkels met wonen ───────────────────────────────────────────────────────────
 
-function winkels(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl) {
+export function winkels(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, luifels = true) {
   const Y = g.y, H = Y + totaleHoogte(g.lagen), lagen = g.lagen.length, hBG = g.lagen[0].hoogte;
   for (const x of randen(g)) {
     if (x.soort !== 'voor') { wand(mb, x.soort === 'zij' ? `muur:${stijl}` : `gevel:${stijl}`, x, Y, H, 0, lagen); continue; }
@@ -479,7 +529,7 @@ function winkels(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl) {
     for (let i = 0; i < n; i++) {
       const a = { x: x.a.x + x.t.x * i * pw, z: x.a.z + x.t.z * i * pw }, b = { x: x.a.x + x.t.x * (i + 1) * pw, z: x.a.z + x.t.z * (i + 1) * pw };
       mb.quad(`winkelpui:${r.int(0, PUIEN - 1)}`, P3(a, Y), P3(b, Y), P3(b, Y + hBG), P3(a, Y + hBG), [0, 0], [1, 0], [1, 1], [0, 1], N3(x.n));
-      if (r.next() < 0.7 && pw > 2) {
+      if (luifels && r.next() < 0.7 && pw > 2) {
         const l = r.int(0, LUIFELS - 1), yl = Y + hBG - 0.55;
         const v = (s: number, d: number) => ({ x: x.a.x + x.t.x * (i * pw + s) + x.n.x * d, z: x.a.z + x.t.z * (i * pw + s) + x.n.z * d });
         mb.quad(`luifel:${l}`, P3(v(0.3, 0), yl), P3(v(pw - 0.3, 0), yl), P3(v(pw - 0.3, 1.6), yl - 0.75), P3(v(0.3, 1.6), yl - 0.75), [0, 0], [pw - 0.6, 0], [pw - 0.6, 1], [0, 1], { x: x.n.x, y: 1, z: x.n.z });
@@ -495,7 +545,7 @@ function winkels(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl) {
 
 // ─── Kantoor ─────────────────────────────────────────────────────────────────────
 
-function kantoor(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, props: Prop[]) {
+export function kantoor(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, props: Prop[]) {
   const Y = g.y, H = Y + totaleHoogte(g.lagen), lagen = g.lagen.length, hBG = g.lagen[0].hoogte;
   const lobby = inzet(g.voet, 0.9);
   for (const x of randen(g, lobby)) wand(mb, 'glas', x, Y, Y + hBG, 0, 0);
@@ -513,7 +563,7 @@ function kantoor(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, props: Pr
 
 // ─── Bedrijfshal ─────────────────────────────────────────────────────────────────
 
-function hal(mb: MeshBouwer, g: Gebouw, r: Rng) {
+export function hal(mb: MeshBouwer, g: Gebouw, r: Rng) {
   const Y = g.y, H = Y + totaleHoogte(g.lagen);
   const muur = `golfplaat:${r.int(0, HALTINTEN - 1)}`;
   const rd = randen(g);
@@ -728,18 +778,19 @@ function inrichting(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[])
  * Hoger niveau op een plat dak: vanaf niveau 3 zonnepanelen (op het zuiden, licht schuin),
  * vanaf niveau 4 bij flats en kantoren een groen dak met een dakterras.
  */
-function platDak(mb: MeshBouwer, g: Gebouw) {
+function platDak(mb: MeshBouwer, g: Gebouw, dak: DakInfo) {
   const n = g.niveau ?? 1;
-  if (n < 3) return;
-  const H = g.y + totaleHoogte(g.lagen);
-  const vrij = inzet(g.voet, 1.6);
-  const kern = g.vorm === 'kantoortoren' ? inzet(g.voet, Math.min(6, g.diepte * 0.3)) : null;
+  const zon = n >= 3 || !!g.dakBeleid?.zon, groenBeleid = !!g.dakBeleid?.groen;
+  if (!zon && !groenBeleid) return;
+  const H = dak.y;
+  const vrij = inzet(dak.poly, 1.6);
+  const kern = g.vorm === 'kantoortoren' && !g.type ? inzet(g.voet, Math.min(6, g.diepte * 0.3)) : null;
   const xs = vrij.map(p => p.x), zs = vrij.map(p => p.z);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
-  const groen = n >= 4 && (g.vorm === 'appartementen' || g.vorm === 'kantoortoren');
+  const groen = groenBeleid || ((n >= 5 || (n === 4 && g.seed % 2 === 0)) && (g.vorm === 'appartementen' || g.vorm === 'kantoortoren'));
   if (groen && Math.abs(getekendOppervlak(vrij)) > 40) vlak(mb, 'tuin', vrij, H + 0.12);
-  const midden = zwaartepunt(g.voet);
-  for (let x = x0; x < x1 - 1; x += 1.15) for (let z = z0; z < z1 - 1.6; z += 2.4) {
+  const midden = zwaartepunt(dak.poly);
+  if (zon) for (let x = x0; x < x1 - 1; x += 1.15) for (let z = z0; z < z1 - 1.6; z += 2.4) {
     const hoeken = [{ x, z }, { x: x + 1.05, z }, { x: x + 1.05, z: z + 1.6 }, { x, z: z + 1.6 }];
     if (!hoeken.every(p => puntInPolygoon(p, vrij))) continue;
     if (kern && hoeken.some(p => puntInPolygoon(p, kern))) continue;

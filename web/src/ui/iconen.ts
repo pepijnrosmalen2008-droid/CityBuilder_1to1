@@ -18,6 +18,7 @@ export const ICOON = {
   pauze: svg('<path d="M9 6v12M15 6v12"/>'),
   play: svg('<path d="M8 5.5v13l10-6.5z"/>'),
   weg: svg('<path d="M8 3 5 21M16 3l3 18M12 4v3M12 10.5v3M12 17v3"/>'),
+  district: svg('<path d="M4 6l5-2 6 2 5-2v14l-5 2-6-2-5 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 4v14M15 6v14" stroke="currentColor" stroke-width="1.6"/>'),
   zone: svg('<rect x="4" y="4" width="7" height="7" rx="1.2"/><rect x="13" y="4" width="7" height="7" rx="1.2"/><rect x="4" y="13" width="7" height="7" rx="1.2"/><rect x="13" y="13" width="7" height="7" rx="1.2"/>'),
   pijl: svg('<path d="M12 19V5M6 11l6-6 6 6"/>'),
   sloop: svg('<path d="M14.5 4.5 19.5 9.5 10 19H5v-5z"/><path d="M12 7l5 5"/>'),

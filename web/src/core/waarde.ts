@@ -94,10 +94,14 @@ export class Grondwaarde {
       if (!g.klaar) continue;
       const nu = g.niveau ?? 1;
       const doel = this.doelNiveau(g).niveau;
+      if (g.verbouw) continue;
       if (doel > nu && g.bezetting > 0.85 && Math.random() < 0.06) {
-        g.niveau = nu + 1;
-        this.w.events.push({ soort: 'gebouw~', id: g.id });
-        if (g.niveau === 5 && !this.eersteVijf) { this.eersteVijf = true; this.w.meld(`Eerste pand op het hoogste niveau: ${this.w.straatVan(g) || 'een straat'} wordt een gewilde buurt`, 'mijlpaal'); }
+        // Zoals in CS2: het pand gaat in de steigers en komt terug op het nieuwe niveau.
+        // In een beschermd stadsgezicht blijft het uiterlijk zoals het is.
+        const d = this.w.districten.van(g.centrum);
+        if (d?.beleid.beschermd) g.niveau = nu + 1;
+        else this.w.startVerbouw(g, nu + 1);
+        if (nu + 1 === 5 && !this.eersteVijf) { this.eersteVijf = true; this.w.meld(`Eerste pand op het hoogste niveau: ${this.w.straatVan(g) || 'een straat'} wordt een gewilde buurt`, 'mijlpaal'); }
       } else if (doel < nu - 1 && Math.random() < 0.15) {
         g.niveau = nu - 1;
         this.w.events.push({ soort: 'gebouw~', id: g.id });

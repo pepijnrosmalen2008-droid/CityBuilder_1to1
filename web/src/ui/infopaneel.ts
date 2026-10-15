@@ -2,9 +2,17 @@ import { Wereld, Gebouw, totaleHoogte } from '../core/wereld';
 import { DIENSTEN, Nut, NUT_NAAM, NUT_EENHEID } from '../core/voorzieningen';
 import { Grondwaarde } from '../core/waarde';
 import { banenTotaal } from '../core/zones';
+import { BOUWSTIJLEN } from '../core/stijlen';
 
 // Infopaneel zoals in Cities: Skylines: klik in Kijken op een gebouw of voorziening.
 
+const TYPE_NAAM: Record<string, string> = {
+  rijtjes30: 'Jaren-dertigwoningen', grachtpand: 'Grachtenpanden', rijtjes50: 'Naoorlogse rijtjeswoningen', vinex: 'Nieuwbouwwoningen',
+  flat30: 'Bovenwoningen', grachtblok: 'Grachtenpanden (appartementen)', portiekflat: 'Portiekflat', galerijflat: 'Galerijflat', appModern: 'Appartementencomplex',
+  winkels30: 'Winkels met bovenwoningen', grachtWinkel: 'Grachtenpanden met winkels', wederopbouw: 'Wederopbouwwinkels', gemengdModern: 'Winkels met appartementen',
+  kantoor30: 'Kantoorgebouw', grachtKantoor: 'Grachtenpand (kantoor)', kantoorBeton: 'Kantoorflat', kantoorGlas: 'Kantoortoren',
+  pakhuis: 'Pakhuis', sheddak: 'Fabriekshal met sheddak', halModern: 'Bedrijfshal',
+};
 const VORM_NAAM: Record<string, string> = { rijwoningen: 'Rijwoningen', appartementen: 'Appartementen', winkelsMetWonen: 'Winkels met woningen', kantoortoren: 'Kantoorgebouw', bedrijfshal: 'Bedrijfshal' };
 const ZONE_NAAM: Record<string, string> = { wonenLaag: 'Laagbouw wonen', wonenHoog: 'Hoogbouw wonen', gemengd: 'Gemengd', kantoor: 'Kantoren', industrie: 'Industrie' };
 
@@ -74,6 +82,7 @@ export class InfoPaneel {
     const banen = banenTotaal(g.cap);
     const regels: string[] = [];
     if (!g.klaar) regels.push(`<div class="ip-rij"><span>In aanbouw</span><b>${Math.round(g.voortgang * 100)}%</b></div>${balk(g.voortgang, '#74c0fc')}`);
+    if (g.verbouw) regels.push(`<div class="ip-rij"><span>In de steigers: ${g.verbouw.niveau > niveau ? `opknappen naar niveau ${g.verbouw.niveau}` : `verbouwen tot ${BOUWSTIJLEN[g.verbouw.stijl ?? 'klassiek'].naam.toLowerCase()}`}</span><b>${Math.round(g.verbouw.voortgang * 100)}%</b></div>${balk(g.verbouw.voortgang, '#ffd43b')}`);
     else {
       if (g.cap.woningen) regels.push(`<div class="ip-rij"><span>Woningen</span><b>${nl(g.cap.woningen)}</b></div><div class="ip-rij"><span>Bewoners</span><b>${nl(g.cap.bewoners * g.bezetting)} / ${nl(g.cap.bewoners)}</b></div>`);
       if (banen) {
@@ -95,7 +104,9 @@ export class InfoPaneel {
       regels.push(`<h4>Dekking</h4>${[['Brandweer', dek.brand], ['Politie', dek.politie], ['Zorg', dek.zorg]].map(([n, x]) => `<div class="ip-rij"><span>${n}</span>${balk(x as number, kleurVoor(x as number))}</div>`).join('')}`);
     }
     const hoogte = totaleHoogte(g.lagen);
-    return `<div class="ip-kop"><div><b>${VORM_NAAM[g.vorm] ?? g.vorm}</b>${sterren(niveau)}<div class="ip-adres">${this.adres(g)}</div><div class="ip-klein">${ZONE_NAAM[g.zone] ?? ''} · ${g.lagen.length} ${g.lagen.length === 1 ? 'laag' : 'lagen'}, ${hoogte.toFixed(0)} m hoog</div></div><button class="knop rond" data-sluit aria-label="Sluiten">×</button></div>${regels.join('')}<div class="ip-knoppen"><button class="knop gevaar" data-sloop>Slopen</button></div>`;
+    const district = w.districten.van(g.centrum);
+    const stijl = g.stijl ? BOUWSTIJLEN[g.stijl].naam : '';
+    return `<div class="ip-kop"><div><b>${(g.type && TYPE_NAAM[g.type]) ?? VORM_NAAM[g.vorm] ?? g.vorm}</b>${sterren(niveau)}<div class="ip-adres">${this.adres(g)}</div><div class="ip-klein">${[stijl, district ? `district ${district.naam}` : ''].filter(Boolean).join(' · ')}</div><div class="ip-klein">${ZONE_NAAM[g.zone] ?? ''} · ${g.lagen.length} ${g.lagen.length === 1 ? 'laag' : 'lagen'}, ${hoogte.toFixed(0)} m hoog</div></div><button class="knop rond" data-sluit aria-label="Sluiten">×</button></div>${regels.join('')}<div class="ip-knoppen"><button class="knop gevaar" data-sloop>Slopen</button></div>`;
   }
 
   private dienstHtml(id: number): string {

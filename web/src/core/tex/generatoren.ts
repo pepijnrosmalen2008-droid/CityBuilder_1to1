@@ -140,7 +140,7 @@ export function beton(tint: C = K(0.62, 0.61, 0.58)): TexData {
 
 // ═══════ GEVELS ═══════
 
-interface GevelP { muur: C; voeg: C; kozijn: C; dorpel: C; rb: number; rh: number; borst: number; kd: number; variatie: number; baksteen?: boolean; paneel?: boolean; roede?: boolean; bovenlicht?: boolean; rollaag?: boolean; vuil?: boolean }
+interface GevelP { muur: C; voeg: C; kozijn: C; dorpel: C; rb: number; rh: number; borst: number; kd: number; variatie: number; baksteen?: boolean; paneel?: boolean; roede?: boolean; bovenlicht?: boolean; rollaag?: boolean; vuil?: boolean; hout?: boolean; borstPaneel?: C }
 
 function gevelP(stijl: string): GevelP {
   const p: GevelP = { muur: K(0.66, 0.65, 0.61), voeg: K(0.72, 0.70, 0.66), kozijn: K(0.92, 0.92, 0.90), dorpel: K(0.74, 0.73, 0.70), rb: 1.5, rh: 1.6, borst: 0.85, kd: 0.07, variatie: 0.07 };
@@ -150,6 +150,18 @@ function gevelP(stijl: string): GevelP {
     case 'baksteenGeel': Object.assign(p, { muur: K(0.72, 0.60, 0.38), voeg: K(0.76, 0.74, 0.69), rb: 1.6, rh: 1.5, borst: 0.9, variatie: 0.05, baksteen: true, bovenlicht: true }); break;
     case 'stuc': Object.assign(p, { muur: K(0.87, 0.85, 0.79), kozijn: K(0.18, 0.19, 0.20), dorpel: K(0.30, 0.31, 0.32), rb: 1.8, rh: 1.9, borst: 0.6, kd: 0.05, vuil: true }); break;
     case 'modernDonker': Object.assign(p, { muur: K(0.20, 0.21, 0.22), kozijn: K(0.11, 0.11, 0.12), dorpel: K(0.11, 0.11, 0.12), rb: 2.3, rh: 2.45, borst: 0.15, kd: 0.05, paneel: true }); break;
+    // Grachtenpanden: donkere handvormsteen, hoge witte schuiframen met roedes.
+    case 'grachtRood': Object.assign(p, { muur: K(0.40, 0.17, 0.11), voeg: K(0.62, 0.60, 0.56), rb: 1.15, rh: 2.05, borst: 0.7, variatie: 0.1, baksteen: true, roede: true, bovenlicht: true, rollaag: true, vuil: true }); break;
+    case 'grachtDonker': Object.assign(p, { muur: K(0.24, 0.14, 0.11), voeg: K(0.55, 0.53, 0.50), rb: 1.15, rh: 2.1, borst: 0.7, variatie: 0.09, baksteen: true, roede: true, bovenlicht: true, rollaag: true }); break;
+    // Wederopbouw: gele en grijze steen, brede ramen, gekleurde borstweringpanelen.
+    case 'naoorlogsGeel': Object.assign(p, { muur: K(0.74, 0.63, 0.40), voeg: K(0.70, 0.68, 0.62), kozijn: K(0.93, 0.93, 0.90), rb: 2.3, rh: 1.45, borst: 0.95, variatie: 0.05, baksteen: true, borstPaneel: K(0.32, 0.45, 0.55) }); break;
+    case 'naoorlogsGrijs': Object.assign(p, { muur: K(0.52, 0.50, 0.47), voeg: K(0.66, 0.65, 0.62), kozijn: K(0.30, 0.37, 0.46), rb: 2.3, rh: 1.5, borst: 0.9, variatie: 0.04, baksteen: true, borstPaneel: K(0.62, 0.50, 0.25) }); break;
+    case 'betonPaneel': Object.assign(p, { muur: K(0.63, 0.62, 0.59), kozijn: K(0.62, 0.64, 0.66), dorpel: K(0.55, 0.55, 0.54), rb: 2.5, rh: 1.45, borst: 0.95, kd: 0.05, paneel: true, vuil: true, borstPaneel: K(0.45, 0.52, 0.42) }); break;
+    // Nieuwbouw: wit stucwerk, antraciet steen, hout, rode steen; grote ramen tot de vloer.
+    case 'witStuc': Object.assign(p, { muur: K(0.92, 0.92, 0.90), kozijn: K(0.13, 0.13, 0.14), dorpel: K(0.20, 0.20, 0.21), rb: 2.0, rh: 2.35, borst: 0.3, kd: 0.05 }); break;
+    case 'antraciet': Object.assign(p, { muur: K(0.17, 0.16, 0.16), voeg: K(0.42, 0.41, 0.40), kozijn: K(0.09, 0.09, 0.10), dorpel: K(0.12, 0.12, 0.13), rb: 1.6, rh: 2.4, borst: 0.3, kd: 0.05, variatie: 0.05, baksteen: true }); break;
+    case 'nieuwRood': Object.assign(p, { muur: K(0.44, 0.23, 0.16), voeg: K(0.40, 0.36, 0.33), kozijn: K(0.10, 0.10, 0.11), dorpel: K(0.12, 0.12, 0.13), rb: 1.5, rh: 2.35, borst: 0.3, kd: 0.05, variatie: 0.06, baksteen: true }); break;
+    case 'houtGevel': Object.assign(p, { muur: K(0.50, 0.37, 0.24), kozijn: K(0.11, 0.11, 0.12), dorpel: K(0.12, 0.12, 0.13), rb: 1.8, rh: 2.35, borst: 0.3, kd: 0.05, hout: true }); break;
     case 'plint': Object.assign(p, { muur: K(0.22, 0.16, 0.13), voeg: K(0.40, 0.38, 0.35), baksteen: true }); break;
   }
   return p;
@@ -197,6 +209,13 @@ export function gevel(stijl: string, ramen: boolean): TexData {
     if (stijl === 'betonband') return betonband(d, x, y, u, v, mx, bx, ramen ? by : 0.5, raamId, s);
     let k: C, h: number, gl: number;
     if (p.baksteen) [k, h, gl] = baksteen(p.muur, p.voeg, p.variatie, x, y, mx, my, s);
+    else if (p.hout) {
+      // Verticale delen, verweerd; naden donker.
+      const pl = mx / 0.14, i = Math.floor(pl), f = pl - i;
+      k = mul(p.muur, 0.82 + 0.3 * hash01(i, 0, s + 11) * 0.6 + 0.15 * fbm(u * 0.3 + i * 0.1, v * 4, 3, 2, s + 12));
+      h = f < 0.08 ? 0.45 : 0.85; gl = 0.12;
+      if (f < 0.08) k = mul(k, 0.5);
+    }
     else if (p.paneel) {
       k = mul(p.muur, 0.95 + 0.08 * fbm(u, v, 8, 3, s + 1)); h = 0.8; gl = 0.25;
       if (frac(mx / 0.75) * 0.75 < 0.012 || by < 0.02) { k = mul(k, 0.55); h = 0.6; }
@@ -211,6 +230,7 @@ export function gevel(stijl: string, ramen: boolean): TexData {
       const vg = frac(mx / 0.065) < 0.15 || by - ry1 < 0.01;
       k = vg ? p.voeg : mul(p.muur, 0.85 + 0.2 * hash01(Math.floor(mx / 0.065), vloer, s + 4)); h = vg ? 0.55 : 0.88; gl = 0.1;
     }
+    if (p.borstPaneel && bx >= rx0 && bx <= rx1 && by > 0.12 && by < ry0 - 0.07) { k = mul(p.borstPaneel, 0.92 + 0.08 * fbm(u, v, 12, 2, s + 13)); h = 0.75; gl = 0.35; }
     if (by > ry0 - 0.07 && by <= ry0 && bx > rx0 - 0.05 && bx < rx1 + 0.05) { k = mul(p.dorpel, 0.95 + 0.08 * hash01(x, y, s + 5)); h = 0.97; gl = 0.3; }
     if (bx >= rx0 && bx <= rx1 && by >= ry0 && by <= ry1) {
       const lx = bx - rx0, ly = by - ry0, t = p.kd;
