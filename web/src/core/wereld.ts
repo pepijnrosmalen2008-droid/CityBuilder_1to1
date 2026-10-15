@@ -424,12 +424,14 @@ export class Wereld {
     const lengte = s1 - s0;
     const district = this.districten.van(k.voor);
     const stijl: Bouwstijl = vasteStijl ?? (district && district.stijl !== 'gemengd' ? district.stijl : kiesStijl(niveau, r));
-    const keuze = ontwerpKeuze(zone, stijl, niveau, reeks.length > 1, r);
+    const keuze = ontwerpKeuze(zone, stijl, niveau, reeks.length > 1, r, lengte);
     if (!keuze) return null;
     const VORM: Record<string, GebouwVorm> = { wonenLaag: 'rijwoningen', wonenHoog: 'appartementen', gemengd: 'winkelsMetWonen', kantoor: 'kantoortoren', industrie: 'bedrijfshal' };
     const vorm = VORM[zone];
     let lagen = keuze.lagen;
-    if (vorm !== 'bedrijfshal') lagen = Math.max(vorm === 'rijwoningen' ? 2 : 3, Math.min(lagen, this.maxLagen(zwaartepunt(k.poly), k.gebouw)));
+    if (vorm !== 'bedrijfshal') lagen = Math.max(vorm === 'rijwoningen' ? Math.min(2, keuze.lagen) : 3, Math.min(lagen, this.maxLagen(zwaartepunt(k.poly), k.gebouw)));
+    // Een woontoren die hier niet hoog mag worden, wordt een gewoon appartementencomplex.
+    if (keuze.type === 'woontoren' && lagen < 10) keuze.type = 'appModern';
     let diepte = r.range(keuze.diepte[0], keuze.diepte[1]);
     const terug = r.range(keuze.terug[0], keuze.terug[1]);
     const panden = keuze.eenheid ? Math.max(1, Math.round(lengte / keuze.eenheid)) : 1;
@@ -453,7 +455,7 @@ export class Wereld {
     // Gevellijn (stoeprand) iets voorbij het perceel, voor het herkennen van voor- en achtergevels.
     const voorLijn: V2[] = [];
     for (let s = s0 - 6; s <= s1 + 6.01; s += Math.min(2, (lengte + 12) / 4)) voorLijn.push(opStrook(st, s).p);
-    const dak = vorm === 'rijwoningen' && keuze.type !== 'grachtpand' ? {
+    const dak = vorm === 'rijwoningen' && keuze.type !== 'grachtpand' && keuze.type !== 'villa' ? {
       voor: opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte / 2, d - 1))),
       achter: opZij(band(st, s0, s1, terug + diepte / 2, (d: number) => Math.min(terug + diepte, d - 1))),
     } : undefined;
@@ -614,7 +616,9 @@ export class Wereld {
         // Geen stroom, water of afvalophaal: bewoners en bedrijven vertrekken langzaam.
         g.bezetting = Math.max(0.1, g.bezetting - dt * 0.006);
       } else if (g.bezetting < 1) {
-        g.bezetting = Math.min(1, g.bezetting + dt * 0.035 * (0.35 + this.vraagVoor(g.zone)));
+        // Districtsbelasting: lager tarief trekt sneller bewoners/bedrijven aan, hoger remt.
+        const stap = this.districten.belastingStap(g.centrum, g.cap.woningen > 0);
+        g.bezetting = Math.min(1, g.bezetting + dt * 0.035 * (0.35 + this.vraagVoor(g.zone)) * Math.max(0.3, 1 - 0.2 * stap));
       }
     }
 
@@ -711,8 +715,8 @@ export class Wereld {
       const b = g.bezetting, c = g.cap;
       inw += c.bewoners * b; won += c.woningen;
       const f = 0.75 + 0.125 * (g.niveau ?? 1);
-      wonWOZ += c.woningen * f;
-      banenWOZ += (c.banen.detailhandel + c.banen.horeca + c.banen.kantoor + c.banen.industrie + c.banen.overig) * b * f;
+      wonWOZ += c.woningen * f * (1 + 0.1 * this.districten.belastingStap(g.centrum, true));
+      banenWOZ += (c.banen.detailhandel + c.banen.horeca + c.banen.kantoor + c.banen.industrie + c.banen.overig) * b * f * (1 + 0.1 * this.districten.belastingStap(g.centrum, false));
       d += c.banen.detailhandel * b; h += c.banen.horeca * b; kk += c.banen.kantoor * b; ii += c.banen.industrie * b; o += c.banen.overig * b;
     }
     let winning = 0;

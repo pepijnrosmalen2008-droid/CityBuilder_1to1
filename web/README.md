@@ -26,6 +26,7 @@ hierheen).
 
 - `rijstroken.ts`: rijstrookgraaf uit de dwarsprofielen; verbindingen op kruispunten met afslagregels (rechts rechtsaf, links linksaf, rechtdoor over alle stroken), conflicten (kruisen of samenvoegen), verkeersafhankelijke verkeerslichten waar een laan of grotere weg een straat kruist.
 - `verkeer.ts`: ritten (woon-werk, winkelen, bestelbussen, vrachtwagens van en naar de buitenaansluitingen), routes met A* (voorkeur voor hogere wegen), volggedrag met het Intelligent Driver Model, voorsorteren door van strook te wisselen, voorrang (hogere weg, rechts gaat voor, rechtdoor voor linksaf), het kruispunt niet blokkeren, doorstroming als meter in de HUD.
+- Vloeiend rijden: een auto wordt getekend tussen een voor- en achterpunt die over de overgangen heen kijken (vorige strook, verbinding op het kruispunt, volgende strook); bij een strookwissel schuift hij precies de echte zijwaartse afstand. `scripts/test/vloeiend.ts` meet sprongen en draaiing per stap.
 - `geom/autos.ts`: procedurele voertuigen (hatchback, sedan, stationwagen, SUV, bestelbus, vrachtwagen, bus) met lak per voertuig, glas, wielkasten, lampen, kentekens en remlichten; een eenvoudige versie voor op afstand.
 
 ## Nutsvoorzieningen
@@ -42,8 +43,8 @@ hierheen).
 
 ## Bouwstijlen, districten en opwaarderen
 
-- `src/core/stijlen.ts`: vier bouwstijlen (jaren dertig, grachtengordel, naoorlogs, nieuwbouw) met per zone en niveau een eigen gebouwtype, hoogte en gevel: rijtjes met erkers, grachtenpanden met trap-, hals- en klokgevels, pakhuizen, naoorlogse rijtjes met luifels, portiek- en galerijflats, wederopbouwwinkels, sheddaken, nieuwbouw met hout en glazen balkons, kantoortorens met sokkel en kroon. Zonder voorschrift kiest de ontwikkelaar; hogere niveaus worden vaker nieuwbouw.
-- `src/core/districten.ts`: districten schilderen (K), met een naam, een optionele bouwstijl en regels: hoogtegrens (max 6 of 3 lagen), beschermd stadsgezicht, groene daken en verplichte zonnepanelen (kosten subsidie, panelen geven een derde minder stroomverbruik). Panden die niet bij de stijl van het district passen, worden geleidelijk verbouwd.
+- `src/core/stijlen.ts`: vijf bouwstijlen (jaren dertig, grachtengordel, naoorlogs, jaren zeventig, nieuwbouw) met per zone en niveau een eigen gebouwtype, hoogte en gevel: rijtjes met erkers, grachtenpanden met trap-, hals- en klokgevels, pakhuizen, naoorlogse rijtjes met luifels, portiek- en galerijflats, wederopbouwwinkels, sheddaken, bloemkoolwoningen met steile kappen, terrasflats, nieuwbouw met hout en glazen balkons, vrijstaande villa's en woontorens op niveau 5, kantoortorens met sokkel en kroon. Zonder voorschrift kiest de ontwikkelaar; hogere niveaus worden vaker nieuwbouw.
+- `src/core/districten.ts`: districten schilderen (K), met een naam, een optionele bouwstijl en regels: hoogtegrens (max 6 of 3 lagen), eigen belasting voor wonen en bedrijven (-20% tot +20%: lager = snellere groei, hoger = meer inkomsten en lagere grondwaarde), beschermd stadsgezicht, groene daken en verplichte zonnepanelen (kosten subsidie, panelen geven een derde minder stroomverbruik). Panden die niet bij de stijl van het district passen, worden geleidelijk verbouwd.
 - Hoogte: per buurpand hooguit 2 lagen hoger plus 1 laag per 12 m afstand, zodat de skyline geleidelijk oploopt.
 - Opwaarderen zoals in CS2: een pand dat een niveau stijgt gaat in de steigers (bewoners blijven) en komt terug als ontwerp van het nieuwe niveau, vaak hoger en in een nieuwere stijl.
 - Meshes van de nieuwe types: `src/core/geom/stijlmesh.ts`.

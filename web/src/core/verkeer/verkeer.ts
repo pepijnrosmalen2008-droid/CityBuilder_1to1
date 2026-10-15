@@ -44,6 +44,8 @@ export interface Voertuig {
   wacht: number; vast: number;
   /** Zijwaartse verschuiving tijdens een strookwissel (m, loopt naar 0). */
   zij: number;
+  /** Vorige sporen, nieuwste eerst (voor een vloeiende weergave over de overgang heen: de achterkant zit er nog op). */
+  vorige?: number[];
   rem: boolean;
   /** Seconden sinds het vertrek (voor in- en uitvoegen). */
   leeftijd: number;
@@ -94,7 +96,7 @@ export class Verkeer {
       const lijst = o ? this.stroken.stroken(o.seg, o.r) : [];
       const b = lijst.find(x => x.index === o!.index) ?? lijst[0];
       if (!o || !b || !v.route.every(x => this.w.net.segmenten.has(x.seg))) { this.voertuigen.delete(v.id); continue; }
-      v.spoor = b.id; v.s = o.frac * b.lengte; v.res = 0;
+      v.spoor = b.id; v.s = o.frac * b.lengte; v.res = 0; v.vorige = undefined;
       const ri = v.route.findIndex(x => x.seg === o.seg && x.r === o.r);
       if (ri < 0) { this.voertuigen.delete(v.id); continue; }
       v.ri = ri;
@@ -441,10 +443,15 @@ export class Verkeer {
 
   /** Probeer van strook te wisselen naar een buurstrook (zelfde richting). */
   private wissel(v: Voertuig, b: Baan, naarIndex: number): boolean {
+    // Pas wisselen als de auto helemaal op de strook staat (niet half op het kruispunt).
+    if (v.s < v.lengte + 1.5) return false;
     const lijst = this.stroken.stroken(b.seg, b.richting);
     const doel = lijst.find(x => x.index === naarIndex);
     if (!doel) return false;
-    const s = Math.min(doel.lengte - 1, v.s * doel.lengte / Math.max(1, b.lengte));
+    // Zelfde plek op de nieuwe strook (loodrecht geprojecteerd).
+    const P = Rijstroken.op(b, v.s);
+    const s = Math.min(doel.lengte - 1, Rijstroken.projecteer(doel, P));
+    if (s < v.lengte + 1) return false;
     for (const id of doel.op) {
       const o = this.voertuigen.get(id);
       if (!o) continue;
@@ -453,9 +460,11 @@ export class Verkeer {
       if (o.s < s && achter < 4 + Math.max(0, o.v - v.v) * 1.5 + o.v * 0.3) return false;
     }
     // Visueel nog op de oude strook: die ligt rechts (positief) als we naar links wisselen.
-    v.zij += (naarIndex - b.index) * 3.2;
+    // Precies de zijwaartse afstand tussen oude en nieuwe plek, zodat de auto niet verspringt.
+    const Q = Rijstroken.op(doel, s);
+    v.zij += (P.x - Q.x) * -Q.dz + (P.z - Q.z) * Q.dx;
     this.laatLos(v);
-    v.spoor = doel.id; v.s = s;
+    v.spoor = doel.id; v.s = s; v.vorige = undefined;
     return true;
   }
 
@@ -580,10 +589,10 @@ export class Verkeer {
         if (cur.soort === 'baan' && v.ri >= v.route.length - 1 && v.s >= v.doelS - 0.3) { v.opAankomst?.(v); this.verwijder(v); break; }
         if (v.s < cur.lengte) break;
         if (cur.soort === 'baan') {
-          if (v.res && this.stroken.verbinding(v.res)?.van === cur.id) { v.s -= cur.lengte; v.spoor = v.res; }
+          if (v.res && this.stroken.verbinding(v.res)?.van === cur.id) { v.s -= cur.lengte; v.vorige = [cur.id, ...(v.vorige ?? [])].slice(0, 3); v.spoor = v.res; }
           else { v.s = cur.lengte; v.v = 0; break; }
         } else {
-          v.s -= cur.lengte; v.spoor = cur.naar; v.ri++;
+          v.s -= cur.lengte; v.vorige = [cur.id, ...(v.vorige ?? [])].slice(0, 3); v.spoor = cur.naar; v.ri++;
           cur.bezet = Math.max(0, cur.bezet - 1); v.res = 0;
         }
       }
@@ -592,6 +601,34 @@ export class Verkeer {
     }
     this.aangemeld = aangemeld;
     this.doorstroming += ((somV0 > 0 ? Math.min(1, somV / somV0 * 1.25) : 1) - this.doorstroming) * Math.min(1, dt * 0.2);
+  }
+
+  /**
+   * Punt op afstand s langs de weg van een voertuig, ook voorbij het huidige spoor: negatief = op het
+   * vorige spoor (de achterkant zit daar nog), voorbij het eind = op het volgende (verbinding of strook).
+   * Zo draait een auto vloeiend een bocht in in plaats van te verspringen.
+   */
+  punt(v: Voertuig, s: number) {
+    const sp = this.stroken.sporen.get(v.spoor)!;
+    if (s < 0 && v.vorige) {
+      // Terug langs de vorige sporen (korte verbindingen zijn soms korter dan de auto).
+      let rest = s;
+      for (const id of v.vorige) {
+        const vr = this.stroken.sporen.get(id);
+        if (!vr) break;
+        rest += vr.lengte;
+        if (rest >= 0) return Rijstroken.op(vr, rest);
+      }
+    }
+    if (s > sp.lengte) {
+      const nId = sp.soort === 'verbinding' ? sp.naar : v.res && this.stroken.verbinding(v.res)?.van === sp.id ? v.res : 0;
+      const n = nId ? this.stroken.sporen.get(nId) : null;
+      if (n) return Rijstroken.op(n, s - sp.lengte);
+      // Nog geen verbinding gereserveerd: rechtdoor doortrekken.
+      const e = Rijstroken.op(sp, sp.lengte), d = s - sp.lengte;
+      return { ...e, x: e.x + e.dx * d, z: e.z + e.dz * d };
+    }
+    return Rijstroken.op(sp, s);
   }
 
   /** Halve breedte van de weg onder een voertuig (voor de render-laag niet nodig, wel voor testen). */

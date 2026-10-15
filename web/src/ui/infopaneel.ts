@@ -7,8 +7,8 @@ import { BOUWSTIJLEN } from '../core/stijlen';
 // Infopaneel zoals in Cities: Skylines: klik in Kijken op een gebouw of voorziening.
 
 const TYPE_NAAM: Record<string, string> = {
-  rijtjes30: 'Jaren-dertigwoningen', grachtpand: 'Grachtenpanden', rijtjes50: 'Naoorlogse rijtjeswoningen', vinex: 'Nieuwbouwwoningen',
-  flat30: 'Bovenwoningen', grachtblok: 'Grachtenpanden (appartementen)', portiekflat: 'Portiekflat', galerijflat: 'Galerijflat', appModern: 'Appartementencomplex',
+  rijtjes30: 'Jaren-dertigwoningen', grachtpand: 'Grachtenpanden', rijtjes50: 'Naoorlogse rijtjeswoningen', bloemkool: 'Bloemkoolwoningen', vinex: 'Nieuwbouwwoningen', villa: "Villa's",
+  flat30: 'Bovenwoningen', grachtblok: 'Grachtenpanden (appartementen)', portiekflat: 'Portiekflat', galerijflat: 'Galerijflat', terrasflat: 'Terrasflat', appModern: 'Appartementencomplex', woontoren: 'Woontoren',
   winkels30: 'Winkels met bovenwoningen', grachtWinkel: 'Grachtenpanden met winkels', wederopbouw: 'Wederopbouwwinkels', gemengdModern: 'Winkels met appartementen',
   kantoor30: 'Kantoorgebouw', grachtKantoor: 'Grachtenpand (kantoor)', kantoorBeton: 'Kantoorflat', kantoorGlas: 'Kantoortoren',
   pakhuis: 'Pakhuis', sheddak: 'Fabriekshal met sheddak', halModern: 'Bedrijfshal',

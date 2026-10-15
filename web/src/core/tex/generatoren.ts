@@ -157,6 +157,8 @@ function gevelP(stijl: string): GevelP {
     case 'naoorlogsGeel': Object.assign(p, { muur: K(0.74, 0.63, 0.40), voeg: K(0.70, 0.68, 0.62), kozijn: K(0.93, 0.93, 0.90), rb: 2.3, rh: 1.45, borst: 0.95, variatie: 0.05, baksteen: true, borstPaneel: K(0.32, 0.45, 0.55) }); break;
     case 'naoorlogsGrijs': Object.assign(p, { muur: K(0.52, 0.50, 0.47), voeg: K(0.66, 0.65, 0.62), kozijn: K(0.30, 0.37, 0.46), rb: 2.3, rh: 1.5, borst: 0.9, variatie: 0.04, baksteen: true, borstPaneel: K(0.62, 0.50, 0.25) }); break;
     case 'betonPaneel': Object.assign(p, { muur: K(0.63, 0.62, 0.59), kozijn: K(0.62, 0.64, 0.66), dorpel: K(0.55, 0.55, 0.54), rb: 2.5, rh: 1.45, borst: 0.95, kd: 0.05, paneel: true, vuil: true, borstPaneel: K(0.45, 0.52, 0.42) }); break;
+    // Jaren zeventig: donkerbruine steen, donker hout, oranje panelen.
+    case 'bruin70': Object.assign(p, { muur: K(0.28, 0.18, 0.13), voeg: K(0.34, 0.31, 0.27), kozijn: K(0.22, 0.13, 0.07), dorpel: K(0.20, 0.14, 0.10), rb: 1.9, rh: 1.65, borst: 0.8, variatie: 0.08, baksteen: true, borstPaneel: K(0.66, 0.36, 0.12) }); break;
     // Nieuwbouw: wit stucwerk, antraciet steen, hout, rode steen; grote ramen tot de vloer.
     case 'witStuc': Object.assign(p, { muur: K(0.92, 0.92, 0.90), kozijn: K(0.13, 0.13, 0.14), dorpel: K(0.20, 0.20, 0.21), rb: 2.0, rh: 2.35, borst: 0.3, kd: 0.05 }); break;
     case 'antraciet': Object.assign(p, { muur: K(0.17, 0.16, 0.16), voeg: K(0.42, 0.41, 0.40), kozijn: K(0.09, 0.09, 0.10), dorpel: K(0.12, 0.12, 0.13), rb: 1.6, rh: 2.4, borst: 0.3, kd: 0.05, variatie: 0.05, baksteen: true }); break;

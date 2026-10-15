@@ -14,3 +14,4 @@ for (const g of w.gebouwen.values()) {
 }
 console.log(JSON.stringify(tel, null, 0));
 console.log({ vier, nietVier, geenVoor, lens, verbouw, gebouwen: w.gebouwen.size, inw: w.stat.inwoners });
+for (const g of w.gebouwen.values()) if (g.type === 'villa' || g.type === 'woontoren') console.log(g.type, Math.round(g.centrum.x), Math.round(g.centrum.z), g.lagen.length);

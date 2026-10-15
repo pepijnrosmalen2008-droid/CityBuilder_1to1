@@ -18,6 +18,8 @@ export interface Beleid {
   groen: boolean;
   /** Zonnepanelen verplicht: minder stroomverbruik, kost subsidie. */
   zon: boolean;
+  /** Belasting t.o.v. het gemeentetarief, in stappen van 10% (-2..+2), voor wonen en bedrijven. */
+  belasting?: { wonen: number; bedrijven: number };
 }
 
 export interface District {
@@ -27,7 +29,7 @@ export interface District {
 }
 
 export const MAX_LAGEN: Record<Hoogtegrens, number> = { vrij: 99, midden: 6, laag: 3 };
-export const BELEID_NAAM: Record<keyof Beleid, string> = { hoogte: 'Hoogtegrens', beschermd: 'Beschermd stadsgezicht', groen: 'Groene daken', zon: 'Zonnepanelen verplicht' };
+export const BELEID_NAAM: Record<keyof Beleid, string> = { hoogte: 'Hoogtegrens', beschermd: 'Beschermd stadsgezicht', groen: 'Groene daken', zon: 'Zonnepanelen verplicht', belasting: 'Belasting' };
 /** Subsidie per gebouw per maand. */
 export const BELEID_KOSTEN = { groen: 60, zon: 90 };
 
@@ -49,7 +51,7 @@ export class Districten {
     const id = this.volgende++;
     const gebruikt = new Set([...this.lijst.values()].map(d => d.naam));
     const naam = NAMEN.find(n => !gebruikt.has(n)) ?? `District ${id}`;
-    const d: District = { id, naam, kleur: KLEUREN[(id - 1) % KLEUREN.length], stijl: 'gemengd', beleid: { hoogte: 'vrij', beschermd: false, groen: false, zon: false } };
+    const d: District = { id, naam, kleur: KLEUREN[(id - 1) % KLEUREN.length], stijl: 'gemengd', beleid: { hoogte: 'vrij', beschermd: false, groen: false, zon: false, belasting: { wonen: 0, bedrijven: 0 } } };
     this.lijst.set(id, d);
     this.versie++;
     return d;
@@ -59,6 +61,12 @@ export class Districten {
     this.lijst.delete(id);
     for (const [k, v] of this.raster) if (v === id) this.raster.delete(k);
     this.versie++;
+  }
+
+  /** Belastingstap voor een gebouw op p (wonen of bedrijven). */
+  belastingStap(p: V2, wonen: boolean): number {
+    const b = this.van(p)?.beleid.belasting;
+    return b ? (wonen ? b.wonen : b.bedrijven) : 0;
   }
 
   van(p: V2): District | null {

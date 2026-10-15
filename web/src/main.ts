@@ -203,6 +203,12 @@ async function start() {
       for (const g of wereld.gebouwen.values()) { const d = Math.hypot(g.centrum.x - camera.doel.x, g.centrum.z - camera.doel.z); if (g.klaar && (!best || d < best.d)) best = { id: g.id, d }; }
       if (best) wereld.hulpdiensten.steekAan(best.id, 0.5);
     }
+    if (param.has('naartype')) {
+      // Test: camera op het eerste gebouw van een type: ?naartype=villa,afstand,yaw,pitch
+      const [type, af, yaw, pitch] = (param.get('naartype') ?? '').split(',');
+      const g = [...wereld.gebouwen.values()].find(x => x.type === type && x.klaar);
+      if (g) camera.zet(g.centrum.x, g.centrum.z, Number(af || 45), Number(yaw || 200), Number(pitch || 30));
+    }
     if (param.has('verbouw')) {
       // Test: panden rond het camerapunt in de steigers zetten.
       const bij = [...wereld.gebouwen.values()].filter(g => g.klaar).sort((a, b) => Math.hypot(a.centrum.x - camera.doel.x, a.centrum.z - camera.doel.z) - Math.hypot(b.centrum.x - camera.doel.x, b.centrum.z - camera.doel.z));

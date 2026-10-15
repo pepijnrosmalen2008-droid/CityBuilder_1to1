@@ -3,14 +3,14 @@ import { Rng } from '../rng';
 import { Gebouw, Anker, totaleHoogte } from '../wereld';
 import { MeshBouwer, MeshData, Prop } from './mesh';
 import { cilinder } from './props';
-import { DakInfo, grachtpanden, rijParams, erker, luifel, houtAccent, portiekflat, galerijflat, appModern, wederopbouwLuifel, bovenBalkons, kantoor30, kantoorToren, sheddak, steigers } from './stijlmesh';
+import { DakInfo, villas, terrasflat, woontoren, grachtpanden, rijParams, erker, luifel, houtAccent, portiekflat, galerijflat, appModern, wederopbouwLuifel, bovenBalkons, kantoor30, kantoorToren, sheddak, steigers } from './stijlmesh';
 import { afstandTotLijn, driehoeken, getekendOppervlak, verfijn, zwaartepunt } from '../poly';
 import { puntInPolygoon } from '../math';
 
 // Gebouwen op de vorm van hun perceel: elke rand van de footprint wordt een voor-, achter- of
 // zijgevel; daken volgen de gevellijn (ook in bochten en op hoeken in verstek).
 
-export const GEVELSTIJLEN = ['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'stuc', 'modernDonker', 'vliesgevel', 'betonband', 'grachtRood', 'grachtDonker', 'naoorlogsGeel', 'naoorlogsGrijs', 'betonPaneel', 'witStuc', 'antraciet', 'nieuwRood', 'houtGevel'] as const;
+export const GEVELSTIJLEN = ['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'stuc', 'modernDonker', 'vliesgevel', 'betonband', 'grachtRood', 'grachtDonker', 'naoorlogsGeel', 'naoorlogsGrijs', 'betonPaneel', 'witStuc', 'antraciet', 'nieuwRood', 'houtGevel', 'bruin70'] as const;
 export type GevelStijl = typeof GEVELSTIJLEN[number];
 export const PUIEN = 4, LUIFELS = 4, HALTINTEN = 4;
 
@@ -160,6 +160,9 @@ export function bouwGebouw(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[
     case 'grachtKantoor': grachtpanden(mb, g, hoogte, 'kantoor'); dak = null; break;
     case 'pakhuis': grachtpanden(mb, g, hoogte, 'pakhuis'); dak = null; break;
     case 'portiekflat': dak = portiekflat(mb, g, r); break;
+    case 'villa': villas(mb, g); rijErf(mb, g, r, hoogte, props, g.breedte / g.eenheden, false); dak = null; break;
+    case 'terrasflat': dak = terrasflat(mb, g); break;
+    case 'woontoren': dak = woontoren(mb, g, r); break;
     case 'galerijflat': dak = galerijflat(mb, g); break;
     case 'appModern': dak = appModern(mb, g, r, props); break;
     case 'wederopbouw': winkels(mb, g, r, stijl, false); wederopbouwLuifel(mb, g); break;

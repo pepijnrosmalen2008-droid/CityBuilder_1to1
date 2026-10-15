@@ -184,6 +184,7 @@ export function rijParams(g: Gebouw, r: Rng): RijParams {
   const n = g.niveau ?? 1;
   switch (g.type) {
     case 'rijtjes50': return { helling: 28, platKans: n <= 1 ? 0.5 : 0.25, luifel: true, dakkapel: n >= 3 ? 0.25 : 0, erker: false, hout: false, schoorsteen: false, dakMat: 'dakpannenAntraciet', dakrand: 'trim' };
+    case 'bloemkool': return { helling: 56, platKans: 0, luifel: false, dakkapel: 0.85, erker: false, hout: true, schoorsteen: false, dakMat: 'dakpannenAntraciet', dakrand: 'trimDonker' };
     case 'vinex': return { helling: r.next() < 0.5 ? 48 : 38, platKans: n >= 4 ? 0.45 : 0.25, luifel: false, dakkapel: 0, erker: false, hout: g.gevel !== 'houtGevel' && r.next() < 0.7, schoorsteen: false, dakMat: 'dakpannenAntraciet', dakrand: 'trimDonker' };
     default: return { helling: 42, platKans: 0.1, luifel: false, dakkapel: n >= 2 ? 0.5 : 0.15, erker: n >= 3, hout: false, schoorsteen: true, dakrand: 'trim' };
   }
@@ -452,4 +453,143 @@ export function steigers(mb: MeshBouwer, g: Gebouw, hoogte: H) {
     mb.quad('hekwerk', P3(a, ya), P3(b, yb), P3(b, yb + 2), P3(a, ya + 2), [0, 0], [x.L / 3.5, 0], [x.L / 3.5, 1], [0, 1], N3(x.n));
   }
   void OP; void norm;
+}
+
+// ─── Villa's, terrasflats en woontorens ──────────────────────────────────────────
+
+/** Schilddak op een rechthoek (voor links, voor rechts, achter rechts, achter links) met overstek. */
+function schilddak(mb: MeshBouwer, h: V2[], y: number, helling: number, mat: string) {
+  const [F0, F1, , B0] = h;
+  const t = norm({ x: F1.x - F0.x, z: F1.z - F0.z }), inw = norm({ x: B0.x - F0.x, z: B0.z - F0.z });
+  const w = Math.hypot(F1.x - F0.x, F1.z - F0.z), d = Math.hypot(B0.x - F0.x, B0.z - F0.z);
+  const o = 0.45;
+  const P = (s: number, e: number): V2 => ({ x: F0.x + t.x * s + inw.x * e, z: F0.z + t.z * s + inw.z * e });
+  const a = P(-o, -o), b = P(w + o, -o), c = P(w + o, d + o), e = P(-o, d + o);
+  const hI = Math.min(w, d) / 2 + o, tan = Math.tan(helling * Math.PI / 180);
+  const top = y + hI * tan - o * tan;
+  const R0 = P(Math.min(w / 2, hI - o), d / 2), R1 = P(Math.max(w / 2, w - hI + o), d / 2);
+  const yy = y - o * tan;
+  const buiten = (n: V2): V3 => ({ x: n.x, y: 1.2, z: n.z });
+  mb.quad(mat, P3(a, yy), P3(b, yy), P3(R1, top), P3(R0, top), [0, 0], [w, 0], [w, 4], [0, 4], buiten({ x: -inw.x, z: -inw.z }));
+  mb.quad(mat, P3(c, yy), P3(e, yy), P3(R0, top), P3(R1, top), [0, 0], [w, 0], [w, 4], [0, 4], buiten(inw));
+  mb.driehoek(mat, P3(e, yy), P3(a, yy), P3(R0, top), [0, 0], [d, 0], [d / 2, 4], buiten({ x: -t.x, z: -t.z }));
+  mb.driehoek(mat, P3(b, yy), P3(c, yy), P3(R1, top), [0, 0], [d, 0], [d / 2, 4], buiten(t));
+  // Onderkant van het overstek.
+  vlak(mb, 'trim', [a, b, c, e], yy, false);
+}
+
+/** Vrijstaande villa's: per kavel een huis met tuin rondom, schilddak (klassiek) of kubus met uitkragende verdieping (nieuwbouw), en een garage. */
+export function villas(mb: MeshBouwer, g: Gebouw) {
+  const Y = g.y, hL = g.lagen.map(l => l.hoogte);
+  const H1 = Y + hL[0], H = Y + hL.reduce((a, b) => a + b, 0);
+  for (const p of pandPolys(g)) {
+    const x = p.voor;
+    if (!x || p.poly.length !== 4) continue;
+    const r = new Rng(g.seed + p.i * 97);
+    const inw = { x: -x.n.x, z: -x.n.z };
+    const w = Math.min(11.5, x.L - 6.5), d = Math.min(p.diep, 11);
+    if (w < 6) continue;
+    const links = r.next() < 0.5;
+    const s0 = links ? 1.6 : x.L - 1.6 - w;
+    const Q = (s: number, e: number): V2 => ({ x: x.a.x + x.t.x * s + inw.x * e, z: x.a.z + x.t.z * s + inw.z * e });
+    const huis = [Q(s0, 0), Q(s0 + w, 0), Q(s0 + w, d), Q(s0, d)];
+    const modern = g.stijl === 'nieuwbouw';
+    if (modern) {
+      // Begane grond en een verschoven bovenverdieping (uitkraging).
+      const k = r.range(1.2, 2.2) * (links ? 1 : -1);
+      const boven = [Q(s0 + k, -0.8), Q(s0 + w + k * 0.4, -0.8), Q(s0 + w + k * 0.4, d - 1.5), Q(s0 + k, d - 1.5)];
+      for (const rr of randen(g, huis)) wand(mb, rr.soort === 'zij' ? `gevel:${g.gevel}` : `gevel:${g.gevel}`, rr, Y, H1, 0, 1, 2.6);
+      vlak(mb, 'dakgrind', huis, H1);
+      const mat2 = g.gevel === 'witStuc' ? 'gevel:houtGevel' : 'gevel:witStuc';
+      for (const rr of randen(g, boven)) wand(mb, mat2, rr, H1, H, 1, 2, 2.6);
+      vlak(mb, 'trimDonker', boven, H1 - 0.02, false);
+      vlak(mb, r.next() < 0.5 ? 'tuin' : 'dakgrind', boven, H);
+      dakrand(mb, boven, H - 0.05, 0.35, 0.2, 'trimDonker');
+    } else {
+      for (const rr of randen(g, huis)) wand(mb, rr.soort === 'zij' ? `gevel:${g.gevel}` : `gevel:${g.gevel}`, rr, Y, H, 0, 2, 2.6);
+      wand(mb, 'trim', randen(g, huis).find(q => q.soort === 'voor') ?? randen(g, huis)[0], H - 0.25, H, 0, 0, 3, 0.15);
+      schilddak(mb, huis, H, 38, r.next() < 0.5 ? 'dakpannen' : 'dakpannenAntraciet');
+      // Schoorsteen.
+      const c = Q(s0 + w * 0.7, d * 0.6);
+      doos(mb, `muur:${g.gevel}`, 'trimDonker', c, x.t, 0.7, 0.7, H, H + Math.min(w, d) / 2 * 0.78 + 1.2);
+    }
+    // Garage met plat dak in de ruimste zijstrook, oprit ervoor.
+    const gs = links ? s0 + w + 0.4 : s0 - 3.6;
+    const garage = [Q(gs, 1), Q(gs + 3.2, 1), Q(gs + 3.2, 7), Q(gs, 7)];
+    if (gs > 0.3 && gs + 3.2 < x.L - 0.3) {
+      for (const rr of randen(g, garage)) wand(mb, rr.soort === 'voor' ? 'roldeur' : `muur:${g.gevel}`, rr, Y, Y + 2.8, 0, 0);
+      vlak(mb, 'dakgrind', garage, Y + 2.8);
+      dakrand(mb, garage, Y + 2.75, 0.25, 0.15, modern ? 'trimDonker' : 'trim');
+      const yv = Y - 0.02;
+      vlak(mb, 'klinkers', [Q(gs, -g.terug + 0.1), Q(gs + 3.2, -g.terug + 0.1), Q(gs + 3.2, 1), Q(gs, 1)], yv + 0.08);
+    }
+    deur(mb, ankerOp(x, s0 + w * (links ? 0.3 : 0.7)), Y, (g.seed + p.i) % 5);
+  }
+}
+
+/** Terrasflat (jaren zeventig): elke laag springt aan de voorkant terug, met plantenbakken op de terrassen. */
+export function terrasflat(mb: MeshBouwer, g: Gebouw): DakInfo {
+  const Y = g.y, lagen = g.lagen.length, hL = g.lagen.map(l => l.hoogte);
+  const yL = (i: number) => Y + hL.slice(0, i).reduce((a, b) => a + b, 0);
+  const v = randen(g).filter(x => x.soort === 'voor').sort((a, b) => b.L - a.L)[0];
+  let poly = g.voet;
+  for (let l = 0; l < lagen; l++) {
+    if (v && l >= 2) {
+      const inw = { x: -v.n.x, z: -v.n.z }, k = 2.4 * (l - 1);
+      const o = { x: (v.a.x + v.b.x) / 2 + inw.x * k, z: (v.a.z + v.b.z) / 2 + inw.z * k };
+      const nieuw = knipHalfvlak(g.voet, o, inw);
+      if (nieuw.length >= 3 && Math.abs(getekendOppervlak(nieuw)) > 60) poly = nieuw;
+    }
+    for (const x of randen(g, poly)) wand(mb, x.soort === 'zij' ? `muur:${g.gevel}` : `gevel:${g.gevel}`, x, yL(l), yL(l + 1), l, l + 1);
+    vlak(mb, 'stoeptegels', poly, yL(l + 1));
+    // Plantenbak langs de terrasrand van de laag eronder.
+    const vv = randen(g, poly).filter(x => x.soort === 'voor').sort((a, b) => b.L - a.L)[0];
+    if (vv && l >= 1 && l < lagen - 1) {
+      const m = { x: (vv.a.x + vv.b.x) / 2 - vv.n.x * 0.4 + vv.n.x * 2.4, z: (vv.a.z + vv.b.z) / 2 - vv.n.z * 0.4 + vv.n.z * 2.4 };
+      doos(mb, 'beton', 'haag', m, vv.t, vv.L - 0.4, 0.7, yL(l + 1), yL(l + 1) + 0.75);
+    }
+  }
+  dakrand(mb, poly, yL(lagen) - 0.05, 0.6, 0.3, 'trimDonker');
+  if (v) deur(mb, ankerOp(v, v.L / 2), Y, 2);
+  return { poly, y: yL(lagen) };
+}
+
+/** Woontoren (niveau 5): plint van twee lagen, slanke toren met balkons rondom en een glazen kroon. */
+export function woontoren(mb: MeshBouwer, g: Gebouw, r: Rng): DakInfo {
+  const Y = g.y, lagen = g.lagen.length, hL = g.lagen.map(l => l.hoogte);
+  const yL = (i: number) => Y + hL.slice(0, i).reduce((a, b) => a + b, 0);
+  const plint = Math.min(2, lagen - 1);
+  let toren = inzet(g.voet, 3);
+  if (Math.abs(getekendOppervlak(toren)) < 140) toren = g.voet;
+  let kroon = inzet(toren, 1.4);
+  if (Math.abs(getekendOppervlak(kroon)) < 80) kroon = toren;
+  const kroonVan = Math.max(plint + 1, lagen - 2);
+  const delen = [
+    { poly: g.voet, van: 0, tot: plint, mat: 'gevel:antraciet' },
+    { poly: toren, van: plint, tot: kroonVan, mat: `gevel:${g.gevel}` },
+    { poly: kroon, van: kroonVan, tot: lagen, mat: 'gevel:vliesgevel' },
+  ];
+  for (const d of delen) {
+    if (d.tot <= d.van) continue;
+    for (const x of randen(g, d.poly)) wand(mb, d.mat, x, yL(d.van), yL(d.tot), d.van, d.tot, d.mat.includes('vlies') ? 3.6 : 3);
+    vlak(mb, d.poly === g.voet ? 'tuin' : 'dakgrind', d.poly, yL(d.tot));
+    dakrand(mb, d.poly, yL(d.tot) - 0.05, 1.05, 0.25, 'trimDonker');
+  }
+  // Balkons rondom de toren, om de laag verspringend.
+  for (const x of randen(g, toren)) {
+    const n = Math.max(1, Math.floor(x.L / 6));
+    for (let l = plint + 1; l < kroonVan; l++) for (let i = 0; i < n; i++) {
+      if ((l + i) % 2) continue;
+      const s = (i + 0.5) * x.L / n, bb = Math.min(3.4, x.L / n - 1);
+      if (bb < 1.6) continue;
+      const P = (ds: number, dd: number) => ({ x: x.a.x + x.t.x * (s + ds) + x.n.x * dd, z: x.a.z + x.t.z * (s + ds) + x.n.z * dd });
+      const y = yL(l);
+      doos(mb, 'trimDonker', 'beton', P(0, 0.75), x.t, bb, 1.5, y - 0.18, y);
+      mb.quad('glas', P3(P(-bb / 2, 1.5), y), P3(P(bb / 2, 1.5), y), P3(P(bb / 2, 1.5), y + 1.05), P3(P(-bb / 2, 1.5), y + 1.05), [0, 0], [1, 0], [1, 1], [0, 1], N3(x.n));
+    }
+  }
+  const v = randen(g).filter(x => x.soort === 'voor').sort((a, b) => b.L - a.L)[0];
+  if (v) deur(mb, ankerOp(v, v.L / 2), Y, 3);
+  void r;
+  return { poly: kroon, y: yL(lagen) };
 }

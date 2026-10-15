@@ -16,7 +16,7 @@ import { BOUWSTIJLEN, DistrictStijl } from '../core/stijlen';
 
 const STIJL_KEUZE: { id: DistrictStijl; naam: string; uitleg: string }[] = [
   { id: 'gemengd', naam: 'Gemengd', uitleg: 'De ontwikkelaar kiest; hogere niveaus worden vaker nieuwbouw.' },
-  ...(['klassiek', 'gracht', 'naoorlogs', 'nieuwbouw'] as const).map(id => ({ id, naam: BOUWSTIJLEN[id].naam, uitleg: BOUWSTIJLEN[id].uitleg })),
+  ...(['klassiek', 'gracht', 'naoorlogs', 'jaren70', 'nieuwbouw'] as const).map(id => ({ id, naam: BOUWSTIJLEN[id].naam, uitleg: BOUWSTIJLEN[id].uitleg })),
 ];
 
 /** Klein plaatje per bouwstijl (silhouet). */
@@ -25,6 +25,7 @@ const STIJL_ICOON: Record<DistrictStijl, string> = {
   klassiek: '<svg viewBox="0 0 86 46"><path d="M10 40V24l12-10 12 10v16zM34 40V24l12-10 12 10v16zM58 40V24l12-10 12 10v16z" fill="#c2553a"/><path d="M10 24l12-10 12 10M34 24l12-10 12 10M58 24l12-10 12 10" stroke="#7a2e1f" stroke-width="2" fill="none"/></svg>',
   gracht: '<svg viewBox="0 0 86 46"><path d="M10 40V14h3v-3h3v-3h4v3h3v3h3v26zM28 40V16l3-4V6h6v6l3 4v24zM44 40V18c0-4 3-4 3-8s3-4 4-4 4 0 4 4 3 4 3 8v22zM62 40V12h16v28z" fill="#8a3b28"/><path d="M28 40V16l3-4V6h6v6l3 4v24z" fill="#e9ecef"/></svg>',
   naoorlogs: '<svg viewBox="0 0 86 46"><rect x="8" y="16" width="70" height="24" fill="#e0c98a"/><path d="M8 22h70M8 28h70M8 34h70" stroke="#5c7cfa" stroke-width="2"/><rect x="40" y="16" width="6" height="24" fill="#adb5bd"/></svg>',
+  jaren70: '<svg viewBox="0 0 86 46"><path d="M8 40l14-22 10 14v8zM30 40l14-22 12 16v6zM54 40l14-22 12 18v4z" fill="#5c3d2e"/><rect x="18" y="34" width="6" height="6" fill="#e8590c"/><rect x="42" y="34" width="6" height="6" fill="#e8590c"/><rect x="66" y="34" width="6" height="6" fill="#e8590c"/></svg>',
   nieuwbouw: '<svg viewBox="0 0 86 46"><path d="M10 40V20l10-8 10 8v20z" fill="#343a40"/><path d="M34 40V10h20v30z" fill="#f1f3f5"/><path d="M58 40V18h18v22z" fill="#a0784a"/><path d="M36 18h16M36 26h16M36 34h16" stroke="#74c0fc" stroke-width="2"/></svg>',
 };
 
@@ -143,6 +144,7 @@ export class Werkbalk {
         + sch('beschermd', 'Beschermd stadsgezicht', 'Panden houden hun uiterlijk, ook als ze een niveau stijgen')
         + sch('groen', 'Groene daken', `Hogere grondwaarde; € ${BELEID_KOSTEN.groen} per pand per maand`)
         + sch('zon', 'Zonnepanelen', `Een derde minder stroom van het net; € ${BELEID_KOSTEN.zon} per pand per maand`)
+        + (['wonen', 'bedrijven'] as const).map(k => { const x = d.beleid.belasting?.[k] ?? 0; return `<div class="groep"><span>Belasting ${k}</span><button class="knop" data-bst="${k}" data-stap="-1" title="Lager: sneller groei">−</button><span class="waarde">${x > 0 ? '+' : ''}${x * 10}%</span><button class="knop" data-bst="${k}" data-stap="1" title="Hoger: meer inkomsten, minder groei">+</button></div>`; }).join('')
         + opties + `<button class="knop gevaar" data-dweg title="District opheffen">Opheffen</button>`;
     }
     return { items, opties };
@@ -200,6 +202,13 @@ export class Werkbalk {
     this.el.querySelectorAll<HTMLElement>('[data-hg]').forEach(e => (e.onclick = () => { if (huidig) { huidig.beleid.hoogte = e.dataset.hg as Hoogtegrens; gewijzigd(); } }));
     this.el.querySelectorAll<HTMLElement>('[data-bel]').forEach(e => (e.onclick = () => { if (huidig) { const k = e.dataset.bel as 'beschermd' | 'groen' | 'zon'; huidig.beleid[k] = !huidig.beleid[k]; gewijzigd(); } }));
     this.el.querySelector<HTMLInputElement>('[data-dnaam]')?.addEventListener('change', e => { if (huidig) { huidig.naam = (e.target as HTMLInputElement).value.trim() || huidig.naam; gewijzigd(); } });
+    this.el.querySelectorAll<HTMLElement>('[data-bst]').forEach(e => (e.onclick = () => {
+      if (!huidig) return;
+      const b = huidig.beleid.belasting ??= { wonen: 0, bedrijven: 0 };
+      const k = e.dataset.bst as 'wonen' | 'bedrijven';
+      b[k] = Math.max(-2, Math.min(2, b[k] + Number(e.dataset.stap)));
+      gewijzigd();
+    }));
     this.el.querySelector<HTMLElement>('[data-dweg]')?.addEventListener('click', () => { if (ds && huidig) { ds.verwijder(huidig.id); g.district = 0; this.teken(); } });
   }
 

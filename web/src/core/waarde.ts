@@ -62,6 +62,9 @@ export class Grondwaarde {
       // Lawaai van een drukke weg voor de deur.
       const k = w.kavels.get(g.kavel), seg = k ? w.net.segmenten.get(k.seg) : null;
       if (seg && (seg.type === 'gow' || seg.type === 'snelweg' || seg.type === 'laan') && g.vorm !== 'bedrijfshal' && g.vorm !== 'kantoortoren') delen.push({ naam: 'Verkeerslawaai', x: seg.type === 'laan' ? -0.04 : -0.12 });
+      const stap = w.districten.belastingStap(g.centrum, g.cap.woningen > 0);
+      if (stap) delen.push({ naam: 'Belasting district', x: -0.03 * stap });
+      if (g.dakBeleid?.groen) delen.push({ naam: 'Groene daken', x: 0.04 });
       const waarde = Math.max(0, Math.min(1, delen.reduce((s, d) => s + d.x, 0)));
       this.waarde.set(g.id, { waarde, delen });
     }

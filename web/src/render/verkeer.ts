@@ -5,7 +5,7 @@ import { naarMesh } from './meshes';
 import { MeshData, MeshBouwer } from '../core/geom/mesh';
 import { voertuigMesh, remlichten, zwaailichten } from '../core/geom/autos';
 import { VoertuigSoort, AFMETING, LAKKEN } from '../core/verkeer/verkeer';
-import { Rijstroken, Baan } from '../core/verkeer/rijstroken';
+import { Baan } from '../core/verkeer/rijstroken';
 import { cilinder } from '../core/geom/props';
 
 // Voertuigen als instanties: per soort en detailniveau een gelakt deel (kleur per voertuig) en
@@ -150,7 +150,7 @@ export class VerkeerWeergave {
       const sp = vk.stroken.sporen.get(v.spoor);
       if (!sp) continue;
       const L = v.lengte;
-      const voor = Rijstroken.op(sp, v.s - L * 0.18), achter = Rijstroken.op(sp, v.s - L * 0.82);
+      const voor = vk.punt(v, v.s - L * 0.18), achter = vk.punt(v, v.s - L * 0.82);
       f.set(voor.x - achter.x, voor.y - achter.y, voor.z - achter.z);
       if (f.lengthSq() < 1e-6) f.set(voor.dx, 0, voor.dz);
       f.normalize();
