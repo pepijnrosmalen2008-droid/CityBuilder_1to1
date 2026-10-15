@@ -1,6 +1,5 @@
 import { V3, lerp, clamp } from '../math';
 import { MeshBouwer, MeshData } from './mesh';
-import { cilinder } from './props';
 import type { VoertuigSoort } from '../verkeer/verkeer';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -98,15 +97,19 @@ function loft(mb: MeshBouwer, ringen: V3[][], as: V3[], mat: (i: number, j: numb
 }
 
 /** Afgeronde rechthoek als doorsnede (kloksgewijs van onder-midden, rechts omhoog, links omlaag). */
-function doorsnede(x: number, w: number, y0: number, y1: number, rO: number, rB: number, k: number): V3[] {
+function doorsnede(x: number, w: number, y0: number, y1: number, rO: number, rB: number, k: number, ys?: number): V3[] {
   const h = w / 2, pts: V3[] = [];
   const hoek = (cz: number, cy: number, r: number, a0: number, a1: number) => {
     for (let i = 0; i <= k; i++) { const a = lerp(a0, a1, i / k); pts.push({ x, y: cy + Math.sin(a) * r, z: cz + Math.cos(a) * r }); }
   };
-  rO = Math.min(rO, h * 0.9, (y1 - y0) * 0.45); rB = Math.min(rB, h * 0.9, (y1 - y0) * 0.45);
+  rO = Math.min(rO, h * 0.9, (y1 - y0) * 0.3); rB = Math.min(rB, h * 0.9, (y1 - y0) * 0.3);
+  // Optioneel een extra punt op de zijkant (scheiding dorpel/bumper en lak).
+  const split = ys === undefined ? null : clamp(ys, y0 + rO + 0.005, y1 - rB - 0.005);
   hoek(h - rO, y0 + rO, rO, -Math.PI / 2, 0);
+  if (split !== null) pts.push({ x, y: split, z: h });
   hoek(h - rB, y1 - rB, rB, 0, Math.PI / 2);
   hoek(-h + rB, y1 - rB, rB, Math.PI / 2, Math.PI);
+  if (split !== null) pts.push({ x, y: split, z: -h });
   hoek(-h + rO, y0 + rO, rO, Math.PI, Math.PI * 1.5);
   return pts;
 }
@@ -123,22 +126,97 @@ function cabineDoorsnede(x: number, wOnder: number, wBoven: number, y0: number, 
   return pts;
 }
 
-function wiel(mb: MeshBouwer, x: number, z: number, r: number, b: number, laag: boolean) {
-  const kant = Math.sign(z);
-  const zi = z - kant * b / 2, zu = z + kant * b / 2;
-  cilinder(mb, 'rubber', { x, y: r, z: zi }, { x, y: r, z: zu }, r, r, laag ? 8 : 16);
-  // Zijkant van de band en de velg.
-  const n = laag ? 8 : 16;
-  const schijf = (zz: number, rr: number, mat: string) => {
-    const c = { x, y: r, z: zz };
+export type VelgStijl = 'spaak5' | 'spaak10' | 'spaak6' | 'staal' | 'vracht';
+
+/**
+ * Wiel: band als omwentelingslichaam (bolle zijwand, afgerond loopvlak), verdiepte velg met
+ * spaken, naafdop, remschijf en remklauw erachter. x, z = midden van het wiel; de buitenkant
+ * wijst naar het teken van z.
+ */
+function wiel(mb: MeshBouwer, x: number, z: number, r: number, b: number, laag: boolean, stijl: VelgStijl = 'spaak5') {
+  const kant = Math.sign(z) || 1;
+  const N = laag ? 8 : 22;
+  const P = (rho: number, a: number, hoek: number): V3 => ({ x: x + Math.cos(hoek) * rho, y: r + Math.sin(hoek) * rho, z: z + kant * a });
+  // Bandprofiel (straal, axiale positie), van binnen naar buiten.
+  const prof: [number, number][] = laag
+    ? [[0.68 * r, -b / 2], [r, -b / 2], [r, b / 2], [0.68 * r, b / 2]]
+    : [[0.68 * r, -b / 2 + 0.01], [0.8 * r, -b / 2 - 0.006], [0.92 * r, -b / 2 + 0.004], [0.985 * r, -b / 2 + 0.03], [r, -b / 2 + 0.06], [r, b / 2 - 0.06], [0.985 * r, b / 2 - 0.03], [0.92 * r, b / 2 - 0.004], [0.8 * r, b / 2 + 0.006], [0.68 * r, b / 2 - 0.01]];
+  // Normaal per profielpunt (loodrecht op het profiel, naar buiten).
+  const pn = prof.map((_, i) => {
+    const a = prof[Math.max(0, i - 1)], c = prof[Math.min(prof.length - 1, i + 1)];
+    let dr = c[0] - a[0], da = c[1] - a[1];
+    const l = Math.hypot(dr, da) || 1; dr /= l; da /= l;
+    // Loodrecht: (da, -dr) wijst naar buiten (grotere straal) op het loopvlak.
+    return [da, -dr] as [number, number];
+  });
+  for (let i = 0; i < N; i++) {
+    const h0 = (i / N) * Math.PI * 2, h1 = ((i + 1) / N) * Math.PI * 2;
+    for (let j = 0; j < prof.length - 1; j++) {
+      const pts = [P(prof[j][0], prof[j][1], h0), P(prof[j][0], prof[j][1], h1), P(prof[j + 1][0], prof[j + 1][1], h1), P(prof[j + 1][0], prof[j + 1][1], h0)];
+      const nr = (k: number, h: number): V3 => ({ x: Math.cos(h) * pn[k][0], y: Math.sin(h) * pn[k][0], z: kant * pn[k][1] });
+      const nrm = [nr(j, h0), nr(j, h1), nr(j + 1, h1), nr(j + 1, h0)];
+      const m = { x: (pts[0].x + pts[2].x) / 2 - x, y: (pts[0].y + pts[2].y) / 2 - r, z: 0 };
+      const n0 = { x: nrm[0].x + nrm[2].x, y: nrm[0].y + nrm[2].y, z: nrm[0].z + nrm[2].z };
+      void m;
+      const cr = { x: (pts[1].y - pts[0].y) * (pts[2].z - pts[0].z) - (pts[1].z - pts[0].z) * (pts[2].y - pts[0].y), y: (pts[1].z - pts[0].z) * (pts[2].x - pts[0].x) - (pts[1].x - pts[0].x) * (pts[2].z - pts[0].z), z: (pts[1].x - pts[0].x) * (pts[2].y - pts[0].y) - (pts[1].y - pts[0].y) * (pts[2].x - pts[0].x) };
+      const goed = cr.x * n0.x + cr.y * n0.y + cr.z * n0.z >= 0;
+      mb.ruw('rubber', pts, nrm, [[0, 0], [1, 0], [1, 1], [0, 1]], goed ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2]);
+    }
+  }
+  // Vlakke ring/schijf op axiale positie a, tussen straal r0 en r1, met normaal naar buiten.
+  const ring = (mat: string, a: number, r0: number, r1: number, n = N) => {
+    const buiten = { x: 0, y: 0, z: kant };
     for (let i = 0; i < n; i++) {
-      const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2;
-      mb.driehoek(mat, c, { x: x + Math.cos(a0) * rr, y: r + Math.sin(a0) * rr, z: zz }, { x: x + Math.cos(a1) * rr, y: r + Math.sin(a1) * rr, z: zz }, [0, 0], [1, 0], [1, 1], { x: 0, y: 0, z: kant });
+      const h0 = (i / n) * Math.PI * 2, h1 = ((i + 1) / n) * Math.PI * 2;
+      if (r0 < 1e-4) mb.driehoek(mat, P(0, a, 0), P(r1, a, h0), P(r1, a, h1), [0, 0], [1, 0], [1, 1], buiten);
+      else mb.quad(mat, P(r0, a, h0), P(r1, a, h0), P(r1, a, h1), P(r0, a, h1), [0, 0], [1, 0], [1, 1], [0, 1], buiten);
     }
   };
-  schijf(zu, r, 'rubber');
-  schijf(zu + kant * 0.005, r * 0.66, 'velg');
-  if (!laag) { schijf(zu + kant * 0.01, r * 0.2, 'autotrim'); }
+  const voor = b / 2;
+  if (laag) { ring(stijl === 'staal' || stijl === 'vracht' ? 'velgDonker' : 'velg', voor - 0.02, 0, 0.68 * r, N); return; }
+  const velgMat = stijl === 'staal' ? 'velgDonker' : 'velg';
+  // Velgrand (lip) en verdiepte bedding.
+  ring(velgMat, voor - 0.012, 0.6 * r, 0.69 * r);
+  const bed = (a0: number, a1: number, rr: number) => {
+    for (let i = 0; i < N; i++) {
+      const h0 = (i / N) * Math.PI * 2, h1 = ((i + 1) / N) * Math.PI * 2;
+      const n0 = { x: -Math.cos(h0), y: -Math.sin(h0), z: 0 };
+      mb.quad(velgMat, P(rr, a0, h0), P(rr, a1, h0), P(rr, a1, h1), P(rr, a0, h1), [0, 0], [1, 0], [1, 1], [0, 1], n0);
+    }
+  };
+  bed(voor - 0.012, voor - 0.09, 0.6 * r);
+  // Achter de spaken: donker, met remschijf en klauw.
+  ring('wielkast', voor - 0.1, 0, 0.6 * r);
+  ring('remschijf', voor - 0.085, 0.16 * r, 0.5 * r);
+  const klauwH = Math.PI * 0.8;
+  const kc = P(0.47 * r, voor - 0.07, klauwH);
+  mb.blok(stijl === 'spaak10' ? 'remklauw' : 'autotrim', stijl === 'spaak10' ? 'remklauw' : 'autotrim', { x: kc.x, y: 0, z: kc.z }, { x: -Math.sin(klauwH), y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, 0.12 * r * 2, 0.05, kc.y - 0.07, kc.y + 0.07, true);
+  // Spaken.
+  const spaken = stijl === 'spaak10' ? 10 : stijl === 'spaak6' ? 6 : stijl === 'staal' || stijl === 'vracht' ? 0 : 5;
+  const breedte = stijl === 'spaak10' ? 0.06 * r : 0.13 * r;
+  for (let i = 0; i < spaken; i++) {
+    const h = (i / spaken) * Math.PI * 2 + (stijl === 'spaak10' ? (i % 2) * 0.12 : 0) + 0.3;
+    const t = { x: -Math.sin(h), y: Math.cos(h) }; // dwars op de spaak
+    const pt = (rho: number, w: number, a: number): V3 => { const p = P(rho, a, h); return { x: p.x + t.x * w, y: p.y + t.y * w, z: p.z }; };
+    const a0 = voor - 0.01, a1 = voor - 0.075;
+    const binnen = 0.17 * r, buiten = 0.6 * r, wB = breedte * 0.75, wU = breedte * 0.5;
+    // Voorkant (licht gebogen: midden iets naar voren) en zijkanten.
+    mb.quad(velgMat, pt(binnen, -wB, a0), pt(buiten, -wU, a0 - 0.015), pt(buiten, wU, a0 - 0.015), pt(binnen, wB, a0), [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: kant });
+    for (const sg of [-1, 1]) mb.quad(velgMat, pt(binnen, sg * wB, a0), pt(buiten, sg * wU, a0 - 0.015), pt(buiten, sg * wU, a1), pt(binnen, sg * wB, a1), [0, 0], [1, 0], [1, 1], [0, 1], { x: t.x * sg, y: t.y * sg, z: 0 });
+  }
+  if (stijl === 'staal' || stijl === 'vracht') {
+    // Stalen velg: gesloten schijf met ventilatiegaten (donker) en een grote naaf.
+    ring(velgMat, voor - 0.04, 0.16 * r, 0.6 * r);
+    for (let i = 0; i < 8; i++) {
+      const h = (i / 8) * Math.PI * 2;
+      const c = P(0.42 * r, voor - 0.038, h);
+      const g = 0.05 * r;
+      mb.quad('wielkast', { x: c.x - g, y: c.y - g, z: c.z }, { x: c.x + g, y: c.y - g, z: c.z }, { x: c.x + g, y: c.y + g, z: c.z }, { x: c.x - g, y: c.y + g, z: c.z }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: kant });
+    }
+  }
+  // Naaf met naafdop.
+  ring(velgMat, voor - 0.006, 0, 0.17 * r, 12);
+  ring('autotrim', voor - 0.004, 0, 0.06 * r, 10);
 }
 
 /** Kastje (lampen, platen, spiegels). */
@@ -151,16 +229,52 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
   const mb = new MeshBouwer();
   const nU = laag ? 7 : 22, k = laag ? 1 : 3;
   const xVan = (u: number) => (u - 0.5) * v.L;
-  // Onderbak.
+  // Wielen en wielkasten.
+  const off = soort === 'bestelbus' ? 0.25 : 0.1;
+  const wielX = [-v.wb / 2 + off, v.wb / 2 + off];
+  const boogR = v.r + 0.06;
+  /** Onderkant van de carrosserie: boven elk wiel uitgespaard als een boog. */
+  const onderkant = (x: number) => {
+    let y = v.bodem;
+    for (const xw of wielX) {
+      const d = Math.abs(x - xw);
+      if (d < boogR) y = Math.max(y, v.r + Math.sqrt(boogR * boogR - d * d) * 0.98);
+      else if (d < boogR + 0.04) y = Math.max(y, lerp(v.r, v.bodem, (d - boogR) / 0.04));
+    }
+    return y;
+  };
+  // Onderbak: dwarsdoorsneden dicht bij de uiteinden en rond de wielkasten.
   const us: number[] = [];
-  for (let i = 0; i <= nU; i++) us.push(0.5 - 0.5 * Math.cos(i / nU * Math.PI)); // dichter bij de uiteinden
-  const ringen = us.map(u => doorsnede(xVan(u), Math.max(0.05, plan(v, u)), v.bodem, onderTop(v, u), 0.12, laag ? 0.1 : 0.16, k));
-  const as = us.map(u => ({ x: xVan(u), y: (v.bodem + onderTop(v, u)) / 2, z: 0 }));
-  loft(mb, ringen, as, () => 'autolak');
+  for (let i = 0; i <= nU; i++) us.push(0.5 - 0.5 * Math.cos(i / nU * Math.PI));
+  if (!laag) for (const xw of wielX) for (let i = 0; i <= 14; i++) {
+    const x = xw + (i / 14 * 2 - 1) * (boogR + 0.03);
+    us.push(x / v.L + 0.5);
+  }
+  us.sort((a, b) => a - b);
+  const uniek = us.filter((u, i) => i === 0 || u - us[i - 1] > 0.002);
+  const bumper = (u: number) => u < 0.07 || u > 0.93;
+  const ringen = uniek.map(u => {
+    const x = xVan(u), y0 = laag ? v.bodem : onderkant(x);
+    return doorsnede(x, Math.max(0.05, plan(v, u)), y0, onderTop(v, u), 0.1, laag ? 0.1 : 0.16, k, laag ? undefined : (bumper(u) ? v.bodem + 0.24 : y0 > v.bodem + 0.01 ? y0 + 0.02 : v.bodem + 0.14));
+  });
+  const as = uniek.map(u => ({ x: xVan(u), y: (v.bodem + onderTop(v, u)) / 2, z: 0 }));
+  // Ringindeling: boog rechtsonder (0..k), splitspunt (k+1), ..., splitspunt links (3k+4), boog linksonder.
+  loft(mb, ringen, as, (_i, j) => laag ? 'autolak' : (j <= k || j >= 3 * k + 4 ? 'autotrim' : 'autolak'));
   // Kopse kanten dicht (achter en voor).
   for (const [i, uit] of [[0, -1], [ringen.length - 1, 1]] as const) {
     const r = ringen[i], c = as[i];
-    for (let j = 0; j < r.length; j++) { const a = r[j], b = r[(j + 1) % r.length]; mb.driehoek('autolak', c, a, b, [0, 0], [1, 0], [1, 1], { x: uit, y: 0, z: 0 }); }
+    for (let j = 0; j < r.length; j++) { const a = r[j], b = r[(j + 1) % r.length]; mb.driehoek(laag ? 'autolak' : 'autotrim', c, a, b, [0, 0], [1, 0], [1, 1], { x: uit, y: 0, z: 0 }); }
+  }
+  // Wielkastvoering: donkere halve cilinder in de uitsparing.
+  if (!laag) for (const xw of wielX) for (const s of [-1, 1]) {
+    const zb = plan(v, xw / v.L + 0.5) / 2;
+    const n = 12;
+    for (let i = 0; i < n; i++) {
+      const a0 = Math.PI * i / n, a1 = Math.PI * (i + 1) / n;
+      const p = (a: number, z: number) => ({ x: xw + Math.cos(a) * boogR * 0.98, y: v.r + Math.sin(a) * boogR * 0.98, z });
+      const m = (a0 + a1) / 2;
+      mb.quad('wielkast', p(a0, s * (zb - 0.01)), p(a1, s * (zb - 0.01)), p(a1, s * (zb - 0.42)), p(a0, s * (zb - 0.42)), [0, 0], [1, 0], [1, 1], [0, 1], { x: -Math.cos(m), y: -Math.sin(m), z: 0 });
+    }
   }
   // Cabine: van c0 tot c3, met glas in de zijkant (behalve de B-stijl), voorruit en achterruit.
   const cu: number[] = [];
@@ -195,8 +309,9 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
     mb.driehoek('autolak', c, r[r.length - 1], r[0], [0, 0], [1, 0], [1, 1], { x: uit, y: 0, z: 0 });
   }
   // Wielen.
-  const zW = v.W / 2 - 0.13;
-  for (const x of [-v.wb / 2, v.wb / 2]) for (const z of [-zW, zW]) wiel(mb, x + (soort === 'bestelbus' ? 0.25 : 0.1), z, v.r, 0.22, laag);
+  const zW = v.W / 2 - 0.135;
+  const stijl: VelgStijl = soort === 'bestelbus' ? 'staal' : soort === 'suv' ? 'spaak6' : soort === 'sedan' ? 'spaak10' : 'spaak5';
+  for (const x of wielX) for (const z of [-zW, zW]) wiel(mb, x, z, v.r, soort === 'suv' ? 0.24 : 0.22, laag, stijl);
   if (laag) return mb.bouw();
   // Lampen, grille, platen, spiegels: vlak op de carrosserie (steken een centimeter uit).
   const xV = v.L / 2, xA = -v.L / 2;
@@ -220,15 +335,6 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
     const xm = xVan(v.c3) - 0.12, zb = zijZ(xm) - 0.03;
     kastje(mb, 'autolak', { x: xm, y: v.gordel + 0.13, z: s * (zb + 0.12) }, 0.1, 0.13, 0.17);
     kastje(mb, 'autotrim', { x: xm + 0.01, y: v.gordel + 0.06, z: s * (zb + 0.04) }, 0.06, 0.04, 0.1);
-    // Wielkasten: donkere boog op de zijkant boven elk wiel.
-    for (const xw of [-v.wb / 2 + (soort === 'bestelbus' ? 0.25 : 0.1), v.wb / 2 + (soort === 'bestelbus' ? 0.25 : 0.1)]) {
-      const n = 10, R0 = v.r + 0.02, R1 = v.r + 0.09;
-      for (let i = 0; i < n; i++) {
-        const a0 = Math.PI * i / n, a1 = Math.PI * (i + 1) / n;
-        const p = (a: number, R: number) => { const x = xw + Math.cos(a) * R; const z = s * (zijZ(x) + 0.006); return { x, y: v.r + Math.sin(a) * R, z }; };
-        mb.quad('autotrim', p(a0, R0), p(a1, R0), p(a1, R1), p(a0, R1), [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
-      }
-    }
     // Deurnaden en deurgrepen.
     const deuren = soort === 'bestelbus' ? [xVan(v.zijglasTot ?? 0.6)] : [xVan(v.c3) + 0.02, xVan((v.c1 + v.c2) / 2 + 0.03), ...(soort === 'hatchback' ? [] : [xVan(v.c1) + 0.08])];
     for (const xd of deuren) {
@@ -241,8 +347,18 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
   kastje(mb, 'autotrim', { x: voorX(0) - 0.035, y: hL - 0.16, z: 0 }, 0.06, 0.2, v.W * 0.4);
   kastje(mb, 'kenteken', { x: voorX(0) - 0.012, y: v.bodem + 0.24, z: 0 }, 0.03, 0.11, 0.52);
   kastje(mb, 'kenteken', { x: achterX(0) + 0.012, y: soort === 'bestelbus' ? 0.55 : v.bodem + 0.4, z: 0 }, 0.03, 0.11, 0.52);
-  kastje(mb, 'autotrim', { x: xV - 0.1, y: v.bodem + 0.07, z: 0 }, 0.2, 0.1, v.W * 0.82);
-  kastje(mb, 'autotrim', { x: xA + 0.1, y: v.bodem + 0.07, z: 0 }, 0.2, 0.1, v.W * 0.82);
+  // Chromen lijst langs de onderkant van de zijruiten.
+  for (const s of [-1, 1]) {
+    const n = 10;
+    for (let i = 0; i < n; i++) {
+      const u0 = lerp(v.c0 + 0.03, v.c3 - 0.03, i / n), u1 = lerp(v.c0 + 0.03, v.c3 - 0.03, (i + 1) / n);
+      if (v.zijglasTot !== undefined && u1 < v.zijglasTot) continue;
+      const z0 = s * ((plan(v, u0) - 0.02) * 0.97 / 2 + 0.004), z1 = s * ((plan(v, u1) - 0.02) * 0.97 / 2 + 0.004);
+      const y0 = onderTop(v, u0), y1 = onderTop(v, u1);
+      mb.quad('chroom', { x: xVan(u0), y: y0 - 0.005, z: z0 }, { x: xVan(u1), y: y1 - 0.005, z: z1 }, { x: xVan(u1), y: y1 + 0.02, z: z1 }, { x: xVan(u0), y: y0 + 0.02, z: z0 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+    }
+  }
+  void xV; void xA;
   return mb.bouw();
 }
 
@@ -272,7 +388,7 @@ function vrachtwagen(laag: boolean): MeshData {
   const bakL = L - cabL - 0.25;
   mb.blok('laadbak', 'laadbak', { x: -L / 2 + bakL / 2, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, bakL, W, 1.05, 3.75, true);
   mb.blok('autotrim', 'autotrim', { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, L - 0.4, 1.0, 0.55, 1.05, true);
-  for (const x of [L / 2 - 1.3, -L / 2 + 2.4, -L / 2 + 1.1]) for (const z of [-1.0, 1.0]) wiel(mb, x, z, 0.5, 0.32, laag);
+  for (const x of [L / 2 - 1.3, -L / 2 + 2.4, -L / 2 + 1.1]) for (const z of [-1.0, 1.0]) wiel(mb, x, z, 0.5, 0.32, laag, 'vracht');
   if (!laag) {
     for (const s of [-1, 1]) {
       kastje(mb, 'koplamp', { x: L / 2 + 0.01, y: 0.85, z: s * 0.95 }, 0.06, 0.18, 0.35);
@@ -309,7 +425,7 @@ function bus(laag: boolean): MeshData {
   }
   const xf = L / 2 + 0.01;
   mb.quad('autoglas', { x: xf, y: 1.1, z: -1.15 }, { x: xf, y: 1.1, z: 1.15 }, { x: xf, y: 2.85, z: 1.15 }, { x: xf, y: 2.85, z: -1.15 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0, z: 0 });
-  for (const x of [L / 2 - 2.6, -L / 2 + 3.2]) for (const z of [-1.0, 1.0]) wiel(mb, x, z, 0.48, 0.3, laag);
+  for (const x of [L / 2 - 2.6, -L / 2 + 3.2]) for (const z of [-1.0, 1.0]) wiel(mb, x, z, 0.48, 0.3, laag, 'vracht');
   if (!laag) for (const s of [-1, 1]) { kastje(mb, 'koplamp', { x: L / 2 + 0.01, y: 0.75, z: s * 0.95 }, 0.05, 0.15, 0.35); kastje(mb, 'achterlicht', { x: -L / 2 - 0.01, y: 0.95, z: s * 1.05 }, 0.05, 0.4, 0.2); }
   return mb.bouw();
 }

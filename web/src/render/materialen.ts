@@ -11,7 +11,10 @@ export class Materialen {
     let m = this.cache.get(sleutel);
     if (m) return m;
     const d = materiaal(sleutel);
-    m = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...d.kleur, THREE.SRGBColorSpace), roughness: d.ruwheid, metalness: d.metaal });
+    m = sleutel === 'autolak'
+      // Autolak: metallic basislaag met een blanke laklaag erover.
+      ? new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setRGB(...d.kleur, THREE.SRGBColorSpace), roughness: d.ruwheid, metalness: d.metaal, clearcoat: 1, clearcoatRoughness: 0.06 })
+      : new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...d.kleur, THREE.SRGBColorSpace), roughness: d.ruwheid, metalness: d.metaal });
     m.name = sleutel;
     if (d.dubbelzijdig) m.side = THREE.DoubleSide;
     if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; m.alphaToCoverage = true; }
