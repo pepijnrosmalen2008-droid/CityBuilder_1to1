@@ -6,7 +6,7 @@ import { Bomen } from './bomen';
 import { Rng } from './rng';
 import { Capaciteit, Functie, GebouwVorm, Zone, berekenCapaciteit, verdiepingHoogte, KENGETALLEN } from './zones';
 import { Strook, maakStrook, band, opStrook, verdeel, stroomSleutel, STROOK_DIEPTE } from './percelen';
-import { afstandTotLijn, getekendOppervlak, zwaartepunt } from './poly';
+import { afstandTotLijn, getekendOppervlak, knipHalfvlak, zwaartepunt } from './poly';
 import { puntInPolygoon } from './math';
 import { Namen, stadsnaam } from './namen';
 import { Economie, Grondstof } from './economie';
@@ -39,6 +39,8 @@ export interface Gebouw {
   ankers: Anker[]; grenzen: Anker[];
   /** Hele perceel (voor tuin en bestrating). */
   perceel: V2[];
+  /** Hoekpand: rooilijnen langs de zijstraat (punt op de gevel, normaal van de straat af). */
+  zijStraat?: { o: V2; n: V2 }[];
   centrum: V2; voor: V2; breedte: number;
   y: number; yGrond: number;
   lagen: Laag[]; eenheden: number; seed: number;
@@ -295,7 +297,9 @@ export class Wereld {
           }
           continue;
         }
-        for (const [p0, p1] of verdeel(a, b)) this.nieuweKavel(st, p0, p1);
+        // Op de sprong in diepte (achter een hoekpand) een kavelgrens leggen.
+        const knip = [a, ...st.sprongen.filter(x => x > a + 4 && x < b - 4).sort((x, y) => x - y), b];
+        for (let i = 0; i < knip.length - 1; i++) for (const [p0, p1] of verdeel(knip[i], knip[i + 1])) this.nieuweKavel(st, p0, p1);
       }
     }
   }
@@ -372,7 +376,11 @@ export class Wereld {
     const mid = opStrook(st, (s0 + s1) / 2);
     diepte = Math.min(diepte, mid.d - terug - 1.5);
     if (diepte < 6) return null;
-    const voet = band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte, d - 1));
+    // Hoekpand: ook afstand houden tot de zijstraat.
+    const terugZij = vorm === 'winkelsMetWonen' ? 0.2 : Math.max(1.5, terug * 0.6);
+    const zijStraat = st.knippen.filter(kn => kn.straat).map(kn => ({ o: { x: kn.o.x + kn.n.x * terugZij, z: kn.o.z + kn.n.z * terugZij }, n: kn.n }));
+    const opZij = (poly: V2[]) => { for (const z of zijStraat) poly = poly.length >= 3 ? knipHalfvlak(poly, z.o, z.n) : poly; return poly; };
+    const voet = opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte, d - 1)));
     if (voet.length < 3 || Math.abs(getekendOppervlak(voet)) < 30) return null;
     const ls: Laag[] = [];
     for (let i = 0; i < lagen; i++) {
@@ -385,8 +393,8 @@ export class Wereld {
     const voorLijn: V2[] = [];
     for (let s = s0 - 6; s <= s1 + 6.01; s += Math.min(2, (lengte + 12) / 4)) voorLijn.push(opStrook(st, s).p);
     const dak = vorm === 'rijwoningen' ? {
-      voor: band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte / 2, d - 1)),
-      achter: band(st, s0, s1, terug + diepte / 2, (d: number) => Math.min(terug + diepte, d - 1)),
+      voor: opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte / 2, d - 1))),
+      achter: opZij(band(st, s0, s1, terug + diepte / 2, (d: number) => Math.min(terug + diepte, d - 1))),
     } : undefined;
     const ankers: Anker[] = [], grenzen: Anker[] = [];
     for (let i = 0; i < eenheden; i++) {
@@ -401,6 +409,7 @@ export class Wereld {
     return {
       id: this.volgende++, kavel: k.id, kavels: reeks.map(x => x.id), zone, vorm,
       voet, voorLijn, terug, diepte, dak, ankers, grenzen, perceel,
+      zijStraat: zijStraat.filter(z => voet.some(p => Math.abs((p.x - z.o.x) * z.n.x + (p.z - z.o.z) * z.n.z) < 0.3)),
       centrum: zwaartepunt(voet), voor: { x: -mid.n.x, z: -mid.n.z }, breedte: lengte,
       y: y + 0.15, yGrond, lagen: ls, eenheden, seed: Math.floor(r.next() * 2 ** 31),
       voortgang: 0, klaar: false, bezetting: 0,

@@ -2,7 +2,7 @@ import { V2, dist2, norm2, lerp, saturate } from './math';
 import { Wegennet, Segment } from './wegen/netwerk';
 import { halveBreedte, WEGTYPEN } from './wegen/typen';
 import { Terrein, ZEENIVEAU } from './terrain';
-import { knipHalfvlak, opschonen } from './poly';
+import { knipHalfvlak, opschonen, zonderPieken } from './poly';
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // GEVELSTROKEN
@@ -23,11 +23,27 @@ export interface Strook {
   voor: V2[]; s: number[];
   /** Richting naar binnen (weg van de straat) en de diepte per punt. */
   binnen: V2[]; diepte: number[];
-  /** Halfvlakken van de afsnijdingen bij de knopen: punt o, normaal n (houd dot(p-o,n) >= 0). */
-  knippen: { o: V2; n: V2 }[];
+  /**
+   * Halfvlakken van de afsnijdingen bij de knopen: punt o, normaal n (houd dot(p-o,n) >= 0).
+   * `straat`: de lijn is de stoeprand van een zijstraat (hoekpand), gebouwen houden daar afstand.
+   */
+  knippen: Knip[];
   /** Bruikbaar bereik langs de gevellijn. */
   s0: number; s1: number;
+  /** Hoekpanden: ondiep deel bij de zijstraat (afstand vanaf de knip-lijn). */
+  hoeken: { o: V2; n: V2; langs: number; diep: number }[];
+  /** Booglengtes waar de diepte verspringt (extra punt in de band, zodat de sprong haaks is). */
+  sprongen: number[];
 }
+
+export interface Knip {
+  o: V2; n: V2; straat?: boolean;
+  /** Hoekpand: binnen `langs` meter van de zijstraat is de strook maximaal `diep` diep. */
+  hoek?: { langs: number; diep: number };
+}
+
+/** Hoe diep een hoekperceel langs de zijstraat doorloopt. */
+const HOEK_DIEPTE = 24;
 
 const EXTRA = 40; // hoe ver de strook voorbij de knoop doorloopt voordat hij wordt afgesneden
 
@@ -38,7 +54,7 @@ function wegVan(seg: Segment, k: number): V2 {
 }
 
 /** Afsnijding bij knoop k voor de strook aan `zijde` van segment seg. */
-function knip(net: Wegennet, seg: Segment, k: number, zijde: 1 | -1): { o: V2; n: V2 } {
+function knip(net: Wegennet, terrein: Terrein, seg: Segment, k: number, zijde: 1 | -1): Knip[] {
   const knoop = net.knopen.get(k)!;
   const a = wegVan(seg, k);
   // Ligt de strook rechts van de richting weg-van-de-knoop?
@@ -75,10 +91,31 @@ function knip(net: Wegennet, seg: Segment, k: number, zijde: 1 | -1): { o: V2; n
         const t = ((pb.x - pa.x) * best.z - (pb.z - pa.z) * best.x) / den;
         if (Math.abs(t) < 60) o = { x: pa.x + a.x * t, z: pa.z + a.z * t };
       }
-      return { o, n };
+      // Echte hoek (40°-140°): één van de twee straten krijgt het hele hoekperceel (hoekpand),
+      // de andere strook begint pas achter dat perceel. Zo geen driehoekige gebouwen in verstek.
+      const graden = bh * 180 / Math.PI;
+      if (graden > 40 && graden < 140) {
+        const ikErf = WEGTYPEN[seg.type].erf, hijErf = WEGTYPEN[bseg.type].erf;
+        const eigenaar = !hijErf || (ikErf && (hA > hB + 0.2 || (Math.abs(hA - hB) <= 0.2 && seg.id < bseg.id)));
+        // Diepte van de strook van de eigenaar bij de hoek (vanaf 4 m van de stoeprand gemeten).
+        const ownSeg = eigenaar ? seg : bseg, ownDir = eigenaar ? a : best, ownIn = eigenaar ? ra : rb;
+        const dE = dieptebij(net, terrein, ownSeg, { x: o.x + ownDir.x * 4, z: o.z + ownDir.z * 4 }, ownIn);
+        const claim = Math.min(HOEK_DIEPTE, dE);
+        if (eigenaar) {
+          // Diepte van de zijstraatstrook: zover reikt het ondiepe hoekdeel langs onze gevel.
+          const dN = dieptebij(net, terrein, bseg, { x: o.x + best.x * (claim + 4), z: o.z + best.z * (claim + 4) }, rb);
+          const r: Knip[] = [{ o: pb, n: rb, straat: true, hoek: { langs: dN + 0.5, diep: claim } }];
+          // Scherpe hoek: de punt afschuinen.
+          if (graden < 72) r.push({ o: { x: o.x + m.x * 5, z: o.z + m.z * 5 }, n: m });
+          return r;
+        }
+        // Zijstraat: beginnen achter het hoekperceel.
+        return [{ o: { x: pb.x + rb.x * claim, z: pb.z + rb.z * claim }, n: rb }];
+      }
+      return [{ o, n }];
     }
   }
-  return { o: { ...knoop.p }, n: a };
+  return [{ o: { ...knoop.p }, n: a }];
 }
 
 /** Bouw de strook voor één kant van een segment. */
@@ -101,15 +138,7 @@ export function maakStrook(net: Wegennet, terrein: Terrein, seg: Segment, zijde:
   }
   for (const t of [EXTRA / 2, EXTRA]) { const e = extra(P1, t); voor.push(e.v); binnen.push(e.n); s.push(seg.lengte + t); }
 
-  const knippen = [knip(net, seg, seg.a, zijde), knip(net, seg, seg.b, zijde)];
-
-  // Diepte per punt: tot de helft van de afstand tot een andere weg, of tot het water.
-  const diepte = voor.map((v, i) => dieptebij(net, terrein, seg, v, binnen[i]));
-  // Glad trekken (minimumfilter + middelen) zodat de achterkant geen zaagtand wordt.
-  const gl = diepte.map((_, i) => Math.min(...diepte.slice(Math.max(0, i - 2), i + 3)));
-  for (let i = 0; i < gl.length; i++) diepte[i] = (gl[Math.max(0, i - 1)] + gl[i] * 2 + gl[Math.min(gl.length - 1, i + 1)]) / 4;
-  // Op bruggen geen bouwgrond.
-  for (let i = 0; i < pad.length; i++) if (pad[i].brug) diepte[i + 2] = 0;
+  const knippen = [...knip(net, terrein, seg, seg.a, zijde), ...knip(net, terrein, seg, seg.b, zijde)];
 
   // Bruikbaar bereik: waar de gevellijn binnen beide afsnijdingen ligt.
   const binnenKnip = (p: V2) => knippen.every(k => (p.x - k.o.x) * k.n.x + (p.z - k.o.z) * k.n.z >= 0);
@@ -123,7 +152,59 @@ export function maakStrook(net: Wegennet, terrein: Terrein, seg: Segment, zijde:
     }
   }
   if (!(s1 - s0 > 4)) return null;
-  return { seg: seg.id, zijde, voor, s, binnen, diepte, knippen, s0, s1 };
+
+  // Diepte per punt: tot de helft van de afstand tot een andere weg, of tot het water.
+  // Vlak bij de hoeken loopt de straal langs de stoeprand van de dwarsweg en vindt die meteen;
+  // daar (en op de verlengstukken) geldt de diepte van een punt een paar meter verder de strook in.
+  const RAND = 4;
+  const op = (ss: number) => {
+    let i = 0; while (i < s.length - 2 && s[i + 1] < ss) i++;
+    const f = saturate((ss - s[i]) / Math.max(1e-6, s[i + 1] - s[i]));
+    return { v: { x: lerp(voor[i].x, voor[i + 1].x, f), z: lerp(voor[i].z, voor[i + 1].z, f) }, n: norm2({ x: lerp(binnen[i].x, binnen[i + 1].x, f), z: lerp(binnen[i].z, binnen[i + 1].z, f) }) };
+  };
+  const lang = s1 - s0 > RAND * 3;
+  const qa = op(lang ? s0 + RAND : (s0 + s1) / 2), qb = op(lang ? s1 - RAND : (s0 + s1) / 2);
+  const dA = dieptebij(net, terrein, seg, qa.v, qa.n), dB = dieptebij(net, terrein, seg, qb.v, qb.n);
+  const diepte = voor.map((v, i) => s[i] < s0 + RAND ? dA : s[i] > s1 - RAND ? dB : dieptebij(net, terrein, seg, v, binnen[i]));
+  // Glad trekken (minimumfilter + middelen) zodat de achterkant geen zaagtand wordt.
+  const gl = diepte.map((_, i) => Math.min(...diepte.slice(Math.max(0, i - 2), i + 3)));
+  for (let i = 0; i < gl.length; i++) diepte[i] = (gl[Math.max(0, i - 1)] + gl[i] * 2 + gl[Math.min(gl.length - 1, i + 1)]) / 4;
+  // Op bruggen en in tunnels geen bouwgrond.
+  for (let i = 0; i < pad.length; i++) if (pad[i].brug || pad[i].tunnel) diepte[i + 2] = 0;
+
+  if (!(s1 - s0 > 4)) return null;
+  // Hoekpand: vlak bij de zijstraat ondieper, daarachter liggen de tuinen van de zijstraat.
+  // Ook hoeken van doorlopende wegstukken (via knopen van graad 2) tellen mee.
+  const hoekKnippen = [...knippen];
+  for (const eind of [seg.a, seg.b]) {
+    let vorige = seg, k = eind, z = zijde, afstand = 0;
+    for (let stap = 0; stap < 4; stap++) {
+      const K = net.knopen.get(k);
+      if (!K || K.segs.length !== 2) break;
+      const c = net.segmenten.get(K.segs[0] === vorige.id ? K.segs[1] : K.segs[0]);
+      if (!c || !c.pad.length || c.type !== vorige.type) break;
+      // Zelfde kant van de weg op het volgende stuk.
+      const pv = vorige.a === k ? vorige.pad[0] : vorige.pad[vorige.pad.length - 1];
+      const pc = c.a === k ? c.pad[0] : c.pad[c.pad.length - 1];
+      const nv = { x: -pv.dz * z, z: pv.dx * z };
+      const zc: 1 | -1 = (-pc.dz * nv.x + pc.dx * nv.z) > 0 ? 1 : -1;
+      const ver = c.a === k ? c.b : c.a;
+      for (const kn of knip(net, terrein, c, ver, zc)) if (kn.hoek) hoekKnippen.push(kn);
+      afstand += c.lengte;
+      if (afstand > 60) break;
+      vorige = c; k = ver; z = zc;
+    }
+  }
+  const hoeken = hoekKnippen.filter(k => k.hoek).map(k => ({ o: k.o, n: k.n, langs: k.hoek!.langs, diep: k.hoek!.diep }));
+  const sprongen: number[] = [];
+  for (const h of hoeken) {
+    const af = (i: number) => (voor[i].x - h.o.x) * h.n.x + (voor[i].z - h.o.z) * h.n.z - h.langs;
+    for (let i = 0; i < voor.length - 1; i++) {
+      const fa = af(i), fb = af(i + 1);
+      if ((fa < 0) !== (fb < 0)) sprongen.push(lerp(s[i], s[i + 1], fa / (fa - fb)));
+    }
+  }
+  return { seg: seg.id, zijde, voor, s, binnen, diepte, knippen, s0, s1, hoeken, sprongen };
 }
 
 function dieptebij(net: Wegennet, terrein: Terrein, eigen: Segment, v: V2, n: V2): number {
@@ -167,7 +248,9 @@ export function opStrook(st: Strook, s: number): { p: V2; n: V2; d: number; t: V
   const p = { x: lerp(st.voor[i].x, st.voor[i + 1].x, f), z: lerp(st.voor[i].z, st.voor[i + 1].z, f) };
   const n = norm2({ x: lerp(st.binnen[i].x, st.binnen[i + 1].x, f), z: lerp(st.binnen[i].z, st.binnen[i + 1].z, f) });
   const t = norm2({ x: st.voor[i + 1].x - st.voor[i].x, z: st.voor[i + 1].z - st.voor[i].z });
-  return { p, n, d: lerp(st.diepte[i], st.diepte[i + 1], f), t };
+  let d = lerp(st.diepte[i], st.diepte[i + 1], f);
+  for (const h of st.hoeken) if ((p.x - h.o.x) * h.n.x + (p.z - h.o.z) * h.n.z < h.langs) d = Math.min(d, h.diep);
+  return { p, n, d, t };
 }
 
 /**
@@ -180,7 +263,9 @@ export function band(st: Strook, s0: number, s1: number, a: number, b: number | 
   const sa = s0 - (zijGrens ? ext : 0), sb = s1 + (zijGrens ? ext : 0);
   const rijen: number[] = [sa];
   for (const s of st.s) if (s > sa && s < sb) rijen.push(s);
+  for (const s of st.sprongen) for (const e of [-0.02, 0.02]) if (s + e > sa && s + e < sb) rijen.push(s + e);
   rijen.push(sb);
+  rijen.sort((x, y) => x - y);
   // Fijner bemonsteren voor gladde bochten.
   const fijn: number[] = [];
   for (let i = 0; i < rijen.length; i++) {
@@ -194,10 +279,13 @@ export function band(st: Strook, s0: number, s1: number, a: number, b: number | 
   for (const s of fijn) {
     const q = opStrook(st, s);
     const bb = typeof b === 'number' ? Math.min(b, q.d) : b(q.d);
-    const aa = Math.min(a, bb);
+    // Te ondiep voor deze band (bv. op een brug): punt overslaan in plaats van een piek te maken.
+    if (bb < a + 0.4) continue;
+    const aa = a;
     voorkant.push({ x: q.p.x + q.n.x * aa, z: q.p.z + q.n.z * aa });
     achterkant.push({ x: q.p.x + q.n.x * bb, z: q.p.z + q.n.z * bb });
   }
+  if (voorkant.length < 2) return [];
   let poly = opschonen([...voorkant, ...achterkant.reverse()]);
   if (zijGrens) {
     const A = opStrook(st, s0), B = opStrook(st, s1);
@@ -205,7 +293,7 @@ export function band(st: Strook, s0: number, s1: number, a: number, b: number | 
     poly = knipHalfvlak(poly, B.p, { x: -B.t.x, z: -B.t.z });
   }
   for (const k of st.knippen) poly = knipHalfvlak(poly, k.o, k.n);
-  return poly;
+  return poly.length >= 3 ? zonderPieken(poly) : [];
 }
 
 /** Deel het bruikbare bereik op in percelen van ongeveer PERCEEL_BREEDTE. */

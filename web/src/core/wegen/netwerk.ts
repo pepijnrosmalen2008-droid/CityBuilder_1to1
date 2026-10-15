@@ -2,10 +2,11 @@ import { V2, bezier2, dist2, lerp2, norm2, sub2, snijLijnstukken, puntTotLijnstu
 import { Terrein, ZEENIVEAU } from '../terrain';
 import { WegTypeId, halveBreedte, randen, WEGTYPEN, HOEKSTRAAL, totaleBreedte } from './typen';
 
-export interface Knoop { id: number; p: V2; y: number; segs: number[] }
+/** Knoop; `niveau` = hoogte boven (of onder, negatief) het maaiveld in meters. */
+export interface Knoop { id: number; p: V2; y: number; niveau: number; segs: number[] }
 
 /** Eén bemonsterd punt op de as van een segment. */
-export interface PadPunt { x: number; y: number; z: number; dx: number; dz: number; s: number; brug: boolean }
+export interface PadPunt { x: number; y: number; z: number; dx: number; dz: number; s: number; brug: boolean; tunnel: boolean }
 
 export interface Segment {
   id: number;
@@ -91,12 +92,21 @@ export class Wegennet {
     }
     const n = m.length - 1;
     const y0 = gl[0], y1 = gl[n];
+    const verhoogd = A.niveau !== 0 || B.niveau !== 0;
     seg.pad = m.map((q, i) => {
       const u = n ? i / n : 0;
-      const y = gl[i] + (A.y - y0) * (1 - u) + (B.y - y1) * u;
+      // Op maaiveld: het gladgestreken terrein volgen. Verhoogd/verdiept: rechte helling tussen de knopen.
+      const y = verhoogd ? lerp(A.y, B.y, u) : gl[i] + (A.y - y0) * (1 - u) + (B.y - y1) * u;
       const grond = t.hoogte(q.p.x, q.p.z);
-      return { x: q.p.x, y, z: q.p.z, dx: q.d.x, dz: q.d.z, s: q.s, brug: grond < y - 2.2 };
+      return { x: q.p.x, y, z: q.p.z, dx: q.d.x, dz: q.d.z, s: q.s, brug: grond < y - 2.2, tunnel: verhoogd && grond > y + 4.5 };
     });
+    // Tunnelstukjes van één monster wegpoetsen.
+    for (let i = 0; i < seg.pad.length; i++) {
+      if (!seg.pad[i].tunnel) continue;
+      let j = i; while (j < seg.pad.length && seg.pad[j].tunnel) j++;
+      if (j - i < 3) for (let k = i; k < j; k++) seg.pad[k].tunnel = false;
+      i = j;
+    }
     // Brugstukjes van één monster wegpoetsen, brug pas vanaf 3 monsters (12 m).
     for (let i = 0; i < seg.pad.length; i++) {
       if (!seg.pad[i].brug) continue;
@@ -119,7 +129,7 @@ export class Wegennet {
       for (let i = 0; i < pad.length - 1; i++) {
         const a = pad[i], b = pad[i + 1];
         const q = puntTotLijnstuk({ x, z }, a, b);
-        if (q.d < best) { best = q.d; h = lerp(a.y, b.y, q.t); brug = a.brug || b.brug; }
+        if (q.d < best) { best = q.d; h = lerp(a.y, b.y, q.t); brug = a.brug || b.brug || a.tunnel || b.tunnel; }
       }
       if (brug) return null;
       return { h: h - 0.08, d: best };
@@ -226,8 +236,8 @@ export class Wegennet {
     return best;
   }
 
-  private nieuweKnoop(p: V2): Knoop {
-    const k: Knoop = { id: this.volgende++, p: { ...p }, y: this.knoopHoogte(p), segs: [] };
+  private nieuweKnoop(p: V2, niveau = 0): Knoop {
+    const k: Knoop = { id: this.volgende++, p: { ...p }, y: this.knoopHoogte(p) + niveau, niveau, segs: [] };
     this.knopen.set(k.id, k);
     return k;
   }
@@ -278,14 +288,14 @@ export class Wegennet {
     // verwijderSegment kan A/B opruimen als ze los kwamen te liggen: opnieuw aanmaken met dezelfde id.
     for (const k of [A, B]) if (!this.knopen.has(k.id)) { k.segs = []; this.knopen.set(k.id, k); }
     const M = this.nieuweKnoop(m);
-    M.y = yM;
+    M.y = yM; M.niveau = A.niveau || B.niveau ? Math.round(yM - this.knoopHoogte(m)) : 0;
     const d1 = this.nieuwSegment(A, q0, M, type, naam);
     const d2 = this.nieuwSegment(M, q1, B, type, naam);
     return { knoop: M, delen: [d1, d2] };
   }
 
   /** Vind of maak een knoop op p: bestaande knoop, of een bestaand segment splitsen. */
-  private knoopOp(p: V2, type: WegTypeId): Knoop {
+  private knoopOp(p: V2, type: WegTypeId, niveau = 0): Knoop {
     const bestaand = this.knoopBij(p, Math.max(5, halveBreedte(type)));
     if (bestaand) return bestaand;
     const op = this.segmentBij(p);
@@ -295,7 +305,7 @@ export class Wegennet {
       const A = this.knopen.get(op.seg.a)!, B = this.knopen.get(op.seg.b)!;
       return dist2(A.p, p) < dist2(B.p, p) ? A : B;
     }
-    return this.nieuweKnoop(p);
+    return this.nieuweKnoop(p, niveau);
   }
 
   /** Kleinste kromtestraal van de kwadratische Bézier. */
@@ -325,10 +335,10 @@ export class Wegennet {
   }
 
   /** Leg een weg van a naar b (controlepunt c). Splitst bestaande wegen op kruisingen. */
-  leg(a: V2, c: V2, b: V2, type: WegTypeId): Segment[] {
+  leg(a: V2, c: V2, b: V2, type: WegTypeId, niveau = 0): Segment[] {
     if (this.controleer(a, c, b, type)) return [];
-    const KA = this.knoopOp(a, type);
-    const KB = this.knoopOp(b, type);
+    const KA = this.knoopOp(a, type, niveau);
+    const KB = this.knoopOp(b, type, niveau);
     if (KA.id === KB.id) return [];
     // Pas het controlepunt mee aan als de eindpunten verschoven zijn (snappen).
     const recht = Math.abs((c.x - (a.x + b.x) / 2)) < 1e-6 && Math.abs((c.z - (a.z + b.z) / 2)) < 1e-6;
@@ -356,7 +366,13 @@ export class Wegennet {
         if (t === null) continue;
         const p = lerp2(nieuw[i], nieuw[i + 1], t);
         const q = puntTotLijnstuk(p, oud[j], oud[j + 1]);
-        kruis.push({ tNieuw: (i + t) / (nieuw.length - 1), seg: seg.id, tOud: (j + q.t) / (oud.length - 1) });
+        const tN = (i + t) / (nieuw.length - 1);
+        // Op verschillende hoogte (viaduct of tunnel): kruisen zonder kruispunt.
+        const yNieuw = (KA.niveau !== 0 || KB.niveau !== 0) ? lerp(KA.y, KB.y, tN) : this.knoopHoogte(p);
+        let yOud = 0, bd = Infinity;
+        for (const pp of seg.pad) { const dd = Math.hypot(pp.x - p.x, pp.z - p.z); if (dd < bd) { bd = dd; yOud = pp.y; } }
+        if (Math.abs(yNieuw - yOud) > 4.5) continue;
+        kruis.push({ tNieuw: tN, seg: seg.id, tOud: (j + q.t) / (oud.length - 1) });
       }
     }
     kruis.sort((x, y) => x.tNieuw - y.tNieuw);
@@ -388,6 +404,56 @@ export class Wegennet {
     return res;
   }
 
+  /** Afrondstraal per wegtype (zoals de automatische bochten in Cities: Skylines 2). */
+  static afrondStraal(type: WegTypeId) {
+    return ({ voetpad: 6, fietspad: 10, woonstraat: 14, straat: 22, straatBus: 26, laan: 36, tramstraat: 30, gow: 55, snelweg: 160 } as Record<WegTypeId, number>)[type];
+  }
+
+  /** Punt (Bézier-parameter) op een segment op een afstand vanaf een uiteinde. */
+  private paramOp(seg: Segment, vanaf: 'a' | 'b', afstand: number): number {
+    const A = this.knopen.get(seg.a)!, B = this.knopen.get(seg.b)!;
+    const m = Wegennet.bemonster(A.p, seg.c, B.p, 0.5);
+    const L = m[m.length - 1].s;
+    const doel = vanaf === 'a' ? afstand : L - afstand;
+    let best = m[0];
+    for (const q of m) if (Math.abs(q.s - doel) < Math.abs(best.s - doel)) best = q;
+    return best.t;
+  }
+
+  /**
+   * Scherpe knik in een doorgaande weg (graad 2, zelfde type) vervangen door een vloeiende bocht:
+   * beide stukken worden ingekort en met een Bézier door het oude knikpunt verbonden.
+   */
+  rondAf(knoopId: number): boolean {
+    const K = this.knopen.get(knoopId);
+    if (!K || K.segs.length !== 2) return false;
+    const [s1, s2] = K.segs.map(id => this.segmenten.get(id)!);
+    if (!s1 || !s2 || s1.type !== s2.type) return false;
+    const a = this.wegVan(s1, knoopId), b = this.wegVan(s2, knoopId);
+    const cos = -(a.x * b.x + a.z * b.z); // 1 = rechtdoor
+    const afwijking = Math.acos(Math.max(-1, Math.min(1, cos)));
+    if (afwijking < 0.14 || afwijking > 2.1) return false;
+    const R = Wegennet.afrondStraal(s1.type);
+    const t = Math.min(R * Math.tan(afwijking / 2), s1.lengte * 0.45, s2.lengte * 0.45);
+    if (t < 3) return false;
+    const type = s1.type, naam = s1.naam;
+    // Splitsen op afstand t van de knik.
+    const p1 = this.paramOp(s1, s1.a === knoopId ? 'a' : 'b', t);
+    const r1 = this.splits(s1.id, p1);
+    if (!r1) return false;
+    const s2nu = this.segmenten.get(s2.id) ?? null;
+    if (!s2nu) return false;
+    const p2 = this.paramOp(s2nu, s2nu.a === knoopId ? 'a' : 'b', t);
+    const r2 = this.splits(s2nu.id, p2);
+    if (!r2) return false;
+    const P = r1.knoop, Q = r2.knoop;
+    // De twee stompjes aan de knik weghalen en vervangen door één bocht.
+    for (const sid of [...(this.knopen.get(knoopId)?.segs ?? [])]) this.verwijderSegment(sid);
+    const ctrl = { ...K.p };
+    if (!this.bestaatVerbinding(P.id, Q.id)) { const s = this.nieuwSegment(P, ctrl, Q, type, naam); void s; }
+    return true;
+  }
+
   bestaatVerbinding(a: number, b: number) {
     for (const s of this.knopen.get(a)?.segs ?? []) { const seg = this.segmenten.get(s)!; if ((seg.a === a && seg.b === b) || (seg.a === b && seg.b === a)) return true; }
     return false;
@@ -409,14 +475,14 @@ export class Wegennet {
   // ─── Opslaan ──────────────────────────────────────────────────────────────────
   naarJson() {
     return {
-      knopen: [...this.knopen.values()].map(k => ({ id: k.id, x: k.p.x, z: k.p.z, y: k.y })),
+      knopen: [...this.knopen.values()].map(k => ({ id: k.id, x: k.p.x, z: k.p.z, y: k.y, niveau: k.niveau })),
       segmenten: [...this.segmenten.values()].map(s => ({ id: s.id, a: s.a, b: s.b, cx: s.c.x, cz: s.c.z, type: s.type, naam: s.naam })),
       volgende: this.volgende,
     };
   }
   vanJson(j: ReturnType<Wegennet['naarJson']>) {
     this.knopen.clear(); this.segmenten.clear();
-    for (const k of j.knopen) this.knopen.set(k.id, { id: k.id, p: { x: k.x, z: k.z }, y: k.y, segs: [] });
+    for (const k of j.knopen) this.knopen.set(k.id, { id: k.id, p: { x: k.x, z: k.z }, y: k.y, niveau: k.niveau ?? 0, segs: [] });
     for (const s of j.segmenten) {
       const seg: Segment = { id: s.id, a: s.a, b: s.b, c: { x: s.cx, z: s.cz }, type: s.type, naam: s.naam ?? '', lengte: 0, pad: [] };
       this.segmenten.set(seg.id, seg);

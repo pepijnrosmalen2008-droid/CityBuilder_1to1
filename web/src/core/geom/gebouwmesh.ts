@@ -2,6 +2,7 @@ import { V2, V3 } from '../math';
 import { Rng } from '../rng';
 import { Gebouw, Anker, totaleHoogte } from '../wereld';
 import { MeshBouwer, MeshData, Prop } from './mesh';
+import { cilinder } from './props';
 import { afstandTotLijn, driehoeken, getekendOppervlak, verfijn, zwaartepunt } from '../poly';
 import { puntInPolygoon } from '../math';
 
@@ -33,7 +34,9 @@ function randen(g: Gebouw, poly = g.voet): Rand[] {
     // Een rand die naar de straat kijkt en op de rooilijn ligt is een voorgevel.
     const naarStraat = afstandTotLijn({ x: m.x + n.x * 2, z: m.z + n.z * 2 }, g.voorLijn).d < d - 1.5;
     const vanStraat = afstandTotLijn({ x: m.x + n.x * 2, z: m.z + n.z * 2 }, g.voorLijn).d > d + 1.5;
-    const soort = naarStraat && d < g.terug + 1.2 ? 'voor' : vanStraat ? 'achter' : 'zij';
+    // Hoekpand: de gevel langs de zijstraat telt ook als voorgevel (ramen, geen blinde muur).
+    const zijstraat = (g.zijStraat ?? []).some(z => Math.abs((m.x - z.o.x) * z.n.x + (m.z - z.o.z) * z.n.z) < 0.3 && n.x * z.n.x + n.z * z.n.z < -0.9);
+    const soort = zijstraat || (naarStraat && d < g.terug + 1.2) ? 'voor' : vanStraat ? 'achter' : 'zij';
     r.push({ a, b, n, t, L, soort });
   }
   return r;
@@ -230,23 +233,7 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
 
   // Voordeuren, stoepjes, tuinpaden, hagen, schuttingen, schuurtjes, bomen.
   g.ankers.forEach((an, i) => deur(mb, an, Y, (g.seed + i * 7) % 5));
-  for (const an of g.ankers) {
-    const uit = { x: -an.n.x, z: -an.n.z };
-    const v = (d: number, s: number) => ({ x: an.p.x + uit.x * d + an.t.x * s, z: an.p.z + uit.z * d + an.t.z * s });
-    const pad = [v(0.9, -0.55), v(0.9, 0.55), v(g.terug, 0.55), v(g.terug, -0.55)].map(p => ({ x: p.x, y: hoogte(p.x, p.z) + 0.08, z: p.z }));
-    if (g.terug > 1) mb.quad('stoeptegels', pad[0], pad[1], pad[2], pad[3], [pad[0].x, pad[0].z], [pad[1].x, pad[1].z], [pad[2].x, pad[2].z], [pad[3].x, pad[3].z], OP);
-    // Schuurtje en boompje achterin.
-    const achter = an.d - g.terug - g.diepte;
-    if (achter > 4 && r.next() < 0.75) {
-      const c = { x: an.p.x + an.n.x * (g.diepte + achter - 1.6), z: an.p.z + an.n.z * (g.diepte + achter - 1.6) };
-      const y = hoogte(c.x, c.z);
-      doos(mb, 'hout', 'dakgrind', c, an.t, Math.min(2.4, w - 1), 2.2, y, y + 2.3);
-    }
-    if (achter > 6 && r.next() < 0.4) {
-      const c = { x: an.p.x + an.n.x * (g.diepte + achter * 0.45) + an.t.x * w * 0.25, z: an.p.z + an.n.z * (g.diepte + achter * 0.45) + an.t.z * w * 0.25 };
-      props.push({ soort: r.kies(['berk', 'eik', 'linde'] as const), x: c.x, y: hoogte(c.x, c.z), z: c.z, rot: r.range(0, 6.28), schaal: r.range(0.45, 0.7), variant: r.int(0, 1) });
-    }
-  }
+  for (const an of g.ankers) tuin(mb, g, an, w, r, hoogte, props);
   for (const gr of g.grenzen) {
     // Heg in de voortuin, schutting in de achtertuin.
     const a = (d: number) => ({ x: gr.p.x + gr.n.x * d, z: gr.p.z + gr.n.z * d });
@@ -255,8 +242,91 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
       const c = a((d0 + d1) / 2), y = hoogte(c.x, c.z);
       doos(mb, mat, mat, c, gr.n, d1 - d0, dik, y - 0.1, y + h);
     };
-    lijnstuk('haag', 0.4, g.terug - 0.2, 0.9, 0.5);
+    lijnstuk('haag', 0.4, g.terug - 0.2, 0.75, 0.45);
     lijnstuk('hout', g.terug + g.diepte + 0.2, Math.min(gr.d - 0.4, g.terug + g.diepte + 16), 1.8, 0.06);
+  }
+}
+
+/** Plat stuk bestrating over het terrein: rechthoek in het assenstelsel van een anker. */
+function plaat(mb: MeshBouwer, mat: string, an: Anker, d0: number, d1: number, s0: number, s1: number, hoogte: H, dy = 0.08) {
+  const q = (d: number, s: number) => { const x = an.p.x + an.n.x * d + an.t.x * s, z = an.p.z + an.n.z * d + an.t.z * s; return { x, y: hoogte(x, z) + dy, z }; };
+  const a = q(d0, s0), b = q(d0, s1), c = q(d1, s1), e = q(d1, s0);
+  // Volgorde zo dat de normaal omhoog wijst.
+  const cr = (b.x - a.x) * (e.z - a.z) - (b.z - a.z) * (e.x - a.x);
+  if (cr > 0) mb.quad(mat, a, e, c, b, [a.x, a.z], [e.x, e.z], [c.x, c.z], [b.x, b.z], OP);
+  else mb.quad(mat, a, b, c, e, [a.x, a.z], [b.x, b.z], [c.x, c.z], [e.x, e.z], OP);
+}
+
+/** Struik: afgeplatte bol van een paar lagen (goedkoop, één materiaal). */
+function struik(mb: MeshBouwer, c: V2, y: number, r: number, h: number) {
+  cilinder(mb, 'haag', { x: c.x, y, z: c.z }, { x: c.x, y: y + h * 0.55, z: c.z }, r * 0.75, r, 7);
+  cilinder(mb, 'haag', { x: c.x, y: y + h * 0.55, z: c.z }, { x: c.x, y: y + h, z: c.z }, r, r * 0.35, 7);
+}
+
+/**
+ * Voor- en achtertuin van één woning: lage haag langs de stoep met een opening voor het tuinpad,
+ * stoepje en pad, terras achter het huis, gazon (het perceel), struiken, soms een parasol,
+ * een schuurtje en een boom, en achterin een haag of schutting.
+ */
+function tuin(mb: MeshBouwer, g: Gebouw, an: Anker, w: number, r: Rng, hoogte: H, props: Prop[]) {
+  const P = (d: number, s: number): V2 => ({ x: an.p.x + an.n.x * d + an.t.x * s, z: an.p.z + an.n.z * d + an.t.z * s });
+  const yv = (p: V2) => hoogte(p.x, p.z);
+  const half = w / 2 - 0.15;
+  // ── Voortuin (d < 0: tussen gevel en stoep) ──
+  if (g.terug > 1) plaat(mb, 'stoeptegels', an, -g.terug, -0.9, -0.55, 0.55, hoogte);
+  plaat(mb, 'stoeptegels', an, -0.9, 0, -0.8, 0.8, hoogte, 0.12);
+  if (g.terug > 1.8) {
+    // Lage haag langs de stoep, met een opening voor het pad.
+    const d = -g.terug + 0.3;
+    for (const [s0, s1] of [[-half, -0.8], [0.8, half]]) {
+      if (s1 - s0 < 0.6) continue;
+      const c = P(d, (s0 + s1) / 2);
+      doos(mb, 'haag', 'haag', c, an.t, s1 - s0, 0.45, yv(c) - 0.1, yv(c) + 0.7);
+    }
+    // Struikje in de voortuin.
+    if (r.next() < 0.6) { const c = P(-g.terug * 0.5, r.kies([-1, 1]) * Math.min(half - 0.7, 2.2)); struik(mb, c, yv(c), 0.45, 0.9); }
+  }
+  // Container naast de deur.
+  if (g.terug > 1.6 && r.next() < 0.5) {
+    const c = P(-0.6, Math.min(half - 0.4, 1.5));
+    doos(mb, 'trimDonker', 'trimDonker', c, an.t, 0.6, 0.7, yv(c), yv(c) + 1.05);
+  }
+  // ── Achtertuin ──
+  const eind = an.d - g.terug - 0.3; // achtergrens van het perceel, gemeten vanaf de voorgevel
+  const achter = eind - g.diepte;
+  if (achter < 2) return;
+  const terras = Math.min(3, achter * 0.35);
+  plaat(mb, r.next() < 0.7 ? 'stoeptegels' : 'grind', an, g.diepte, g.diepte + terras, -half, half, hoogte);
+  if (terras > 2 && r.next() < 0.3) {
+    // Parasol op het terras.
+    const c = P(g.diepte + terras * 0.6, r.range(-half * 0.5, half * 0.5)), y = yv(c);
+    cilinder(mb, 'trim', { x: c.x, y, z: c.z }, { x: c.x, y: y + 2.2, z: c.z }, 0.03, 0.03, 4);
+    cilinder(mb, r.next() < 0.5 ? 'trim' : 'dakpannen', { x: c.x, y: y + 1.8, z: c.z }, { x: c.x, y: y + 2.35, z: c.z }, 1.3, 0.05, 8);
+  }
+  // Struiken langs de zijkant.
+  const nS = Math.min(4, Math.floor(achter / 4));
+  for (let i = 0; i < nS; i++) {
+    if (r.next() < 0.35) continue;
+    const d = g.diepte + terras + 1 + (achter - terras - 2) * (i + 0.5) / nS;
+    const c = P(d, (i % 2 ? 1 : -1) * (half - 0.6));
+    struik(mb, c, yv(c), r.range(0.4, 0.7), r.range(0.8, 1.6));
+  }
+  // Schuurtje achterin.
+  if (achter > 5 && r.next() < 0.7) {
+    const sb = Math.min(2.4, w - 1.2);
+    const c = P(eind - 1.5, (r.next() < 0.5 ? -1 : 1) * Math.max(0, half - sb / 2 - 0.2)), y = yv(c);
+    doos(mb, 'hout', 'dakgrind', c, an.t, sb, 2.2, y, y + 2.3);
+  }
+  // Boom.
+  if (achter > 7 && r.next() < 0.45) {
+    const c = P(g.diepte + terras + (achter - terras) * 0.5, r.range(-half * 0.4, half * 0.4));
+    props.push({ soort: r.kies(['berk', 'eik', 'linde'] as const), x: c.x, y: yv(c), z: c.z, rot: r.range(0, 6.28), schaal: r.range(0.45, 0.7), variant: r.int(0, 1) });
+  }
+  // Achtergrens: haag of schutting.
+  if (achter > 3.5) {
+    const c = P(eind - 0.2, 0), y = yv(c);
+    if (r.next() < 0.45) doos(mb, 'haag', 'haag', c, an.t, w, 0.6, y - 0.1, y + 1.7);
+    else doos(mb, 'hout', 'hout', c, an.t, w, 0.06, y - 0.1, y + 1.8);
   }
 }
 

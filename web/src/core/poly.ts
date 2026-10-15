@@ -30,6 +30,26 @@ export function opschonen(p: V2[], eps = 0.05): V2[] {
   return r;
 }
 
+/** Pieken weghalen: hoekpunten waar de rand bijna terugkeert (binnenhoek < `minHoek` graden). */
+export function zonderPieken(p: V2[], minHoek = 25): V2[] {
+  let r = opschonen(p);
+  const cosMax = Math.cos(minHoek * Math.PI / 180);
+  for (let ronde = 0; ronde < 4 * p.length && r.length > 3; ronde++) {
+    let weg = -1;
+    for (let i = 0; i < r.length; i++) {
+      const a = r[(i + r.length - 1) % r.length], b = r[i], c = r[(i + 1) % r.length];
+      const ux = a.x - b.x, uz = a.z - b.z, vx = c.x - b.x, vz = c.z - b.z;
+      const lu = Math.hypot(ux, uz), lv = Math.hypot(vx, vz);
+      if (lu < 1e-6 || lv < 1e-6) { weg = i; break; }
+      if ((ux * vx + uz * vz) / (lu * lv) > cosMax) { weg = i; break; }
+    }
+    if (weg < 0) break;
+    r.splice(weg, 1);
+    r = opschonen(r);
+  }
+  return r;
+}
+
 /** Oorknippen; geeft indices (driehoeken tegen de klok in in het x,z-vlak, d.w.z. naar boven gericht in Y-op). */
 export function driehoeken(p: V2[]): number[] {
   const n = p.length;
