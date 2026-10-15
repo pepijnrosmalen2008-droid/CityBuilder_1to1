@@ -7,6 +7,8 @@ import { KwaliteitRegelaar, Keuze } from './render/kwaliteit';
 import { StadCamera } from './render/camera';
 import { TextuurBron } from './render/texturen';
 import { Materialen } from './render/materialen';
+import { VerkeerWeergave } from './render/verkeer';
+import { Rijstroken } from './core/verkeer/rijstroken';
 import { TerreinWeergave } from './render/terrein';
 import { StadWeergave } from './render/stad';
 import { VoorbeeldLaag } from './render/voorbeeld';
@@ -44,6 +46,9 @@ async function start() {
   await voortgang('Bossen planten…', 0.7);
   const stad = new StadWeergave(wereld, mats);
   sfeer.scene.add(stad.groep);
+  const verkeer = new VerkeerWeergave(wereld, mats);
+  sfeer.scene.add(verkeer.groep);
+  const maxVerkeer = () => ({ laag: 300, midden: 650, hoog: 1100 } as Record<string, number>)[sfeer.niveau] ?? 600;
   const camera = new StadCamera(sfeer.camera, sfeer.renderer.domElement, wereld.terrein);
   const plek = test && TEST_PLEKKEN[test];
   const c = (param.get('cam') ?? (plek ? `${plek[0]},${plek[1]},95,0,88` : demo ? '-260,-60,420,215,38' : '-150,0,520,30,48')).split(',').map(Number);
@@ -136,6 +141,16 @@ async function start() {
   if (param.has('shot')) {
     // Fotomodus (voor geautomatiseerde screenshots zonder GPU): alles opbouwen, één frame renderen.
     for (let i = 0; i < 200 && stad.bezig; i++) stad.werkBij(1e9);
+    // Verkeer een minuut laten rijden voor de foto.
+    if (!param.has('geenverkeer')) { const sn = wereld.snelheid; wereld.snelheid = 1; wereld.verkeer.max = maxVerkeer(); for (let i = 0; i < Number(param.get('verkeer') ?? 600); i++) wereld.verkeer.stap(0.1); wereld.snelheid = sn; }
+    if (param.has('naauto')) {
+      // Camera op een voertuig (voor controle van de modellen): ?naauto=soort,afstand,yaw,pitch
+      const [soort, af, yaw, pitch] = (param.get('naauto') ?? '').split(',');
+      const v = [...wereld.verkeer.voertuigen.values()].find(x => (!soort || x.soort === soort) && x.v > 3);
+      const sp = v && wereld.verkeer.stroken.sporen.get(v.spoor);
+      if (v && sp) { const pos = Rijstroken.op(sp, v.s - v.lengte / 2); camera.zet(pos.x, pos.z, Number(af || 12), Number(yaw || 30), Number(pitch || 25)); }
+    }
+    verkeer.werkBij(sfeer.camera.position);
     stad.props.werkBij(sfeer.camera.position, 0, true);
     await bron.wacht();
     hud.werkBij();
@@ -165,7 +180,9 @@ async function start() {
     const dt = Math.min(0.1, (nu - vorige) / 1000);
     vorige = nu; tijd += dt;
     camera.stap(dt);
+    wereld.verkeer.max = maxVerkeer();
     wereld.stap(dt);
+    verkeer.werkBij(sfeer.camera.position);
     const grond = grondOnder();
     gereedschap.beweeg(grond);
     gereedschap.stap(dt);

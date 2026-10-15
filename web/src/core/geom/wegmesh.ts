@@ -25,7 +25,7 @@ function materiaalVoor(s: Strook, dek: string): string {
 const verhoogd = (s: Strook) => s.soort === 'stoep' ? STOEP_H : s.soort === 'berm' || s.soort === 'middenberm' ? BERM_H : 0;
 
 /** Punt op de as op booglengte s (voorbij de uiteinden: rechtdoor verlengd). */
-function asPunt(pad: PadPunt[], s: number): { x: number; y: number; z: number; dx: number; dz: number; brug: boolean; tunnel: boolean } {
+export function asPunt(pad: PadPunt[], s: number): { x: number; y: number; z: number; dx: number; dz: number; brug: boolean; tunnel: boolean } {
   const n = pad.length;
   if (s <= 0) { const a = pad[0]; return { x: a.x + a.dx * s, y: a.y, z: a.z + a.dz * s, dx: a.dx, dz: a.dz, brug: a.brug, tunnel: a.tunnel }; }
   if (s >= pad[n - 1].s) { const a = pad[n - 1], e = s - a.s; return { x: a.x + a.dx * e, y: a.y, z: a.z + a.dz * e, dx: a.dx, dz: a.dz, brug: a.brug, tunnel: a.tunnel }; }
@@ -244,12 +244,13 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
       const stoepBoom = x.s.soort === 'stoep' && x.s.breedte >= 2;
       if (!berm && !stoepBoom) continue;
       if (x.s.soort === 'middenberm' && type.snelheid > 70) continue;
-      const o = berm ? (x.a + x.b) / 2 : (x.a < 0 ? x.a + 0.9 : x.b - 0.9);
+      // Stoepbomen aan de kant van de rijbaan, weg van de gevels.
+      const o = berm ? (x.a + x.b) / 2 : (x.a < 0 ? x.b - 0.8 : x.a + 0.8);
       const tussen = berm ? 11 : 14;
       for (let d = L0 + 7 + (x.a < 0 ? 0 : tussen / 2); d < L1 - 6; d += tussen) {
         if (asPunt(pad, d).brug || asPunt(pad, d).tunnel) continue;
         const p = plek(d, o, verhoogd(x.s));
-        props.push({ soort: (Math.floor(d / tussen) + seg.id) % 3 === 0 ? 'linde' : 'plataan', x: p.x, y: p.y, z: p.z, rot: (d * 1.7) % 6.28, schaal: 0.85 + ((d * 7) % 1) * 0.25, variant: Math.floor(d) % 2 });
+        props.push({ soort: (Math.floor(d / tussen) + seg.id) % 3 === 0 ? 'linde' : 'plataan', x: p.x, y: p.y, z: p.z, rot: (d * 1.7) % 6.28, schaal: (stoepBoom ? 0.58 : 0.68) + ((d * 7) % 1) * 0.14, variant: Math.floor(d) % 2 });
       }
     }
   }

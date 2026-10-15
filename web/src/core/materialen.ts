@@ -65,6 +65,21 @@ const VAST: Record<string, MatDef> = {
   tank: D({ kleur: [0.92, 0.92, 0.9], ruwheid: 0.4, metaal: 0.3 }),
   plas: D({ kleur: [0.12, 0.26, 0.30], ruwheid: 0.05, metaal: 0.2 }),
   schorsBerk: D({ tex: 'schorsBerk', meter: 1, normaal: 0.8 }),
+  // Voertuigen. De lak is wit; de kleur komt per instantie (render-laag).
+  autolak: D({ kleur: [1, 1, 1], ruwheid: 0.28, metaal: 0.45 }),
+  autoglas: D({ kleur: [0.05, 0.07, 0.09], ruwheid: 0.04, metaal: 0.85 }),
+  autotrim: D({ kleur: [0.05, 0.05, 0.055], ruwheid: 0.55, metaal: 0.1 }),
+  rubber: D({ kleur: [0.035, 0.035, 0.035], ruwheid: 0.92 }),
+  velg: D({ kleur: [0.62, 0.64, 0.67], ruwheid: 0.3, metaal: 0.9 }),
+  koplamp: D({ kleur: [0.95, 0.95, 0.9], ruwheid: 0.1, metaal: 0.2, emissie: [0.35, 0.35, 0.32] }),
+  achterlicht: D({ kleur: [0.45, 0.02, 0.02], ruwheid: 0.2, emissie: [0.18, 0, 0] }),
+  remlicht: D({ kleur: [1, 0.05, 0.04], ruwheid: 0.2, emissie: [2.2, 0.05, 0.03], schaduw: false }),
+  kenteken: D({ kleur: [0.96, 0.78, 0.08], ruwheid: 0.5 }),
+  laadbak: D({ kleur: [0.9, 0.9, 0.88], ruwheid: 0.5, metaal: 0.2 }),
+  verkeerslichtRood: D({ kleur: [1, 0.1, 0.06], emissie: [3, 0.15, 0.05], schaduw: false }),
+  verkeerslichtOranje: D({ kleur: [1, 0.6, 0.05], emissie: [3, 1.4, 0.05], schaduw: false }),
+  verkeerslichtGroen: D({ kleur: [0.1, 1, 0.45], emissie: [0.1, 2.6, 0.9], schaduw: false }),
+  lampUit: D({ kleur: [0.08, 0.08, 0.08], ruwheid: 0.3 }),
 };
 
 const DEUR: [number, number, number][] = [[0.12, 0.22, 0.16], [0.55, 0.12, 0.10], [0.12, 0.16, 0.30], [0.15, 0.15, 0.16], [0.85, 0.84, 0.78]];

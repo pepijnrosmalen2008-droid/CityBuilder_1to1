@@ -31,6 +31,7 @@ export class Hud {
         <div class="cijfer" title="Woningen"><span class="ic">${ICOON.huis}</span><b data-v="won"></b></div>
         <div class="cijfer" title="Banen"><span class="ic">${ICOON.koffer}</span><b data-v="banen"></b></div>
         <div class="cijfer" title="Werkloosheid"><span class="ic">${ICOON.grafiek}</span><b data-v="wl"></b></div>
+        <div class="cijfer" title="Verkeer: doorstroming (aantal voertuigen onderweg)"><span class="ic">${ICOON.auto}</span><b data-v="vk"></b></div>
         <div class="cijfer" title="Tevredenheid van de inwoners"><span class="ic" data-v="gezicht"></span><b data-v="tev"></b></div>
       </div>
       <div class="kaart bediening paneel">
@@ -118,6 +119,8 @@ export class Hud {
     this.v.won.textContent = fmt(s.woningen);
     this.v.banen.textContent = fmt(s.banen);
     this.v.wl.textContent = (s.werkloosheid * 100).toFixed(1) + '%';
+    const vk = this.w.verkeer;
+    if (this.v.vk) { this.v.vk.textContent = vk.voertuigen.size ? `${Math.round(vk.doorstroming * 100)}%` : '–'; (this.v.vk.parentElement as HTMLElement).title = `Doorstroming verkeer: ${Math.round(vk.doorstroming * 100)}% · ${vk.voertuigen.size} voertuigen onderweg`; }
     const t = w.tevredenheid;
     this.v.tev.textContent = t + '%';
     this.v.gezicht.innerHTML = gezicht(t);

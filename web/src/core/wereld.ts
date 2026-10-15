@@ -10,6 +10,7 @@ import { afstandTotLijn, getekendOppervlak, knipHalfvlak, zwaartepunt } from './
 import { puntInPolygoon } from './math';
 import { Namen, stadsnaam } from './namen';
 import { Economie, Grondstof } from './economie';
+import { Verkeer } from './verkeer/verkeer';
 import { Tarieven, Maandstaat, maandstaat, wegOppervlak, tariefEffect } from './begroting';
 
 /** Perceel op een gevelstrook: van booglengte s0 tot s1 langs de straat, zo diep als de strook. */
@@ -124,8 +125,10 @@ export class Wereld {
     this.namen = new Namen(seed);
     this.net.naamGever = t => this.namen.straat(t);
     this.economie = new Economie(this);
+    this.verkeer = new Verkeer(this);
   }
   economie: Economie;
+  verkeer: Verkeer;
 
   meld(tekst: string, soort: Nieuws['soort']) {
     this.nieuws.push({ id: this.nieuwsId++, dag: this.dagen, tekst, soort });
@@ -490,6 +493,7 @@ export class Wereld {
   }
 
   stap(dtEcht: number) {
+    this.verkeer.stap(dtEcht);
     const dt = Math.min(0.25, dtEcht) * this.snelheid;
     if (dt <= 0) return;
     this.dagen += dt / SECONDEN_PER_DAG;

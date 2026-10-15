@@ -1,6 +1,7 @@
 // Kleine lijnicoontjes (24×24, currentColor).
 const svg = (d: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 export const ICOON = {
+  auto: svg('<path d="M5 16v2.5M19 16v2.5"/><path d="M3.5 16v-3.2l2-4.6A2 2 0 0 1 7.3 7h9.4a2 2 0 0 1 1.8 1.2l2 4.6V16z"/><path d="M4 12.5h16"/><circle cx="7.5" cy="14.3" r=".6"/><circle cx="16.5" cy="14.3" r=".6"/>'),
   munt: svg('<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2a3.4 3.4 0 1 0 0 5.6M8.5 11h5M8.5 13.2h5"/>'),
   huis: svg('<path d="M4 11.5 12 5l8 6.5"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>'),
   mensen: svg('<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9.5" r="2.4"/><path d="M15.5 14.3c2.6-.2 4.4 1.4 5 4.2"/>'),

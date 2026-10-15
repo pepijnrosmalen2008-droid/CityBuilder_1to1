@@ -11,9 +11,9 @@ import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 export type Niveau = 'laag' | 'midden' | 'hoog';
 export interface Kwaliteit { schaduw: number; zacht: boolean; ao: boolean; bloom: boolean; msaa: number; schaal: number }
 export const NIVEAUS: Record<Niveau, Kwaliteit> = {
-  laag: { schaduw: 1024, zacht: false, ao: false, bloom: false, msaa: 0, schaal: 0.75 },
-  midden: { schaduw: 2048, zacht: true, ao: false, bloom: true, msaa: 2, schaal: 1 },
-  hoog: { schaduw: 4096, zacht: true, ao: true, bloom: true, msaa: 4, schaal: 1.5 },
+  laag: { schaduw: 2048, zacht: false, ao: false, bloom: false, msaa: 0, schaal: 1 },
+  midden: { schaduw: 2048, zacht: true, ao: false, bloom: true, msaa: 2, schaal: 1.5 },
+  hoog: { schaduw: 4096, zacht: true, ao: true, bloom: true, msaa: 4, schaal: 2 },
 };
 
 /** Renderer, lucht, zon, mist en nabewerking. */
@@ -156,8 +156,7 @@ export class Sfeer {
     f.near = Math.max(600, afstand * 3); f.far = Math.max(3500, afstand * 9);
     // Ver uitgezoomd worden schaduwpixels groot en ruist de AO: schaduw zachter, AO uitfaden.
     const ver = THREE.MathUtils.smoothstep(afstand, 450, 1300);
-    this.zon.shadow.intensity = 1 - ver * 0.55;
-    this.zon.shadow.radius = 2 + ver * 3;
+    this.zon.shadow.intensity = 1 - ver * 0.3;
     if (this.ao) {
       const ao = 1 - THREE.MathUtils.smoothstep(afstand, 380, 800);
       this.ao.enabled = ao > 0.02;

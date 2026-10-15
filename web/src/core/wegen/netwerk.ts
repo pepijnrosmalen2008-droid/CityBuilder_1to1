@@ -29,6 +29,8 @@ export class Wegennet {
   segmenten = new Map<number, Segment>();
   private volgende = 1;
   events: NetEvent[] = [];
+  /** Telt elke wijziging aan segmenten (voor afgeleide structuren zoals de rijstrookgraaf). */
+  versie = 0;
   /** Geeft een nieuwe straatnaam voor een type (ingesteld door de wereld). */
   naamGever: (type: WegTypeId) => string = t => t;
 
@@ -263,7 +265,7 @@ export class Wegennet {
     a.segs.push(seg.id); b.segs.push(seg.id);
     this.berekenPad(seg);
     this.egaliseer(seg);
-    this.events.push({ soort: 'seg+', id: seg.id });
+    this.events.push({ soort: 'seg+', id: seg.id }); this.versie++;
     this.meldKnoop(a.id); this.meldKnoop(b.id);
     return seg;
   }
@@ -271,14 +273,14 @@ export class Wegennet {
   private meldKnoop(id: number) {
     this.events.push({ soort: 'knoop~', id });
     // Aansluitende segmenten moeten mee (inkorting verandert met de graad).
-    for (const s of this.knopen.get(id)?.segs ?? []) this.events.push({ soort: 'seg+', id: s });
+    for (const s of this.knopen.get(id)?.segs ?? []) this.events.push({ soort: 'seg+', id: s }); this.versie++;
   }
 
   verwijderSegment(id: number) {
     const seg = this.segmenten.get(id);
     if (!seg) return;
     this.segmenten.delete(id);
-    this.events.push({ soort: 'seg-', id });
+    this.events.push({ soort: 'seg-', id }); this.versie++;
     for (const kid of [seg.a, seg.b]) {
       const k = this.knopen.get(kid);
       if (!k) continue;
@@ -480,7 +482,7 @@ export class Wegennet {
     if (!seg || seg.type === type) return false;
     seg.type = type;
     this.berekenPad(seg); this.egaliseer(seg);
-    this.events.push({ soort: 'seg+', id });
+    this.events.push({ soort: 'seg+', id }); this.versie++;
     this.meldKnoop(seg.a); this.meldKnoop(seg.b);
     return true;
   }
@@ -503,7 +505,7 @@ export class Wegennet {
       this.segmenten.set(seg.id, seg);
       this.knopen.get(s.a)!.segs.push(seg.id); this.knopen.get(s.b)!.segs.push(seg.id);
       this.berekenPad(seg); this.egaliseer(seg);
-      this.events.push({ soort: 'seg+', id: seg.id });
+      this.events.push({ soort: 'seg+', id: seg.id }); this.versie++;
     }
     for (const k of this.knopen.values()) this.events.push({ soort: 'knoop~', id: k.id });
     this.volgende = j.volgende;

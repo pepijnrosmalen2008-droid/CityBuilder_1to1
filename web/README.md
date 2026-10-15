@@ -20,6 +20,14 @@ npm run dev        # http://localhost:5173
 de site op GitHub Pages: https://pepijnrosmalen2008-droid.github.io/CityBuilder_1to1/ (slagio.nl/stad verwijst
 hierheen).
 
+## Verkeer
+
+`src/core/verkeer/` (engine-onafhankelijk):
+
+- `rijstroken.ts`: rijstrookgraaf uit de dwarsprofielen; verbindingen op kruispunten met afslagregels (rechts rechtsaf, links linksaf, rechtdoor over alle stroken), conflicten (kruisen of samenvoegen), verkeersafhankelijke verkeerslichten waar een laan of grotere weg een straat kruist.
+- `verkeer.ts`: ritten (woon-werk, winkelen, bestelbussen, vrachtwagens van en naar de buitenaansluitingen), routes met A* (voorkeur voor hogere wegen), volggedrag met het Intelligent Driver Model, voorsorteren door van strook te wisselen, voorrang (hogere weg, rechts gaat voor, rechtdoor voor linksaf), het kruispunt niet blokkeren, doorstroming als meter in de HUD.
+- `geom/autos.ts`: procedurele voertuigen (hatchback, sedan, stationwagen, SUV, bestelbus, vrachtwagen, bus) met lak per voertuig, glas, wielkasten, lampen, kentekens en remlichten; een eenvoudige versie voor op afstand.
+
 ## Besturing
 
 | Toets / muis | Functie |
