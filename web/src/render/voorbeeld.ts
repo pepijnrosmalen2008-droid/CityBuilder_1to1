@@ -112,6 +112,23 @@ export class VoorbeeldLaag {
           this.lintMat.color.set(v.kleur);
           this.lint.visible = true;
         }
+        if (v.hoofd) {
+          // Omtrek van het erf van het hoofdgebouw (46 × 40 m), voorkant naar de weg.
+          const { p, rot } = v.hoofd;
+          const vx = Math.sin(rot), vz = Math.cos(rot), ux = vz, uz = -vx;
+          const hoek = (a: number, b: number) => ({ x: p.x + ux * a + vx * b, z: p.z + uz * a + vz * b });
+          const hk = [hoek(-23, -20), hoek(23, -20), hoek(23, 20), hoek(-23, 20)];
+          const pos: number[] = [];
+          for (let i = 0; i < 4; i++) {
+            const a = hk[i], b = hk[(i + 1) % 4];
+            for (const y of [0.6, 6]) pos.push(a.x, Math.max(t.hoogte(a.x, a.z), 0) + y, a.z, b.x, Math.max(t.hoogte(b.x, b.z), 0) + y, b.z);
+            pos.push(a.x, Math.max(t.hoogte(a.x, a.z), 0) + 0.6, a.z, a.x, Math.max(t.hoogte(a.x, a.z), 0) + 6, a.z);
+          }
+          const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+          this.kader.geometry.dispose(); this.kader.geometry = geo;
+          (this.kader.material as THREE.LineBasicMaterial).color.set(v.kleur);
+          this.kader.visible = true;
+        }
         const m = new THREE.Matrix4();
         const n = Math.min(4, v.punten.length - 1);
         for (let i = 0; i < n; i++) this.stippen.setMatrixAt(i, m.makeTranslation(v.punten[i].x, Math.max(v.punten[i].y, 0) + 0.6, v.punten[i].z));

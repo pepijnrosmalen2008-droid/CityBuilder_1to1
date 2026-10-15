@@ -141,7 +141,7 @@ export class Sfeer {
     if (doel.distanceTo(this.vorigDoel) > Math.max(1, afstand * 0.01) || Math.abs(afstand - this.vorigeAfstand) > afstand * 0.03) {
       this.vorigDoel.copy(doel); this.vorigeAfstand = afstand; this.renderer.shadowMap.needsUpdate = true;
     }
-    const r = THREE.MathUtils.clamp(afstand * 1.1, 70, 1100);
+    const r = THREE.MathUtils.clamp(afstand * 1.1, 70, 900);
     const c = this.zon.shadow.camera;
     c.left = -r; c.right = r; c.top = r; c.bottom = -r; c.near = 1; c.far = r * 4 + 600;
     c.updateProjectionMatrix();
@@ -154,7 +154,16 @@ export class Sfeer {
     this.zon.shadow.normalBias = 0.02 * r / 10;
     const f = this.scene.fog as THREE.Fog;
     f.near = Math.max(600, afstand * 3); f.far = Math.max(3500, afstand * 9);
-    if (this.ao) this.ao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(afstand * 0.012, 1.5, 12) });
+    // Ver uitgezoomd worden schaduwpixels groot en ruist de AO: schaduw zachter, AO uitfaden.
+    const ver = THREE.MathUtils.smoothstep(afstand, 450, 1300);
+    this.zon.shadow.intensity = 1 - ver * 0.55;
+    this.zon.shadow.radius = 2 + ver * 3;
+    if (this.ao) {
+      const ao = 1 - THREE.MathUtils.smoothstep(afstand, 380, 800);
+      this.ao.enabled = ao > 0.02;
+      this.ao.blendIntensity = 0.6 * ao;
+      this.ao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(afstand * 0.012, 1.5, 8) });
+    }
   }
 
   render() { this.composer.render(); }

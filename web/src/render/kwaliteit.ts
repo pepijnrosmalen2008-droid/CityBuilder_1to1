@@ -39,7 +39,8 @@ export class KwaliteitRegelaar {
     if (this.fps < 28) { this.slecht++; this.goed = 0; } else if (this.fps > 52) { this.goed++; this.slecht = 0; } else { this.slecht = 0; this.goed = 0; }
     if (this.slecht >= 2) {
       this.slecht = 0;
-      if (s.dynamisch > 0.6) { s.dynamisch = Math.max(0.55, s.dynamisch - 0.15); s.pasAan(); }
+      // Resolutie niet verder dan 80% omlaag (daaronder wordt het beeld korrelig); daarna liever een lager niveau.
+      if (s.dynamisch > 0.85) { s.dynamisch = Math.max(0.8, s.dynamisch - 0.1); s.pasAan(); }
       else { const i = VOLGORDE.indexOf(s.niveau); if (i > 0) { s.dynamisch = 0.85; s.zetNiveau(VOLGORDE[i - 1]); } }
     } else if (this.goed >= 5) {
       this.goed = 0;

@@ -145,6 +145,7 @@ export function bouwGebouw(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[
     case 'kantoortoren': kantoor(mb, g, r, stijl, props); break;
     case 'bedrijfshal': hal(mb, g, r); break;
   }
+  if (g.vorm !== 'rijwoningen' && g.ankers.length) inrichting(mb, g, r, hoogte, props);
   return { mesh: mb.bouw(), props };
 }
 
@@ -234,16 +235,49 @@ function rijwoningen(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, hoogt
   // Voordeuren, stoepjes, tuinpaden, hagen, schuttingen, schuurtjes, bomen.
   g.ankers.forEach((an, i) => deur(mb, an, Y, (g.seed + i * 7) % 5));
   for (const an of g.ankers) tuin(mb, g, an, w, r, hoogte, props);
+  // Erfgrenzen: heg in de voortuin, schutting in de achtertuin tot het einde van het perceel.
+  const binnenPerceel = (p: V2) => puntInPolygoon(p, g.perceel);
+  const lijnstuk = (gr: Anker, mat: string, d0: number, d1: number, h: number, dik: number, zij = 0) => {
+    const a = (d: number) => ({ x: gr.p.x + gr.n.x * d + gr.t.x * zij, z: gr.p.z + gr.n.z * d + gr.t.z * zij });
+    // Niet buiten het perceel (hoekpercelen lopen schuin af).
+    while (d1 - d0 > 0.8 && !binnenPerceel(a(d1 - 0.2))) d1 -= 1;
+    if (d1 - d0 < 0.8) return;
+    // In stukken, zodat de schutting het terrein volgt.
+    const n = Math.max(1, Math.ceil((d1 - d0) / 6));
+    for (let i = 0; i < n; i++) {
+      const e0 = d0 + (d1 - d0) * i / n, e1 = d0 + (d1 - d0) * (i + 1) / n;
+      const c = a((e0 + e1) / 2), y = hoogte(c.x, c.z);
+      doos(mb, mat, mat, c, gr.n, e1 - e0 + 0.02, dik, y - 0.15, y + h);
+    }
+  };
+  const achterEind = (gr: Anker) => gr.d - 0.3;
   for (const gr of g.grenzen) {
-    // Heg in de voortuin, schutting in de achtertuin.
-    const a = (d: number) => ({ x: gr.p.x + gr.n.x * d, z: gr.p.z + gr.n.z * d });
-    const lijnstuk = (mat: string, d0: number, d1: number, h: number, dik: number) => {
-      if (d1 - d0 < 0.8) return;
-      const c = a((d0 + d1) / 2), y = hoogte(c.x, c.z);
-      doos(mb, mat, mat, c, gr.n, d1 - d0, dik, y - 0.1, y + h);
-    };
-    lijnstuk('haag', 0.4, g.terug - 0.2, 0.75, 0.45);
-    lijnstuk('hout', g.terug + g.diepte + 0.2, Math.min(gr.d - 0.4, g.terug + g.diepte + 16), 1.8, 0.06);
+    lijnstuk(gr, 'haag', 0.4, g.terug - 0.2, 0.75, 0.45);
+    lijnstuk(gr, 'hout', g.terug + g.diepte + 0.2, achterEind(gr), 1.8, 0.06);
+  }
+  // Buitenste grenzen van de rij: binnen het eigen perceel (0,15 m), langs een zijstraat een hoge heg.
+  (g.zijden ?? []).forEach((gr, i) => {
+    const zij = i === 0 ? 0.15 : -0.15;
+    const langsStraat = (g.zijStraat ?? []).some(z => Math.abs((gr.p.x - z.o.x) * z.n.x + (gr.p.z - z.o.z) * z.n.z) < 6);
+    if (langsStraat) return;
+    lijnstuk(gr, 'haag', 0.4, g.terug - 0.2, 0.75, 0.45, zij);
+    lijnstuk(gr, 'hout', g.terug + g.diepte + 0.2, achterEind(gr), 1.8, 0.06, zij);
+  });
+  // Hoekhuis: hoge heg langs de zijstraat, van de achtergevel tot achter in de tuin.
+  for (const z of g.zijStraat ?? []) {
+    const t = { x: -z.n.z, z: z.n.x };
+    const pts = g.perceel.map(p => (p.x - z.o.x) * t.x + (p.z - z.o.z) * t.z);
+    const a0 = Math.min(...pts), a1 = Math.max(...pts);
+    // De perceelrand langs de zijstraat ligt op de kleinste afstand tot de straat.
+    const rand = Math.min(...g.perceel.map(p => (p.x - z.o.x) * z.n.x + (p.z - z.o.z) * z.n.z)) + 0.4;
+    for (let s = a0; s < a1; s += 3) {
+      const c = { x: z.o.x + t.x * (s + 1.5) + z.n.x * rand, z: z.o.z + t.z * (s + 1.5) + z.n.z * rand };
+      if (!binnenPerceel(c) || puntInPolygoon(c, g.voet)) continue;
+      // Alleen naast de tuin, niet voor de voorgevel.
+      if (afstandTotLijn(c, g.voorLijn).d < g.terug + 0.5) continue;
+      const y = hoogte(c.x, c.z);
+      doos(mb, 'haag', 'haag', c, t, 3.02, 0.6, y - 0.1, y + 1.6);
+    }
   }
 }
 
@@ -507,5 +541,135 @@ function bouwplaats(mb: MeshBouwer, g: Gebouw, hoogte: H) {
     doos(mb, 'beton', 'beton', { x: m.x - ca * 10, z: m.z - sa * 10 }, { x: ca, z: sa }, 2.5, 2.5, top - 2.2, top);
     doos(mb, 'kraan', 'kraan', m, { x: ca, z: sa }, 1.2, 1.2, top + 1.4, top + 5);
     doos(mb, 'glas', 'kraan', { x: m.x + ca * 1.8, z: m.z + sa * 1.8 }, { x: ca, z: sa }, 1.8, 1.8, top - 2.2, top);
+  }
+}
+
+// ─── Inrichting van het erf (geen tuinen) ───────────────────────────────────────
+
+/**
+ * De rest van het perceel achter (en voor) een gebouw zonder tuinen: parkeerplaats bij kantoren,
+ * binnentuin met speelplek en fietsenhok bij flats, binnenplaats bij winkels, opslagterrein met
+ * containers en hekwerk bij bedrijfshallen.
+ */
+function inrichting(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[]) {
+  const an = g.ankers[0];
+  const P = (d: number, s: number): V2 => ({ x: an.p.x + an.n.x * d + an.t.x * s, z: an.p.z + an.n.z * d + an.t.z * s });
+  const yv = (p: V2) => hoogte(p.x, p.z);
+  const binnen = (p: V2) => puntInPolygoon(p, g.perceel) && !puntInPolygoon(p, g.voet);
+  const half = g.breedte / 2 - 0.8;
+  const d0 = g.diepte + 1, d1 = an.d - g.terug - 0.6; // achter het gebouw, gemeten vanaf de voorgevel
+  const diep = d1 - d0;
+  // Breedte waarbinnen een rechthoek (d0..d1) helemaal op het perceel ligt.
+  const vrij = (da: number, db: number) => {
+    let h = half;
+    while (h > 2 && ![P(da, -h), P(da, h), P(db, -h), P(db, h)].every(binnen)) h -= 1;
+    return h;
+  };
+  const boom = (p: V2, schaal = r.range(0.55, 0.8)) => { if (binnen(p)) props.push({ soort: r.kies(['linde', 'eik', 'berk'] as const), x: p.x, y: yv(p), z: p.z, rot: r.range(0, 6.28), schaal, variant: r.int(0, 1) }); };
+  const struikje = (p: V2) => { if (binnen(p)) struik(mb, p, yv(p), r.range(0.5, 0.8), r.range(0.8, 1.3)); };
+
+  // Voorkant: plantenbakken of een boom bij brede voorstukken.
+  if (g.terug > 2.2 && g.vorm !== 'winkelsMetWonen') {
+    for (let s = -half + 2; s <= half - 2; s += 7) {
+      if (Math.abs(s) < 3) continue; // entree vrijlaten
+      const c = P(-g.terug * 0.5, s);
+      if (!binnen(c)) continue;
+      if (g.vorm === 'bedrijfshal') continue;
+      if (r.next() < 0.5) boom(c, 0.5); else doos(mb, 'beton', 'haag', c, an.t, 2.4, 1.0, yv(c), yv(c) + 0.6);
+    }
+  }
+  if (diep < 3) return;
+
+  switch (g.vorm) {
+    case 'kantoortoren': {
+      // Parkeerplaats: één of twee rijen vakken van 2,5 × 5 m met een rijbaan ertussen.
+      const h = vrij(d0, d1);
+      if (h < 4) break;
+      plaat(mb, 'asfalt', an, d0, d1, -h, h, hoogte, 0.09);
+      const rijen = diep >= 17 ? [d0 + 0.5, d1 - 5.5] : diep >= 7 ? [d1 - 5.5] : [];
+      for (const rd of rijen) {
+        for (let s = -h + 0.3; s <= h - 0.2; s += 2.5) plaat(mb, 'markering', an, rd, rd + 5, s - 0.06, s + 0.06, hoogte, 0.11);
+        // Wat geparkeerde auto's.
+        for (let s = -h + 1.55; s < h - 1.2; s += 2.5) {
+          if (r.next() < 0.45) continue;
+          const c = P(rd + 2.5, s), y = yv(c);
+          const kleur = r.kies(['trimDonker', 'trim', 'metaal', 'kraan', 'dakpannen'] as const);
+          doos(mb, kleur, kleur, c, an.n, 4.3, 1.8, y + 0.25, y + 0.95);
+          doos(mb, 'glas', kleur, P(rd + 2.7, s), an.n, 2.4, 1.6, y + 0.95, y + 1.45);
+        }
+      }
+      // Bomen langs de achterrand.
+      for (let s = -h + 3; s < h - 2; s += 9) boom(P(d1 + 0.2, s));
+      break;
+    }
+    case 'appartementen': {
+      // Binnentuin: pad, bomen, speelplek, bankjes en een fietsenhok.
+      const h = vrij(d0, d1);
+      if (h < 3) break;
+      plaat(mb, 'stoeptegels', an, d0, d0 + 1.6, -h, h, hoogte);
+      if (diep > 6) {
+        const ps = r.range(-h * 0.4, h * 0.4);
+        plaat(mb, 'stoeptegels', an, d0 + 1.6, d1, ps - 0.8, ps + 0.8, hoogte);
+        // Fietsenhok tegen de achtergevel.
+        const fh = Math.min(10, h * 0.8);
+        const c = P(d0 + 2.6, ps > 0 ? -h + fh / 2 + 0.3 : h - fh / 2 - 0.3), y = yv(c);
+        doos(mb, 'hout', 'golfdak', c, an.t, fh, 2.4, y, y + 2.3);
+        if (diep > 12) {
+          // Speelplek met zandbak en klimrek.
+          const sp = P(d0 + diep * 0.6, ps > 0 ? -h * 0.5 : h * 0.5);
+          if (binnen(sp)) {
+            const ys = yv(sp);
+            plaat(mb, 'grind', an, d0 + diep * 0.6 - 3, d0 + diep * 0.6 + 3, (ps > 0 ? -h * 0.5 : h * 0.5) - 3, (ps > 0 ? -h * 0.5 : h * 0.5) + 3, hoogte, 0.1);
+            doos(mb, 'kraan', 'hout', sp, an.t, 2.2, 1.4, ys, ys + 2.2);
+            doos(mb, 'hout', 'hout', { x: sp.x + an.t.x * 1.8, z: sp.z + an.t.z * 1.8 }, an.t, 0.3, 2.8, ys, ys + 1.6);
+          }
+        }
+        // Bankjes langs het pad.
+        for (const k of [-1, 1]) { const c2 = P(d0 + diep * 0.35, ps + k * 1.6), y2 = yv(c2); if (binnen(c2)) doos(mb, 'hout', 'hout', c2, an.n, 1.8, 0.5, y2 + 0.35, y2 + 0.5); }
+      }
+      for (let i = 0; i < Math.min(6, Math.floor(h * diep / 120) + 1); i++) boom(P(r.range(d0 + 3, d1 - 1), r.range(-h + 1, h - 1)));
+      for (let s = -h + 1; s < h; s += 4) if (r.next() < 0.5) struikje(P(d1 - 0.6, s));
+      break;
+    }
+    case 'winkelsMetWonen': {
+      // Binnenplaats: bestrating, containers, fietsen, een boom.
+      const h = vrij(d0, d1);
+      if (h < 2.5) break;
+      plaat(mb, 'stoeptegels', an, d0, d1, -h, h, hoogte);
+      for (let s = -h + 1; s < h - 1; s += 3.2) {
+        if (r.next() < 0.5) continue;
+        const c = P(d0 + 0.8, s), y = yv(c);
+        doos(mb, r.next() < 0.5 ? 'trimDonker' : 'kraan', 'trimDonker', c, an.t, 1.3, 1.0, y, y + 1.3);
+      }
+      if (diep > 6) boom(P(d0 + diep * 0.6, r.range(-h * 0.5, h * 0.5)), 0.6);
+      for (let s = -h + 2; s < h - 2; s += 6) if (r.next() < 0.4) struikje(P(d1 - 0.5, s));
+      break;
+    }
+    case 'bedrijfshal': {
+      // Opslagterrein met hekwerk, containers en pallets.
+      const h = vrij(d0, d1);
+      if (h < 3) break;
+      plaat(mb, 'erfverharding', an, d0, d1, -h, h, hoogte, 0.07);
+      for (let i = 0; i < Math.floor(h * diep / 40); i++) {
+        const d = r.range(d0 + 2, d1 - 2), s = r.range(-h + 2, h - 2), c = P(d, s);
+        if (!binnen(c)) continue;
+        const y = yv(c);
+        if (r.next() < 0.6) {
+          const kl = `golfplaat:${r.int(0, HALTINTEN - 1)}`;
+          const stapel = r.next() < 0.35 ? 2 : 1;
+          for (let k = 0; k < stapel; k++) doos(mb, kl, kl, c, an.t, 6.1, 2.45, y + k * 2.6, y + k * 2.6 + 2.6);
+        } else {
+          for (let k = 0; k < r.int(1, 3); k++) doos(mb, 'hout', 'hout', { x: c.x + an.t.x * k * 1.4, z: c.z + an.t.z * k * 1.4 }, an.t, 1.2, 1.0, y, y + r.range(0.5, 1.6));
+        }
+      }
+      // Hekwerk langs zijkanten en achterkant.
+      const hek = (a: V2, b: V2) => {
+        const L = Math.hypot(b.x - a.x, b.z - a.z); if (L < 1) return;
+        const ya = yv(a), yb = yv(b);
+        mb.quad('hekwerk', { x: a.x, y: ya, z: a.z }, { x: b.x, y: yb, z: b.z }, { x: b.x, y: yb + 2.2, z: b.z }, { x: a.x, y: ya + 2.2, z: a.z }, [0, 0], [L / 3.5, 0], [L / 3.5, 1], [0, 1], N3({ x: -(b.z - a.z) / L, z: (b.x - a.x) / L }));
+      };
+      hek(P(d0, -h), P(d1, -h)); hek(P(d1, -h), P(d1, h)); hek(P(d1, h), P(d0, h));
+      break;
+    }
   }
 }

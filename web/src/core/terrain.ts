@@ -88,6 +88,19 @@ export class Terrein {
     this.markeer(x0, z0, x1, z1);
   }
 
+  /** Terrein binnen `binnen` m niet hoger laten zijn dan de doelhoogte (onder wegen). */
+  begrens(doel: (x: number, z: number) => { h: number; d: number } | null, x0: number, z0: number, x1: number, z1: number, binnen: number) {
+    const i0 = Math.max(0, Math.floor(this.rasterX(x0))), i1 = Math.min(this.n - 1, Math.ceil(this.rasterX(x1)));
+    const j0 = Math.max(0, Math.floor(this.rasterX(z0))), j1 = Math.min(this.n - 1, Math.ceil(this.rasterX(z1)));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const r = doel(this.wereldX(i), this.wereldX(j));
+      if (!r || r.d > binnen) continue;
+      const k = j * this.n + i;
+      if (this.h[k] > r.h) this.h[k] = r.h;
+    }
+    this.markeer(x0, z0, x1, z1);
+  }
+
   markeer(x0: number, z0: number, x1: number, z1: number) { this.vuil.push({ x0, z0, x1, z1 }); }
   haalVuil() { const v = this.vuil; this.vuil = []; return v; }
 

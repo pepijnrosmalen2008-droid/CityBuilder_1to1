@@ -114,6 +114,13 @@ async function start() {
   klaar.onclick = () => { if (gereedschap.modus === 'gebied') gereedschap.rondGebiedAf(); else gereedschap.terug(); };
   document.body.appendChild(klaar);
 
+  // Zoomknoppen (vooral voor telefoons).
+  const zoom = document.createElement('div');
+  zoom.id = 'zoomknoppen';
+  zoom.innerHTML = '<button class="knop rond" data-z="0.6" aria-label="Inzoomen">+</button><button class="knop rond" data-z="1.65" aria-label="Uitzoomen">−</button>';
+  zoom.querySelectorAll<HTMLElement>('[data-z]').forEach(b => (b.onclick = () => camera.zoomStap(Number(b.dataset.z))));
+  document.body.appendChild(zoom);
+
   // Hulp en voorbeeldstad.
   const hulp = document.createElement('div');
   hulp.className = 'hulp paneel';
@@ -135,7 +142,7 @@ async function start() {
     const verberg = (param.get('verberg') ?? '').split(',');
     if (verberg.includes('zones')) stad.zones.mesh.visible = false;
     if (verberg.includes('ao') && sfeer.ao) sfeer.ao.enabled = false;
-    if (verberg.includes('ui')) for (const id of ['hud', 'werkbalk']) document.getElementById(id)!.style.display = 'none';
+    if (verberg.includes('ui')) for (const id of ['hud', 'werkbalk', 'zoomknoppen']) document.getElementById(id)!.style.display = 'none';
     if (verberg.includes('ui')) { hulp.style.display = 'none'; document.getElementById('nieuws')?.remove(); }
     sfeer.volg(camera.doel, camera.afstand);
     const t0 = performance.now();

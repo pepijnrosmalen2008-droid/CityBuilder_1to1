@@ -50,7 +50,10 @@ export function rijkdom(t: Terrein, soort: Grondstof, x: number, z: number): num
 }
 
 export interface Veld { poly: V2[]; gewas: Gewas; as: V2; bedrijf: number; ha: number }
-export interface Gebied { id: number; soort: Grondstof; poly: V2[]; ha: number; rijk: number; velden: Veld[] }
+export interface Gebied { id: number; soort: Grondstof; poly: V2[]; ha: number; rijk: number; velden: Veld[]; hoofd?: number }
+
+/** Plek van een hoofdgebouw: aan de weg, met de voorkant naar de weg. */
+export interface HoofdPlek { p: V2; rot: number; weg: V2 }
 
 export interface Bedrijf {
   id: number; gebied: number; soort: Grondstof; naam: string;
@@ -61,6 +64,8 @@ export interface Bedrijf {
   productie: number;
   voortgang: number; klaar: boolean;
   putten: V2[]; seed: number;
+  /** Hoofdgebouw van het gebied (staat aan de weg). */
+  hoofd?: boolean;
 }
 
 /** Verwerkingscapaciteit per arbeidsplaats per maand. */
@@ -100,8 +105,27 @@ export class Economie {
     return n ? s / n : 0;
   }
 
-  /** Een gebied tekenen. Geeft een foutmelding of null. */
-  maakGebied(soort: Grondstof, poly: V2[]): string | null {
+  /**
+   * Plek voor het hoofdgebouw bij punt p: naast de dichtstbijzijnde weg (binnen `bereik` m),
+   * aan de kant van p, met het erf (46 × 40 m) net achter de stoep.
+   */
+  hoofdPlek(p: V2, bereik = 45): HoofdPlek | null {
+    const s = this.w.net.segmentBij(p, bereik);
+    if (!s) return null;
+    let best = s.seg.pad[0], bd = Infinity;
+    for (const q of s.seg.pad) { const d = dist2(q, p); if (d < bd) { bd = d; best = q; } }
+    if (best.brug || best.tunnel) return null;
+    let n = { x: -best.dz, z: best.dx };
+    if ((p.x - best.x) * n.x + (p.z - best.z) * n.z < 0) n = { x: -n.x, z: -n.z };
+    const afstand = halveBreedte(s.seg.type) + 1.5 + 20;
+    const c = { x: best.x + n.x * afstand, z: best.z + n.z * afstand };
+    // Niet op een andere weg.
+    for (const seg of this.w.net.segmenten.values()) if (seg.id !== s.seg.id && afstandTotLijn(c, seg.pad).d < halveBreedte(seg.type) + 20) return null;
+    return { p: c, rot: Math.atan2(-n.x, -n.z), weg: { x: best.x + n.x * (halveBreedte(s.seg.type) + 0.5), z: best.z + n.z * (halveBreedte(s.seg.type) + 0.5) } };
+  }
+
+  /** Een gebied tekenen. Geeft een foutmelding of null. Het hoofdgebouw staat aan de weg. */
+  maakGebied(soort: Grondstof, poly: V2[], hoofd?: HoofdPlek | null): string | null {
     if (poly.length < 3) return 'Teken minstens drie punten';
     const ha = Math.abs(getekendOppervlak(poly)) / 10000;
     if (ha < 1.5) return 'Gebied te klein (minimaal 1,5 ha)';
@@ -114,10 +138,28 @@ export class Economie {
     if (!weg) return 'Het gebied moet aan een weg liggen';
     const rijk = this.gemiddeldeRijkdom(soort, poly);
     if (rijk < 0.12) return `Hier zit (bijna) geen ${GRONDSTOFFEN[soort].naam.toLowerCase()}grond`;
+    // Hoofdgebouw: opgegeven plek, of de plek aan de weg die het dichtst bij het gebied ligt.
+    if (!hoofd) {
+      let bd = Infinity;
+      for (const s of this.w.net.segmenten.values()) for (const q of s.pad) {
+        const d = puntInPolygoon(q, poly) ? 0 : afstandTotLijn(q, [...poly, poly[0]]).d;
+        if (d >= bd) continue;
+        // Richting het gebied: naar het zwaartepunt.
+        const c = zwaartepunt(poly);
+        const k = this.hoofdPlek({ x: q.x + (c.x - q.x) * 0.02, z: q.z + (c.z - q.z) * 0.02 }, 5);
+        if (k) { bd = d; hoofd = k; }
+      }
+    }
+    if (!hoofd) return 'Geen plek voor het hoofdgebouw aan de weg';
     const g: Gebied = { id: this.volgende++, soort, poly: poly.map(p => ({ ...p })), ha, rijk, velden: [] };
-    if (soort === 'landbouw') g.velden = this.verdeelVelden(g);
+    if (soort === 'landbouw') {
+      // Geen akkers onder het erf van het hoofdgebouw.
+      const hp = hoofd.p;
+      g.velden = this.verdeelVelden(g).filter(v => !puntInPolygoon(hp, v.poly) && afstandTotLijn(hp, [...v.poly, v.poly[0]]).d > 26);
+    }
     this.gebieden.set(g.id, g);
     this.events.push({ soort: 'gebied+', id: g.id });
+    this.nieuwBedrijf(g, hoofd);
     this.w.meld(`Nieuw ${GRONDSTOFFEN[soort].naam.toLowerCase()}gebied van ${Math.round(ha)} ha aangewezen`, 'weg');
     return null;
   }
@@ -201,15 +243,15 @@ export class Economie {
     return dir;
   }
 
-  private nieuwBedrijf(g: Gebied) {
+  private nieuwBedrijf(g: Gebied, hoofd?: HoofdPlek) {
     const tussen = { landbouw: 90, bosbouw: 140, olie: 110, delfstoffen: 160 }[g.soort];
-    const p = this.plek(g, tussen);
+    const p = hoofd ? hoofd.p : this.plek(g, tussen);
     if (!p) return;
-    const r = rijkdom(this.w.terrein, g.soort, p.x, p.z);
+    const r = Math.max(hoofd ? g.rijk : 0, rijkdom(this.w.terrein, g.soort, p.x, p.z));
     const b: Bedrijf = {
       id: this.volgende++, gebied: g.id, soort: g.soort, naam: this.rng.kies(NAMEN[g.soort]),
-      p, rot: this.naarWeg(p), y: this.w.terrein.hoogte(p.x, p.z), ha: 0, banen: 0, productie: 0,
-      voortgang: 0, klaar: false, putten: [], seed: Math.floor(this.rng.next() * 1e9),
+      p, rot: hoofd ? hoofd.rot : this.naarWeg(p), y: this.w.terrein.hoogte(p.x, p.z), ha: 0, banen: 0, productie: 0,
+      voortgang: 0, klaar: false, putten: [], seed: Math.floor(this.rng.next() * 1e9), hoofd: !!hoofd,
     };
     switch (g.soort) {
       case 'landbouw': {
@@ -217,7 +259,7 @@ export class Economie {
         const vrij = g.velden.filter(v => !v.bedrijf).sort((a, c) => dist2(zwaartepunt(a.poly), p) - dist2(zwaartepunt(c.poly), p));
         let ha = 0;
         for (const v of vrij) { if (ha > 2.5) break; v.bedrijf = b.id; ha += v.ha; }
-        if (ha < 1) return;
+        if (ha < 1 && !hoofd) return;
         b.ha = ha;
         b.banen = Math.max(2, Math.round(ha * 0.8));
         b.productie = ha * 9 / 12 * (0.6 + r * 0.6);
@@ -229,14 +271,15 @@ export class Economie {
         for (let i = 0; i < 6 && b.putten.length < 4; i++) {
           const h = this.rng.next() * Math.PI * 2, d = 45 + this.rng.next() * 60;
           const q = { x: p.x + Math.cos(h) * d, z: p.z + Math.sin(h) * d };
-          if (puntInPolygoon(q, g.poly) && rijkdom(this.w.terrein, 'olie', q.x, q.z) > 0.15) b.putten.push(q);
+          if (puntInPolygoon(q, g.poly) && rijkdom(this.w.terrein, 'olie', q.x, q.z) > (hoofd ? 0.05 : 0.15)) b.putten.push(q);
         }
-        if (!b.putten.length) return;
+        if (!b.putten.length && !hoofd) return;
         b.banen = 3 + b.putten.length; b.productie = b.putten.length * 15 * 30 * (0.6 + r * 0.6); break;
       }
       case 'delfstoffen': b.ha = 8; b.banen = 12; b.productie = 150000 / 12 * (0.6 + r * 0.6); break;
     }
     this.bedrijven.set(b.id, b);
+    if (hoofd) g.hoofd = b.id;
     this.events.push({ soort: 'bedrijf+', id: b.id });
     if (g.soort === 'delfstoffen') this.graafGroeve(b);
     if (g.soort === 'bosbouw') {

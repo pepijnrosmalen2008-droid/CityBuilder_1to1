@@ -4,7 +4,7 @@ import { Wereld } from './wereld';
 import { WegTypeId, halveBreedte, WEGTYPEN } from './wegen/typen';
 import { Wegennet } from './wegen/netwerk';
 import { Zone, zoneKleur } from './zones';
-import { Grondstof, GRONDSTOFFEN } from './economie';
+import { Grondstof, GRONDSTOFFEN, HoofdPlek } from './economie';
 import { getekendOppervlak, afstandTotLijn } from './poly';
 import { PERCEEL_BREEDTE, vrijeDiepte } from './percelen';
 
@@ -27,7 +27,7 @@ export type Voorbeeld =
   | { soort: 'weg'; as: V3[]; breedte: number; geldig: boolean; tekst: string; punten: V3[]; lijnen: [V3, V3][]; snap: V3 | null; kavels: KavelBand[] }
   | { soort: 'penseel'; m: V3; r: number; kleur: string }
   | { soort: 'markeer'; segment?: number; gebouw?: number; gebied?: number; kleur: string; tekst: string }
-  | { soort: 'gebied'; punten: V3[]; kleur: string; tekst: string; dicht: boolean };
+  | { soort: 'gebied'; punten: V3[]; kleur: string; tekst: string; dicht: boolean; hoofd: { p: V3; rot: number; geldig: boolean } | null };
 
 export class Gereedschap {
   modus: Modus = 'weg';
@@ -56,6 +56,7 @@ export class Gereedschap {
   private meldingKlok = 0;
   grondstof: Grondstof = 'landbouw';
   private gebiedPunten: V2[] = [];
+  private hoofd: HoofdPlek | null = null;
 
   constructor(private wereld: Wereld) {}
 
@@ -65,12 +66,12 @@ export class Gereedschap {
   /** Gebied afronden (knop of klik op het eerste punt). */
   rondGebiedAf() {
     if (this.gebiedPunten.length < 3) { this.melding = 'Zet minstens drie punten'; return; }
-    const fout = this.wereld.economie.maakGebied(this.grondstof, this.gebiedPunten);
-    if (fout) this.melding = fout; else this.gebiedPunten = [];
+    const fout = this.wereld.economie.maakGebied(this.grondstof, this.gebiedPunten, this.hoofd);
+    if (fout) this.melding = fout; else { this.gebiedPunten = []; this.hoofd = null; }
   }
 
   zetModus(m: Modus) { this.modus = m; this.annuleer(); this.melding = ''; }
-  annuleer() { this.start = null; this.ctrl = null; this.raak = null; this.ref = null; this.schilderen = false; this.gebiedPunten = []; }
+  annuleer() { this.start = null; this.ctrl = null; this.raak = null; this.ref = null; this.schilderen = false; this.gebiedPunten = []; this.hoofd = null; }
 
   /** Begin op p: onthoud de richting van een aansluitende weg (doorlopen en hoeksnappen). */
   private begin(p: V2) {
@@ -297,6 +298,14 @@ export class Gereedschap {
       case 'zone': this.schilderen = true; this.schilder(p); return;
       case 'gebied': {
         const pp = this.gebiedPunten;
+        if (!pp.length) {
+          // Eerst het hoofdgebouw aan de weg; het gebied begint bij de stoep ernaast.
+          const h = w.economie.hoofdPlek(p);
+          if (!h) { this.melding = 'Begin naast een weg: daar komt het hoofdgebouw'; return; }
+          this.hoofd = h;
+          pp.push(h.weg);
+          return;
+        }
         if (pp.length >= 3 && dist2(p, pp[0]) < 14) { this.rondGebiedAf(); return; }
         pp.push(p);
         return;
@@ -399,15 +408,20 @@ export class Gereedschap {
       case 'zone': return { soort: 'penseel', m, r: this.penseel, kleur: zoneKleur(this.zone) };
       case 'gebied': {
         const t = w.terrein;
-        const pts = [...this.gebiedPunten, p];
         const info = GRONDSTOFFEN[this.grondstof];
+        const hp = this.hoofd ?? (this.gebiedPunten.length ? null : w.economie.hoofdPlek(p));
+        const hoofd = hp ? { p: { x: hp.p.x, y: t.hoogte(hp.p.x, hp.p.z), z: hp.p.z }, rot: hp.rot, geldig: true } : null;
+        if (!this.gebiedPunten.length) {
+          return { soort: 'gebied', punten: [], kleur: info.kleur, tekst: hp ? `${info.naam}: klik om het hoofdgebouw hier aan de weg te zetten` : 'Ga naast een weg staan: daar komt het hoofdgebouw', dicht: false, hoofd };
+        }
+        const pts = [...this.gebiedPunten, p];
         let tekst = `${info.naam}: klik de hoekpunten van het gebied`;
         if (pts.length >= 3) {
           const ha = Math.abs(getekendOppervlak(pts)) / 10000;
           const rijk = w.economie.gemiddeldeRijkdom(this.grondstof, pts);
           tekst = `${Math.round(ha)} ha · ${info.naam.toLowerCase()} ${Math.round(rijk * 100)}%` + (this.gebiedPunten.length >= 3 && dist2(p, this.gebiedPunten[0]) < 14 ? ' · klik om af te ronden' : '');
         }
-        return { soort: 'gebied', punten: pts.map(q => ({ x: q.x, y: t.hoogte(q.x, q.z), z: q.z })), kleur: info.kleur, tekst, dicht: pts.length >= 3 };
+        return { soort: 'gebied', punten: pts.map(q => ({ x: q.x, y: t.hoogte(q.x, q.z), z: q.z })), kleur: info.kleur, tekst, dicht: pts.length >= 3, hoofd };
       }
       case 'opwaarderen': {
         const s = w.net.segmentBij(p, 1);

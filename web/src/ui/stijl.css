@@ -174,3 +174,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
 .keten .rij { font-size: 12px; padding: 2px 0; } .keten .rij span { color: var(--zacht); }
 .balk { height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); margin: 3px 0 4px; overflow: hidden; } .balk div { height: 100%; border-radius: 3px; }
 @media (max-width: 820px) { .economie { width: calc(100vw - 16px); top: 120px; max-height: calc(100vh - 330px); } }
+
+/* Zoomknoppen: alleen op aanraakschermen */
+#zoomknoppen { position: fixed; right: 10px; top: 45%; z-index: 5; display: none; flex-direction: column; gap: 8px; }
+#zoomknoppen .knop { width: 44px; height: 44px; border-radius: 50%; font-size: 24px; font-weight: 600; line-height: 1; padding: 0; background: rgba(16,21,30,.82); backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+@media (pointer: coarse) { #zoomknoppen { display: flex; } }

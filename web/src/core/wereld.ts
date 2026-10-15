@@ -39,6 +39,8 @@ export interface Gebouw {
   ankers: Anker[]; grenzen: Anker[];
   /** Hele perceel (voor tuin en bestrating). */
   perceel: V2[];
+  /** Buitenste perceelgrenzen (begin en eind langs de straat), voor schuttingen. */
+  zijden?: Anker[];
   /** Hoekpand: rooilijnen langs de zijstraat (punt op de gevel, normaal van de straat af). */
   zijStraat?: { o: V2; n: V2 }[];
   centrum: V2; voor: V2; breedte: number;
@@ -414,12 +416,13 @@ export class Wereld {
     }
     for (let i = 1; i < eenheden; i++) { const q = opStrook(st, s0 + i * lengte / eenheden); grenzen.push({ p: q.p, n: q.n, t: q.t, d: q.d }); }
     const perceel = band(st, s0, s1, 0, STROOK_DIEPTE);
+    const zijden: Anker[] = [s0, s1].map(sv => { const q = opStrook(st, sv); return { p: q.p, n: q.n, t: q.t, d: q.d }; });
     let y = -Infinity, yGrond = Infinity;
     for (const p of [...voet, zwaartepunt(voet)]) { const h = this.terrein.hoogte(p.x, p.z); y = Math.max(y, h); yGrond = Math.min(yGrond, h); }
     const opp = Math.abs(getekendOppervlak(voet));
     return {
       id: this.volgende++, kavel: k.id, kavels: reeks.map(x => x.id), zone, vorm,
-      voet, voorLijn, terug, diepte, dak, ankers, grenzen, perceel,
+      voet, voorLijn, terug, diepte, dak, ankers, grenzen, perceel, zijden,
       zijStraat: zijStraat.filter(z => voet.some(p => Math.abs((p.x - z.o.x) * z.n.x + (p.z - z.o.z) * z.n.z) < 0.3)),
       centrum: zwaartepunt(voet), voor: { x: -mid.n.x, z: -mid.n.z }, breedte: lengte,
       y: y + 0.15, yGrond, lagen: ls, eenheden, seed: Math.floor(r.next() * 2 ** 31),

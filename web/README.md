@@ -24,7 +24,7 @@ hierheen).
 
 | Toets / muis | Functie |
 |---|---|
-| X / Z / G / U / B / Esc | Wegen / Zones / Economie (gebieden) / Opwaarderen / Slopen / Kijken |
+| X / Z / G / U / B / Esc | Wegen / Zones / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
 | C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend) |
 | PgUp / PgDn | Hoogte van de weg in stappen van 4 m: viaduct (omhoog) of tunnel (omlaag); wegen op verschillende hoogte kruisen zonder kruispunt |
@@ -37,7 +37,7 @@ hierheen).
 | R/F | Kantelen |
 | Scrollen | Zoomen (tot op straatniveau) |
 | Spatie | Pauze |
-| Tikken / slepen / knijpen | Op een aanraakscherm: klikken / schuiven (in Zones: schilderen) / zoomen; twee vingers draaien en kantelen |
+| Tikken / slepen / knijpen | Op een aanraakscherm: klikken / schuiven, de grond volgt je vinger (in Zones: schilderen) / zoomen (of de knoppen + en −); twee vingers draaien, of samen omhoog/omlaag om te kantelen |
 
 ## Opbouw: klaar om naar een andere engine te verhuizen
 

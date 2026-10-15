@@ -117,23 +117,38 @@ export class Wegennet {
     seg.lengte = m[n].s;
   }
 
+  /** Hoogte van het wegdek en afstand tot de as van segment seg op (x, z); null op bruggen en in tunnels. */
+  private wegdekBij(seg: Segment, x: number, z: number): { h: number; d: number } | null {
+    const pad = seg.pad;
+    let best = Infinity, h = 0, brug = false;
+    for (let i = 0; i < pad.length - 1; i++) {
+      const a = pad[i], b = pad[i + 1];
+      const q = puntTotLijnstuk({ x, z }, a, b);
+      if (q.d < best) { best = q.d; h = lerp(a.y, b.y, q.t); brug = a.brug || b.brug || a.tunnel || b.tunnel; }
+    }
+    return brug ? null : { h: h - 0.08, d: best };
+  }
+
+  private omhulling(seg: Segment, r: number) {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of seg.pad) { x0 = Math.min(x0, p.x); z0 = Math.min(z0, p.z); x1 = Math.max(x1, p.x); z1 = Math.max(z1, p.z); }
+    return { x0: x0 - r, z0: z0 - r, x1: x1 + r, z1: z1 + r };
+  }
+
   /** Grondverzet onder de weg (niet onder bruggen). */
   private egaliseer(seg: Segment) {
     const hb = halveBreedte(seg.type);
-    const pad = seg.pad;
-    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
-    for (const p of pad) { x0 = Math.min(x0, p.x); z0 = Math.min(z0, p.z); x1 = Math.max(x1, p.x); z1 = Math.max(z1, p.z); }
-    const r = hb + 14;
-    this.terrein.egaliseer((x, z) => {
-      let best = Infinity, h = 0, brug = false;
-      for (let i = 0; i < pad.length - 1; i++) {
-        const a = pad[i], b = pad[i + 1];
-        const q = puntTotLijnstuk({ x, z }, a, b);
-        if (q.d < best) { best = q.d; h = lerp(a.y, b.y, q.t); brug = a.brug || b.brug || a.tunnel || b.tunnel; }
-      }
-      if (brug) return null;
-      return { h: h - 0.08, d: best };
-    }, x0 - r, z0 - r, x1 + r, z1 + r, hb + 0.8, 12);
+    const o = this.omhulling(seg, hb + 14);
+    this.terrein.egaliseer((x, z) => this.wegdekBij(seg, x, z), o.x0, o.z0, o.x1, o.z1, hb + 0.8, 12);
+    // De uitloop kan het terrein onder wegen in de buurt (andere kant van een bocht, een
+    // kruising) weer ophogen: daar het terrein nooit boven het wegdek laten uitkomen.
+    for (const s of this.segmenten.values()) {
+      if (!s.pad.length) continue;
+      const hs = halveBreedte(s.type);
+      const b = this.omhulling(s, hs + 1.5);
+      if (b.x1 < o.x0 || b.x0 > o.x1 || b.z1 < o.z0 || b.z0 > o.z1) continue;
+      this.terrein.begrens((x, z) => this.wegdekBij(s, x, z), Math.max(b.x0, o.x0), Math.max(b.z0, o.z0), Math.min(b.x1, o.x1), Math.min(b.z1, o.z1), hs + 1.0);
+    }
   }
 
   // ─── Topologie ────────────────────────────────────────────────────────────────
