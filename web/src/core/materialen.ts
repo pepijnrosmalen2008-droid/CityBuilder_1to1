@@ -53,6 +53,7 @@ const VAST: Record<string, MatDef> = {
   plint: D({ tex: 'plint', meter: 6, normaal: 1 }),
   haag: D({ tex: 'haag', meter: 2, normaal: 1 }),
   hout: D({ tex: 'hout', meter: 2, normaal: 0.7 }),
+  schutting: D({ tex: 'schutting', meter: 2, normaal: 0.8 }),
   keet: D({ tex: 'keet', meter: 3, normaal: 0.8 }),
   kraan: D({ kleur: [0.93, 0.70, 0.08], ruwheid: 0.45, metaal: 0.3 }),
   steiger: D({ tex: 'steiger', meter: 2, alfa: 'knip', dubbelzijdig: true }),
@@ -110,7 +111,7 @@ export function materiaal(sleutel: string): MatDef {
     case 'golfplaat': return D({ tex: sleutel, meter: 4, normaal: 1 });
     case 'deur': return D({ kleur: DEUR[Number(arg) % DEUR.length], ruwheid: 0.4 });
     case 'gewas': return D({ tex: sleutel, meter: 8, normaal: 0.8, schaduw: false });
-    case 'blad': return D({ tex: sleutel, meter: 0, alfa: 'knip', dubbelzijdig: true, normaal: 0.6, instantieTint: true });
+    case 'blad': return D({ tex: sleutel, meter: 0, alfa: 'knip', dubbelzijdig: true, normaal: 0.25, instantieTint: true });
     case 'bladkern': return D({ tex: sleutel, meter: 3, instantieTint: true });
     default: return D({ kleur: [1, 0, 1] });
   }

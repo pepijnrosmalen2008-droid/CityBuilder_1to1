@@ -71,7 +71,8 @@ for (const sp of vk.stroken.sporen.values()) {
 console.log('verbindingen met verkeerde bezetting', lek);
 for (const id of [162, 130]) {
   const s = vk.stroken.sporen.get(id) as any; if (!s) continue;
-  const kop = s.op.map((i: number) => vk.voertuigen.get(i)!).filter(Boolean).pop()!;
+  const kop = s.op.map((i: number) => vk.voertuigen.get(i)!).filter(Boolean).pop();
+  if (!kop) continue;
   const next = kop.route[kop.ri + 1];
   const c = s.uit.map((u: number) => vk.stroken.verbinding(u)!).find((c: any) => c.doelSeg === next.seg);
   const doel = vk.stroken.baan(c.naar)!;

@@ -31,6 +31,7 @@ export function maakTextuur(sleutel: string): TexData {
     case 'dakgrind': return G.dakgrind();
     case 'haag': return G.haag();
     case 'hout': return G.hout();
+    case 'schutting': return G.schutting();
     case 'keet': return G.keet();
     case 'steiger': return G.steiger();
     case 'hekwerk': return G.hekwerk();

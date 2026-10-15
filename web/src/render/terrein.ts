@@ -99,14 +99,24 @@ vec3 laag(sampler2D t, vec2 p, float m) {
   vec3 a = texture2D(t, p / m).rgb;
   vec3 b = texture2D(t, vec2(p.y, -p.x) / (m * 3.7) + 0.31).rgb;
   return mix(a, b, 0.35);
-}`)
+}
+float hashT(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float ruisT(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hashT(i), hashT(i + vec2(1, 0)), f.x), mix(hashT(i + vec2(0, 1)), hashT(i + vec2(1, 1)), f.x), f.y);
+}
+float fbmT(vec2 p) { return ruisT(p) * 0.55 + ruisT(p * 2.13 + 7.1) * 0.3 + ruisT(p * 4.7 + 3.3) * 0.15; }`)
       .replace('#include <map_fragment>', `
   vec2 p = vWereld.xz;
   vec4 w = vBodem / max(0.001, vBodem.x + vBodem.y + vBodem.z + vBodem.w);
   vec3 kleur = laag(tGras, p, 6.0) * w.x + laag(tWeide, p, 9.0) * w.y + laag(tBos, p, 5.0) * w.z + laag(tZand, p, 7.0) * w.w;
-  // Grote vlekken kleurvariatie.
-  float vlek = texture2D(tWeide, p / 340.0).g;
-  kleur *= mix(0.88, 1.1, vlek);
+  // Grote vlekken: droger (geel-olijf) en voller (diep groen) gras, zoals op een luchtfoto.
+  float droog = smoothstep(0.42, 0.78, fbmT(p / 260.0));
+  float vol = smoothstep(0.5, 0.85, fbmT(p / 140.0 + 11.0));
+  float gras = w.x + w.y;
+  kleur = mix(kleur, kleur * vec3(1.16, 1.04, 0.72), droog * 0.55 * gras);
+  kleur = mix(kleur, kleur * vec3(0.78, 0.9, 0.82), vol * 0.5 * gras);
+  kleur *= mix(0.9, 1.07, fbmT(p / 55.0 + 3.0));
   // Natte zandrand vlak bij het water.
   kleur *= mix(0.62, 1.0, smoothstep(-0.3, 0.6, vWereld.y));
   diffuseColor.rgb *= kleur;`)

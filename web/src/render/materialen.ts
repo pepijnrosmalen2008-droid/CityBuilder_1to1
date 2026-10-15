@@ -17,10 +17,22 @@ export class Materialen {
       : new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...d.kleur, THREE.SRGBColorSpace), roughness: d.ruwheid, metalness: d.metaal });
     m.name = sleutel;
     if (d.dubbelzijdig) m.side = THREE.DoubleSide;
-    if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; m.alphaToCoverage = true; }
+    if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; m.alphaToCoverage = !sleutel.startsWith('blad'); }
     if (d.alfa === 'mengen') { m.transparent = true; m.depthWrite = false; }
     if (d.emissie) { m.emissive = new THREE.Color(...d.emissie); m.emissiveIntensity = 2.5; }
-    if (sleutel.startsWith('blad')) { m.emissive = new THREE.Color(0x0b1a06); m.emissiveIntensity = 1; m.envMapIntensity = 0.6; }
+    if (sleutel.startsWith('blad')) {
+      m.emissive = new THREE.Color(0x081304); m.emissiveIntensity = 1; m.envMapIntensity = 0.5;
+      // Volume in de kroon: onderin en binnenin donkerder (zelfschaduw), de top vangt het licht.
+      m.onBeforeCompile = s => {
+        s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying float vKroon;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvKroon = clamp((position.y - 3.5) / 10.0, 0.0, 1.0);');
+        s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vKroon;')
+          .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+  float kroonAO = smoothstep(0.0, 1.0, vKroon);
+  reflectedLight.indirectDiffuse *= mix(0.42, 1.08, kroonAO);
+  reflectedLight.directDiffuse *= mix(0.62, 1.04, kroonAO);`);
+      };
+    }
     if (d.bovenop) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -4; }
     if (d.tex) {
       // Zolang de textuur er niet is: een rustige grijswaarde in plaats van wit.

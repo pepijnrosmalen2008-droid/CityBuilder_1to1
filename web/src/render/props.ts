@@ -7,8 +7,8 @@ import { hash01 } from '../core/rng';
 
 const VAK = 512;
 /** Afstanden (tot het midden van een vak) voor detailniveau 1 en 2. */
-const LOD1 = 260, LOD2 = 720;
-const niveauVoor = (d: number) => (d > LOD2 ? 2 : d > LOD1 ? 1 : 0);
+const LOD1 = 260, LOD2 = 720, LOD3 = 1300;
+const niveauVoor = (d: number) => (d > LOD3 ? 3 : d > LOD2 ? 2 : d > LOD1 ? 1 : 0);
 const vakVan = (x: number, z: number) => (Math.floor(x / VAK) + 100) * 1000 + (Math.floor(z / VAK) + 100);
 const vakMidden = (v: number) => new THREE.Vector3((Math.floor(v / 1000) - 100 + 0.5) * VAK, 0, ((v % 1000) - 100 + 0.5) * VAK);
 
@@ -112,7 +112,7 @@ export class PropLaag {
         if (!b) { vakken.add(v); continue; }
         // Alleen vakken waar een grens van een detailniveau doorheen kan lopen.
         const d = vakMidden(v).setY(cam.y * 0.3).distanceTo(cam);
-        if (d - VAK * 0.75 > LOD2 + 100 && b.distanceTo(cam) < 400) continue;
+        if (d - VAK * 0.75 > LOD3 + 100 && b.distanceTo(cam) < 400) continue;
         if (b.distanceTo(cam) > 80) vakken.add(v);
       }
     }

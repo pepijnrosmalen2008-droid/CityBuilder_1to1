@@ -32,14 +32,15 @@ export function gras(weide: boolean, tuin = false): TexData {
 /** Bosgrond: bladafval, aarde en mos. 5 m. */
 export function bosgrond(): TexData {
   const d = new Doek(512, 512);
-  const aarde = K(0.19, 0.13, 0.08), mos = K(0.18, 0.29, 0.09);
+  // Donker en mossig: van boven en van opzij gezien hoort een bosrand groen-bruin te zijn, niet roestig.
+  const aarde = K(0.16, 0.13, 0.08), mos = K(0.15, 0.25, 0.08);
   loop(d, (x, y, u, v) => {
     const w = worley(u, v, 26, 31);
     const rand = Math.min(1, (w.f2 - w.f1) * 4), korrel = hash01(x, y, 33);
-    let blad = mix(K(0.36, 0.20, 0.08), K(0.56, 0.34, 0.12), w.id);
-    if (w.id > 0.82) blad = K(0.30, 0.27, 0.13);
-    let k = mix(aarde, blad, rand * 0.9);
-    k = mix(k, mos, glad01(0.55, 0.75, fbm(u, v, 4, 3, 32)) * 0.6);
+    let blad = mix(K(0.27, 0.19, 0.09), K(0.38, 0.29, 0.13), w.id);
+    if (w.id > 0.82) blad = K(0.25, 0.26, 0.12);
+    let k = mix(aarde, blad, rand * 0.8);
+    k = mix(k, mos, 0.3 + glad01(0.45, 0.75, fbm(u, v, 4, 3, 32)) * 0.55);
     d.zet(x, y, mul(k, 0.85 + 0.3 * korrel), rand * 0.7 + korrel * 0.3, 0.1);
   });
   return d.naarTex(4);
@@ -381,6 +382,22 @@ export function hout(): TexData {
   return d.naarTex(3);
 }
 
+/** Schutting van geïmpregneerd vurenhout (groengrijs verweerd), staande planken met twee regels. 2 m. */
+export function schutting(): TexData {
+  const d = new Doek(256, 256);
+  loop(d, (x, y, u, v) => {
+    const pl = u * 16, i = Math.floor(pl), f = pl - i;
+    const nerf = fbm(u * 0.2 + i * 0.37, v, 2, 3, 940 + i);
+    let k = mix(K(0.27, 0.27, 0.20), K(0.40, 0.38, 0.29), hash01(i, 0, 941) * 0.55 + nerf * 0.45);
+    // Regels (dwarslatten) op 1/4 en 3/4, iets lichter en naar voren.
+    const regel = Math.abs(v - 0.25) < 0.035 || Math.abs(v - 0.8) < 0.035;
+    if (regel) k = mul(k, 1.12);
+    if (f < 0.05 && !regel) k = mul(k, 0.5);
+    d.zet(x, y, mul(k, 0.92 + 0.1 * hash01(x, y, 942)), regel ? 0.9 : f < 0.05 ? 0.2 : 0.6 + nerf * 0.2, 0.12);
+  });
+  return d.naarTex(3);
+}
+
 /** Bouwkeet: geribde container. 3 m. */
 export function keet(): TexData {
   const d = new Doek(128, 128);
@@ -455,17 +472,30 @@ export function bladkaart(soort: string): TexData {
   // Achtergrond leeg.
   for (let i = 0; i < N * N; i++) d.alfa![i] = 0;
   const naald = soort === 'den';
-  const aantal = naald ? 260 : 900;
+  const aantal = naald ? 320 : 1150;
+  // Loofbomen: bladeren in losse plukjes met gaten ertussen, zodat je diepte ziet in plaats van een plaat.
+  const nPluk = 13;
+  const pluk = Array.from({ length: nPluk }, (_, i) => {
+    const r = Math.sqrt(hash01(i, 11, s)) * 0.3, a = hash01(i, 12, s) * Math.PI * 2;
+    return { x: 0.5 + Math.cos(a) * r, y: 0.5 + Math.sin(a) * r };
+  });
   for (let b = 0; b < aantal; b++) {
-    // Verdeling: dichter in het midden van de tros.
-    const r = Math.sqrt(hash01(b, 1, s)) * 0.44, a = hash01(b, 2, s) * Math.PI * 2;
-    const cx = 0.5 + Math.cos(a) * r, cy = 0.5 + Math.sin(a) * r * (naald ? 0.6 : 1);
+    let cx: number, cy: number, plukY = 0.5;
+    if (naald) {
+      const r = Math.sqrt(hash01(b, 1, s)) * 0.44, a = hash01(b, 2, s) * Math.PI * 2;
+      cx = 0.5 + Math.cos(a) * r; cy = 0.5 + Math.sin(a) * r * 0.6;
+    } else {
+      const p = pluk[b % nPluk];
+      const r = Math.sqrt(hash01(b, 1, s)) * 0.12, a = hash01(b, 2, s) * Math.PI * 2;
+      cx = p.x + Math.cos(a) * r; cy = p.y + Math.sin(a) * r * 0.85; plukY = p.y;
+    }
+    const a = Math.atan2(cy - 0.5, cx - 0.5);
     const hoek = naald ? a + (hash01(b, 6, s) - 0.5) * 0.6 : hash01(b, 3, s) * Math.PI * 2;
-    const lang = (naald ? 0.16 : soort === 'berk' ? 0.045 : soort === 'plataan' ? 0.075 : 0.06) * (0.75 + 0.5 * hash01(b, 4, s));
+    const lang = (naald ? 0.16 : soort === 'berk' ? 0.028 : soort === 'plataan' ? 0.04 : 0.034) * (0.75 + 0.5 * hash01(b, 4, s));
     const breed = naald ? 0.012 : lang * (soort === 'eik' ? 0.55 : 0.62);
     const toon = hash01(b, 5, s);
-    // Licht aan de bovenkant van de tros, donker onderin (zelfschaduw).
-    const licht01 = Math.min(1, Math.max(0, 0.25 + toon * 0.5 + (cy - 0.5) * 0.9));
+    // Licht aan de bovenkant van elk plukje en van de hele tros, donker onderin (zelfschaduw).
+    const licht01 = Math.min(1, Math.max(0, 0.3 + toon * 0.28 + (cy - plukY) * 3.2 + (cy - 0.5) * 0.6));
     const kleur = mix(donker, licht, licht01);
     const ca = Math.cos(hoek), sa = Math.sin(hoek);
     const ext = Math.ceil(lang * N) + 2;

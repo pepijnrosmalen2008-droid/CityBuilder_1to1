@@ -6,11 +6,11 @@ import { MeshBouwer, MeshData } from './mesh';
 
 interface BoomVorm { stam: number; stamR: number; kroonY: number; kroonR: number; kroonH: number; trossen: number; kaart: number; naald: boolean; berk: boolean }
 const VORM: Record<string, BoomVorm> = {
-  eik: { stam: 5.5, stamR: 0.38, kroonY: 9.5, kroonR: 5.2, kroonH: 5.2, trossen: 26, kaart: 3.6, naald: false, berk: false },
-  linde: { stam: 5, stamR: 0.32, kroonY: 10, kroonR: 4.2, kroonH: 6.2, trossen: 24, kaart: 3.3, naald: false, berk: false },
-  berk: { stam: 6, stamR: 0.2, kroonY: 10, kroonR: 2.9, kroonH: 5.5, trossen: 18, kaart: 2.6, naald: false, berk: true },
+  eik: { stam: 5.5, stamR: 0.38, kroonY: 9.5, kroonR: 5.2, kroonH: 5.2, trossen: 34, kaart: 3.6, naald: false, berk: false },
+  linde: { stam: 5, stamR: 0.32, kroonY: 10, kroonR: 4.2, kroonH: 6.2, trossen: 32, kaart: 3.3, naald: false, berk: false },
+  berk: { stam: 6, stamR: 0.2, kroonY: 10, kroonR: 2.9, kroonH: 5.5, trossen: 24, kaart: 2.6, naald: false, berk: true },
   den: { stam: 7, stamR: 0.3, kroonY: 11, kroonR: 3.2, kroonH: 7.5, trossen: 0, kaart: 0, naald: true, berk: false },
-  plataan: { stam: 5.5, stamR: 0.42, kroonY: 11, kroonR: 5.8, kroonH: 5.8, trossen: 28, kaart: 3.8, naald: false, berk: false },
+  plataan: { stam: 5.5, stamR: 0.42, kroonY: 11, kroonR: 5.8, kroonH: 5.8, trossen: 36, kaart: 3.8, naald: false, berk: false },
 };
 
 export function cilinder(mb: MeshBouwer, mat: string, a: V3, b: V3, ra: number, rb: number, zijden = 7) {
@@ -44,10 +44,10 @@ function kaart(mb: MeshBouwer, mat: string, c: V3, as1: V3, as2: V3, r: number, 
   mb.ruw(mat, pts, nrm, [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 1, 2, 0, 2, 3]);
 }
 
-/** niveau 0 = vol detail, 1 = middel, 2 = ver weg (heel eenvoudig). */
+/** niveau 0 = vol detail, 1 = middel, 2 = ver weg, 3 = heel ver (een paar driehoeken). */
 export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   const laag = niveau > 0, ver = niveau > 1;
-  if (ver) return boomVer(soort);
+  if (laag) return niveau > 2 ? boomVer(soort, 5, 2, false) : boomVer(soort, ver ? 6 : 10, ver ? 3 : 6, !ver);
   const v = VORM[soort] ?? VORM.eik;
   const r = new Rng(soort.length * 977 + variant * 31 + 5);
   const mb = new MeshBouwer();
@@ -95,7 +95,7 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   for (let j = 0; j <= nV; j++) for (let i = 0; i <= nU; i++) {
     const th = (j / nV) * Math.PI, ph = (i / nU) * Math.PI * 2;
     const n = { x: Math.sin(th) * Math.cos(ph), y: Math.cos(th), z: Math.sin(th) * Math.sin(ph) };
-    const k = 0.62 + 0.08 * Math.sin(ph * 3 + j);
+    const k = 0.8 + 0.09 * Math.sin(ph * 3 + j * 1.7) + 0.05 * Math.cos(ph * 5 + j);
     pts.push({ x: midden.x + n.x * v.kroonR * k, y: midden.y + n.y * v.kroonH * 0.55 * k, z: midden.z + n.z * v.kroonR * k });
     nrm.push(n); uv.push([i / nU, j / nV]);
   }
@@ -120,19 +120,35 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   return mb.bouw();
 }
 
-/** Heel eenvoudige boom voor ver weg: drie kruisende bladkaarten (6 driehoeken). */
-function boomVer(soort: string): MeshData {
+/** Boom voor ver weg: een gesloten bladmassa (bol of kegel) op een korte stam, ~40 driehoeken.
+ *  Kruisende kaarten zien er van bovenaf uit als sterren of palmen; een volle kroon niet. */
+function boomVer(soort: string, nU = 7, nV = 4, stam = true): MeshData {
   const v = VORM[soort] ?? VORM.eik;
   const mb = new MeshBouwer();
-  const blad = `blad:${soort}`;
-  const yMid = v.naald ? (v.stam + v.kroonY + v.kroonH * 0.5) / 2 : v.kroonY - v.kroonH * 0.05;
-  const h = v.naald ? (v.kroonY + v.kroonH * 0.5) / 2 + 0.5 : v.kroonH * 0.85 + (v.kroonY - v.stam) * 0.5;
-  const r = v.kroonR * 1.05;
-  const midden: V3 = { x: 0, y: yMid, z: 0 };
-  for (let i = 0; i < 3; i++) {
-    const a = i / 3 * Math.PI;
-    kaart(mb, blad, midden, { x: Math.cos(a) * r / h, y: 0, z: Math.sin(a) * r / h }, { x: 0, y: 1, z: 0 }, h, { x: 0, y: yMid - 3, z: 0 });
+  const kern = `bladkern:${soort}`;
+  const schors = v.berk ? 'schorsBerk' : 'schors';
+  if (stam) cilinder(mb, schors, { x: 0, y: -0.3, z: 0 }, { x: 0, y: v.stam + 0.5, z: 0 }, v.stamR * 1.2, v.stamR * 0.8, 4);
+  const pts: V3[] = [], nrm: V3[] = [], uv: [number, number][] = [], idx: number[] = [];
+  for (let j = 0; j <= nV; j++) for (let i = 0; i <= nU; i++) {
+    const t = j / nV, ph = (i / nU) * Math.PI * 2;
+    let x: number, y: number, z: number, n: V3;
+    if (v.naald) {
+      // Kegel van onder de kroon tot de punt.
+      const r = v.kroonR * (1 - t) * (0.95 + 0.08 * Math.sin(ph * 3 + j));
+      x = Math.cos(ph) * r; z = Math.sin(ph) * r; y = v.stam - 1 + t * (v.kroonY + v.kroonH * 0.55 - v.stam + 1);
+      n = norm3({ x: Math.cos(ph), y: 0.5, z: Math.sin(ph) });
+    } else {
+      const th = (1 - t) * Math.PI, k = 0.98 + 0.07 * Math.sin(ph * 3 + j * 1.7);
+      n = { x: Math.sin(th) * Math.cos(ph), y: Math.cos(th), z: Math.sin(th) * Math.sin(ph) };
+      x = n.x * v.kroonR * k; y = v.kroonY + n.y * v.kroonH * 0.6 * k; z = n.z * v.kroonR * k;
+    }
+    pts.push({ x, y, z }); nrm.push(n); uv.push([ph * v.kroonR, y]);
   }
+  for (let j = 0; j < nV; j++) for (let i = 0; i < nU; i++) {
+    const a = j * (nU + 1) + i, b = a + 1, c = a + nU + 1, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  mb.ruw(kern, pts, nrm, uv, idx);
   return mb.bouw();
 }
 

@@ -159,6 +159,8 @@ export class ZoneLaag {
 
   werkBij() {
     this.mat.uniforms.uAlles.value = this.toonAlles ? 1 : 0;
+    // Zoals in CS2: lege zones alleen tonen als je aan het zoneren bent.
+    this.mesh.visible = this.toonAlles;
     if (!this.vuil) return;
     this.vuil = false;
     const pos: number[] = [], uv: number[] = [], kl: number[] = [], idx: number[] = [];
