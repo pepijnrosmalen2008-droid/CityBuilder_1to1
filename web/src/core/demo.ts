@@ -62,6 +62,7 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
 export const TEST_PLEKKEN: Record<string, [number, number]> = {
   haaks: [-300, -200], t: [-100, -200], y: [100, -200], vijf: [-300, 0], schuin: [-100, 0],
   bochtIn: [100, 0], breedte: [-300, 200], knik: [-100, 200], s: [100, 200],
+  viaduct: [-300, 420], tunnel: [-60, 420], afgerond: [180, 420],
 };
 export function bouwTestKruisingen(w: Wereld) {
   w.geld = 1e9;
@@ -87,6 +88,21 @@ export function bouwTestKruisingen(w: Wereld) {
   weg(o('knik', -60, 20), o('knik', 0, 20), 'straat'); weg(o('knik', 0, 20), o('knik', 30, -32), 'straat');
   // S-bocht.
   weg(o('s', -70, 30), o('s', 0, 0), 'straat', o('s', -35, -30)); weg(o('s', 0, 0), o('s', 70, -30), 'straat', o('s', 35, 30));
+  // Viaduct: een verhoogde straat (8 m) over een straat op maaiveld, zonder kruispunt.
+  const hoog = (a: V2, b: V2, type: WegTypeId, niveau: number, af = false) => { const r = w.legWeg(a, lerp2(a, b, 0.5), b, type, niveau, af); if (!r.ok) console.warn('test', r.fout, a, b); };
+  weg(o('viaduct', -80, 0), o('viaduct', 80, 0), 'straat');
+  hoog(o('viaduct', 0, -45), o('viaduct', 0, 45), 'straat', 8);
+  hoog(o('viaduct', 0, -150), o('viaduct', 0, -45), 'straat', 0);
+  hoog(o('viaduct', 0, 45), o('viaduct', 0, 150), 'straat', 0);
+  // Tunnel: 8 m diep onder een straat door.
+  weg(o('tunnel', 0, -70), o('tunnel', 0, 70), 'straat');
+  hoog(o('tunnel', -40, 0), o('tunnel', 40, 0), 'laan', -8);
+  hoog(o('tunnel', -160, 0), o('tunnel', -40, 0), 'laan', 0);
+  hoog(o('tunnel', 40, 0), o('tunnel', 160, 0), 'laan', 0);
+  // Automatisch afgeronde knik (rechte stukken, 90° en 45°).
+  hoog(o('afgerond', -60, 40), o('afgerond', 0, 40), 'straat', 0);
+  hoog(o('afgerond', 0, 40), o('afgerond', 0, -20), 'straat', 0, true);
+  hoog(o('afgerond', 0, -20), o('afgerond', 50, -70), 'straat', 0, true);
   // Zones zodat de percelen zichtbaar zijn.
   for (const k of [...w.kavels.values()]) w.zoneer(kavelMidden(k), 0.1, 'wonenLaag');
 }

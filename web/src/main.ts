@@ -117,7 +117,7 @@ async function start() {
   // Hulp en voorbeeldstad.
   const hulp = document.createElement('div');
   hulp.className = 'hulp paneel';
-  hulp.innerHTML = `<b>Bouwen</b><br>Wegen: klik begin- en eindpunt (bocht: C).<br>Zones: Z, sleep met het penseel.<br>Rechts klikken stopt.<br>${demo ? '' : '<button class="knop" id="demo-knop" style="margin-top:8px;width:100%">Voorbeeldstad laden</button>'}`;
+  hulp.innerHTML = `<b>Bouwen</b><br>Wegen: klik begin- en eindpunt. C = recht / bocht / vrij, PgUp/PgDn = hoogte, H = hulplijnen.<br>Zones: Z, sleep met het penseel.<br>Rechts klikken stopt.<br>${demo ? '' : '<button class="knop" id="demo-knop" style="margin-top:8px;width:100%">Voorbeeldstad laden</button>'}`;
   document.body.appendChild(hulp);
   document.getElementById('demo-knop')?.addEventListener('click', () => { location.search = '?demo=1'; });
 

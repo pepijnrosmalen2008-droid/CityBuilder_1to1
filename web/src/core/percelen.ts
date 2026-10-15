@@ -112,10 +112,50 @@ function knip(net: Wegennet, terrein: Terrein, seg: Segment, k: number, zijde: 1
         // Zijstraat: beginnen achter het hoekperceel.
         return [{ o: { x: pb.x + rb.x * claim, z: pb.z + rb.z * claim }, n: rb }];
       }
-      return [{ o, n }];
+      const r: Knip[] = [{ o, n }];
+      const v = virtueleHoek(net, seg, k, a, ra, bseg);
+      if (v) r.push(v);
+      return r;
+    }
+    // Vloeiende aansluiting (doorgaande weg): haaks afsnijden, plus de bissectrice binnen een bocht.
+    if (bseg) {
+      const r: Knip[] = [{ o: { ...knoop.p }, n: a }];
+      const ra = rechts ? { x: -a.z, z: a.x } : { x: a.z, z: -a.x };
+      const v = virtueleHoek(net, seg, k, a, ra, bseg);
+      if (v) r.push(v);
+      return r;
     }
   }
   return [{ o: { ...knoop.p }, n: a }];
+}
+
+/**
+ * Doorgaande weg met een (afgeronde) bocht direct na knoop k: aan de binnenkant afsnijden op de
+ * bissectrice van de virtuele hoek tussen dit rechte stuk en de richting na de bocht. Anders
+ * overlappen de stroken van beide rechte stukken binnen de bocht.
+ */
+function virtueleHoek(net: Wegennet, seg: Segment, k: number, a: V2, ra: V2, bseg: Segment): Knip | null {
+  const knoop = net.knopen.get(k)!;
+  if (knoop.segs.length !== 2 || bseg.type !== seg.type || !bseg.pad.length) return null;
+  const f = bseg.a === k ? bseg.b : bseg.a, F = net.knopen.get(f);
+  const pe = bseg.a === k ? bseg.pad[bseg.pad.length - 1] : bseg.pad[0];
+  if (!F) return null;
+  const ver = bseg.a === k ? { x: pe.dx, z: pe.dz } : { x: -pe.dx, z: -pe.dz };
+  const draai = Math.acos(Math.max(-1, Math.min(1, -(a.x * ver.x + a.z * ver.z))));
+  if (draai < 0.35 || ver.x * ra.x + ver.z * ra.z < 0.2) return null;
+  const h = halveBreedte(seg.type) + 0.05;
+  const mv = norm2({ x: a.x + ver.x, z: a.z + ver.z });
+  let nv = { x: -mv.z, z: mv.x };
+  if (nv.x * a.x + nv.z * a.z < 0) nv = { x: -nv.x, z: -nv.z };
+  let rv = { x: -ver.z, z: ver.x };
+  if (rv.x * a.x + rv.z * a.z < 0) rv = { x: -rv.x, z: -rv.z };
+  const pa = { x: knoop.p.x + ra.x * h, z: knoop.p.z + ra.z * h };
+  const qb = { x: F.p.x + rv.x * h, z: F.p.z + rv.z * h };
+  const dn = a.x * ver.z - a.z * ver.x;
+  if (Math.abs(dn) < 0.05) return null;
+  const t = ((qb.x - pa.x) * ver.z - (qb.z - pa.z) * ver.x) / dn;
+  if (Math.abs(t) > 200) return null;
+  return { o: { x: pa.x + a.x * t, z: pa.z + a.z * t }, n: nv };
 }
 
 /** Bouw de strook voor één kant van een segment. */
@@ -166,6 +206,13 @@ export function maakStrook(net: Wegennet, terrein: Terrein, seg: Segment, zijde:
   const qa = op(lang ? s0 + RAND : (s0 + s1) / 2), qb = op(lang ? s1 - RAND : (s0 + s1) / 2);
   const dA = dieptebij(net, terrein, seg, qa.v, qa.n), dB = dieptebij(net, terrein, seg, qb.v, qb.n);
   const diepte = voor.map((v, i) => s[i] < s0 + RAND ? dA : s[i] > s1 - RAND ? dB : dieptebij(net, terrein, seg, v, binnen[i]));
+  // Binnenkant van een bocht: niet dieper dan de straal, anders lopen de perceelgrenzen in elkaar.
+  for (let i = 1; i < pad.length - 1; i++) {
+    const a = pad[i - 1], b = pad[i + 1];
+    const kr = (a.dx * b.dz - a.dz * b.dx) / Math.max(0.5, b.s - a.s);
+    if (Math.abs(kr) < 1e-4 || Math.sign(kr) !== zijde) continue;
+    diepte[i + 2] = Math.min(diepte[i + 2], Math.max(0, (1 / Math.abs(kr) - hb) * 0.85));
+  }
   // Glad trekken (minimumfilter + middelen) zodat de achterkant geen zaagtand wordt.
   const gl = diepte.map((_, i) => Math.min(...diepte.slice(Math.max(0, i - 2), i + 3)));
   for (let i = 0; i < gl.length; i++) diepte[i] = (gl[Math.max(0, i - 1)] + gl[i] * 2 + gl[Math.min(gl.length - 1, i + 1)]) / 4;
@@ -207,7 +254,7 @@ export function maakStrook(net: Wegennet, terrein: Terrein, seg: Segment, zijde:
   return { seg: seg.id, zijde, voor, s, binnen, diepte, knippen, s0, s1, hoeken, sprongen };
 }
 
-function dieptebij(net: Wegennet, terrein: Terrein, eigen: Segment, v: V2, n: V2): number {
+function dieptebij(net: Wegennet, terrein: Terrein, eigen: Segment | null, v: V2, n: V2): number {
   let max = STROOK_DIEPTE;
   // Water of kaartrand.
   for (let d = 2; d <= STROOK_DIEPTE; d += 2) {
@@ -217,7 +264,7 @@ function dieptebij(net: Wegennet, terrein: Terrein, eigen: Segment, v: V2, n: V2
   // Andere wegen achter de strook: tot halverwege.
   const eind = { x: v.x + n.x * (STROOK_DIEPTE * 2 + 30), z: v.z + n.z * (STROOK_DIEPTE * 2 + 30) };
   for (const s of net.segmenten.values()) {
-    if (s.id === eigen.id) continue;
+    if (eigen && s.id === eigen.id) continue;
     const hb = halveBreedte(s.type);
     // Snelle uitsluiting op de omhullende.
     let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
@@ -237,6 +284,11 @@ function dieptebij(net: Wegennet, terrein: Terrein, eigen: Segment, v: V2, n: V2
     }
   }
   return max;
+}
+
+/** Diepte die een nieuwe strook op punt v (richting n) zou krijgen: voor het kavelvoorbeeld. */
+export function vrijeDiepte(net: Wegennet, terrein: Terrein, v: V2, n: V2): number {
+  return dieptebij(net, terrein, null, v, n);
 }
 
 /** Punt, richting naar binnen en diepte op booglengte s. */

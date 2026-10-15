@@ -139,14 +139,25 @@ export class Wereld {
 
   // ─── Wegen ──────────────────────────────────────────────────────────────────
 
-  legWeg(a: V2, c: V2, b: V2, type: WegTypeId): { ok: boolean; fout?: string } {
+  /** Kosten van een weg: verhoogd (viaduct) en verdiept (tunnel) zijn duurder. */
+  static wegKosten(type: WegTypeId, lengte: number, niveau = 0) {
+    const f = niveau > 0 ? 1 + niveau / 4 * 0.6 : niveau < 0 ? 2 + -niveau / 4 * 0.8 : 1;
+    return WEGTYPEN[type].kosten * lengte * f;
+  }
+
+  legWeg(a: V2, c: V2, b: V2, type: WegTypeId, niveau = 0, afronden = false): { ok: boolean; fout?: string } {
     const fout = this.net.controleer(a, c, b, type);
     if (fout) return { ok: false, fout };
-    const kosten = WEGTYPEN[type].kosten * (dist2(a, c) + dist2(c, b));
+    const kosten = Wereld.wegKosten(type, dist2(a, c) + dist2(c, b), niveau);
     if (kosten > this.geld) return { ok: false, fout: 'Niet genoeg geld' };
-    const nieuw = this.net.leg(a, c, b, type);
+    const nieuw = this.net.leg(a, c, b, type, niveau);
     if (!nieuw.length) return { ok: false, fout: 'Kan hier geen weg leggen' };
     this.geld -= kosten;
+    if (afronden) {
+      // Knik bij het beginpunt (aansluiting op een recht stuk van hetzelfde type) vloeiend maken.
+      const k = this.net.knoopBij(a, 0.5);
+      if (k) this.net.rondAf(k.id);
+    }
     for (const seg of nieuw) this.wisBomenLangs(seg);
     this.verwerkNet();
     const naam = nieuw[0].naam;

@@ -87,7 +87,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
 .item svg { width: 86px; height: 46px; display: block; margin: 0 auto 6px; }
 .item-naam { font-size: 12px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
 .item-sub { font-size: 11px; color: var(--zacht); margin-top: 2px; }
-.opties { display: flex; gap: 10px; align-items: center; margin-left: auto; font-size: 12px; color: var(--zacht); }
+.opties { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; font-size: 12px; color: var(--zacht); }
+.opties .groep { display: flex; gap: 3px; padding: 3px; border-radius: 12px; background: rgba(255,255,255,.04); align-items: center; }
+.opties .knop { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; }
+.opties .si { width: 16px; height: 16px; }
+.opties .hoogte .waarde { min-width: 64px; text-align: center; color: var(--tekst); font-weight: 600; font-variant-numeric: tabular-nums; }
+.opties .schakel::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.25); }
+.opties .schakel.aan::before { background: #69db7c; box-shadow: 0 0 6px #69db7c; }
 .kleur-stip { width: 14px; height: 14px; border-radius: 4px; display: inline-block; vertical-align: middle; }
 
 #tip { position: fixed; pointer-events: none; z-index: 20; padding: 5px 9px; border-radius: 8px; background: rgba(10,14,20,.85); font-size: 12px; font-weight: 600; white-space: nowrap; transform: translate(14px, 14px); display: none; }
@@ -108,7 +114,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
 .fps { font-size: 12px; color: var(--zacht); margin: 6px 4px 0; }
 
 #beeld { touch-action: none; }
-#klaarknop { position: fixed; left: 50%; transform: translateX(-50%); bottom: 196px; z-index: 6; display: none; padding: 10px 18px; border-radius: 999px; background: var(--accent); color: #1a1006; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+#klaarknop { position: fixed; left: 50%; transform: translateX(-50%); bottom: 250px; z-index: 6; display: none; padding: 10px 18px; border-radius: 999px; background: var(--accent); color: #1a1006; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 #klaarknop:hover { background: #ffa463; }
 
 /* ═══ Telefoon en kleine schermen ═══ */
@@ -130,7 +136,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
   .tabs { gap: 4px; margin-bottom: 6px; overflow-x: auto; scrollbar-width: none; }
   .tab { padding: 8px 10px; } .tab .tab-tekst, .tab .toets { display: none; } .tab.aan .tab-tekst { display: inline; }
   .tab .ic { width: 18px; height: 18px; }
-  .opties { font-size: 11px; gap: 6px; } .opties > span:last-child { display: none; }
+  .opties { font-size: 11px; gap: 5px; margin-bottom: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .opties .knop { padding: 6px 8px; } .opties .groep .tab-tekst { display: none; } .opties .groep .knop.aan .tab-tekst { display: inline; }
+  .opties .hoogte .waarde { min-width: 52px; }
   .items { gap: 6px; }
   .item { width: 84px; padding: 6px; border-radius: 11px; }
   .item svg { width: 70px; height: 36px; margin-bottom: 4px; }
@@ -138,7 +146,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
   #nieuws { left: 8px; right: 8px; width: auto; top: 118px; bottom: auto; }
   .nieuws-kop { display: none; }
   .bericht { font-size: 11.5px; padding: 6px 9px; } .bericht:nth-child(n+3) { display: none; }
-  #klaarknop { bottom: 168px; }
+  #klaarknop { bottom: 205px; }
   .instellingen { top: 104px; right: 8px; }
   .label { font-size: 10.5px; }
   #melding { top: 160px; }

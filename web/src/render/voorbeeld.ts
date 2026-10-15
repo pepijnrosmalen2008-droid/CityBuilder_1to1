@@ -13,13 +13,21 @@ export class VoorbeeldLaag {
   private ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, depthTest: false });
   private stippen: THREE.InstancedMesh;
   private kader: THREE.LineSegments;
+  private gids: THREE.LineSegments;
+  private snapRing: THREE.Mesh;
+  private kavelVlak: THREE.Mesh;
+  private kavelLijn: THREE.LineSegments;
 
   constructor(private w: Wereld) {
     this.lint = new THREE.Mesh(new THREE.BufferGeometry(), this.lintMat);
     this.ring = new THREE.Mesh(new THREE.BufferGeometry(), this.ringMat);
     this.stippen = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.2, 1.2, 0.4, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 }), 4);
     this.kader = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff6b6b, depthTest: false }));
-    for (const o of [this.lint, this.ring, this.stippen, this.kader]) { o.renderOrder = 10; o.frustumCulled = false; o.visible = false; o.userData.geenAO = true; this.groep.add(o); }
+    this.gids = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.85, depthTest: false }));
+    this.snapRing = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.0, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.95, depthTest: false, side: THREE.DoubleSide }));
+    this.kavelVlak = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
+    this.kavelLijn = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthTest: false }));
+    for (const o of [this.lint, this.ring, this.stippen, this.kader, this.gids, this.snapRing, this.kavelVlak, this.kavelLijn]) { o.renderOrder = 10; o.frustumCulled = false; o.visible = false; o.userData.geenAO = true; this.groep.add(o); }
   }
 
   private lintLangs(as: V3[], breedte: number, dy = 0.4) {
@@ -38,6 +46,7 @@ export class VoorbeeldLaag {
 
   toon(v: Voorbeeld) {
     this.lint.visible = this.ring.visible = this.stippen.visible = this.kader.visible = false;
+    this.gids.visible = this.snapRing.visible = this.kavelVlak.visible = this.kavelLijn.visible = false;
     const t = this.w.terrein;
     switch (v.soort) {
       case 'weg': {
@@ -45,6 +54,31 @@ export class VoorbeeldLaag {
           this.lintLangs(v.as, v.breedte, 0.6);
           this.lintMat.color.set(v.geldig ? 0x40c057 : 0xfa5252);
           this.lint.visible = true;
+        }
+        // Hulplijnen en snappunt.
+        if (v.lijnen.length) {
+          const pos: number[] = [];
+          for (const [a, b] of v.lijnen) pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+          const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+          this.gids.geometry.dispose(); this.gids.geometry = geo; this.gids.visible = true;
+        }
+        if (v.snap) { this.snapRing.position.set(v.snap.x, Math.max(v.snap.y, 0) + 0.9, v.snap.z); this.snapRing.visible = true; }
+        // Kavelvoorbeeld: bouwgrond langs de weg met perceelgrenzen.
+        if (v.kavels.length) {
+          const pos: number[] = [], idx: number[] = [], lijn: number[] = [];
+          for (const k of v.kavels) {
+            const o = pos.length / 3;
+            for (let i = 0; i < k.voor.length; i++) {
+              pos.push(k.voor[i].x, k.voor[i].y + 0.5, k.voor[i].z, k.achter[i].x, k.achter[i].y + 0.5, k.achter[i].z);
+              if (i) { const a = o + (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+              if (i) lijn.push(k.achter[i - 1].x, k.achter[i - 1].y + 0.6, k.achter[i - 1].z, k.achter[i].x, k.achter[i].y + 0.6, k.achter[i].z);
+            }
+            for (const [a, b] of k.streepjes) lijn.push(a.x, a.y + 0.6, a.z, b.x, b.y + 0.6, b.z);
+          }
+          const g1 = new THREE.BufferGeometry(); g1.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g1.setIndex(idx);
+          this.kavelVlak.geometry.dispose(); this.kavelVlak.geometry = g1; this.kavelVlak.visible = true;
+          const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(lijn, 3));
+          this.kavelLijn.geometry.dispose(); this.kavelLijn.geometry = g2; this.kavelLijn.visible = true;
         }
         const m = new THREE.Matrix4();
         v.punten.slice(0, 4).forEach((p, i) => this.stippen.setMatrixAt(i, m.makeTranslation(p.x, Math.max(p.y, 0) + 0.6, p.z)));

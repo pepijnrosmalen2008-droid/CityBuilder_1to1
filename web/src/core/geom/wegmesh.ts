@@ -25,10 +25,10 @@ function materiaalVoor(s: Strook, dek: string): string {
 const verhoogd = (s: Strook) => s.soort === 'stoep' ? STOEP_H : s.soort === 'berm' || s.soort === 'middenberm' ? BERM_H : 0;
 
 /** Punt op de as op booglengte s (voorbij de uiteinden: rechtdoor verlengd). */
-function asPunt(pad: PadPunt[], s: number): { x: number; y: number; z: number; dx: number; dz: number; brug: boolean } {
+function asPunt(pad: PadPunt[], s: number): { x: number; y: number; z: number; dx: number; dz: number; brug: boolean; tunnel: boolean } {
   const n = pad.length;
-  if (s <= 0) { const a = pad[0]; return { x: a.x + a.dx * s, y: a.y, z: a.z + a.dz * s, dx: a.dx, dz: a.dz, brug: a.brug }; }
-  if (s >= pad[n - 1].s) { const a = pad[n - 1], e = s - a.s; return { x: a.x + a.dx * e, y: a.y, z: a.z + a.dz * e, dx: a.dx, dz: a.dz, brug: a.brug }; }
+  if (s <= 0) { const a = pad[0]; return { x: a.x + a.dx * s, y: a.y, z: a.z + a.dz * s, dx: a.dx, dz: a.dz, brug: a.brug, tunnel: a.tunnel }; }
+  if (s >= pad[n - 1].s) { const a = pad[n - 1], e = s - a.s; return { x: a.x + a.dx * e, y: a.y, z: a.z + a.dz * e, dx: a.dx, dz: a.dz, brug: a.brug, tunnel: a.tunnel }; }
   let i = 0;
   // Binair zoeken.
   let lo = 0, hi = n - 1;
@@ -37,7 +37,7 @@ function asPunt(pad: PadPunt[], s: number): { x: number; y: number; z: number; d
   const a = pad[i], b = pad[i + 1];
   const t = (s - a.s) / Math.max(1e-6, b.s - a.s);
   const d = norm2({ x: lerp(a.dx, b.dx, t), z: lerp(a.dz, b.dz, t) });
-  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t), dx: d.x, dz: d.z, brug: t < 0.5 ? a.brug : b.brug };
+  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t), dx: d.x, dz: d.z, brug: t < 0.5 ? a.brug : b.brug, tunnel: t < 0.5 ? a.tunnel : b.tunnel };
 }
 
 /**
@@ -146,6 +146,38 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
     i = j;
   }
 
+  // ── Tunnels: portaal (betonnen kop met wanden) waar de weg de grond in gaat ──
+  const isTunnel = (r: Rij) => asPunt(pad, rijS(r)).tunnel;
+  for (let k = 1; k < R.length; k++) {
+    const a = isTunnel(R[k - 1]), b = isTunnel(R[k]);
+    if (a === b) continue;
+    const r = b ? R[k] : R[k - 1];
+    const q = asPunt(pad, rijS(r));
+    const uit = b ? { x: -q.dx, y: 0, z: -q.dz } : { x: q.dx, y: 0, z: q.dz };
+    const ax = { x: -q.dz, y: 0, z: q.dx };
+    const grond = Math.max(net.terrein.hoogte(q.x, q.z), q.y + 6.5);
+    const c = { x: q.x, y: 0, z: q.z };
+    // Kopwand boven de ingang en een lijst eromheen.
+    mb.blok('beton', 'beton', c, ax, { x: q.dx, y: 0, z: q.dz }, W + 2.4, 1.2, q.y + 5.2, grond + 0.6);
+    mb.blok('trimDonker', 'beton', { x: c.x + uit.x * 0.62, y: 0, z: c.z + uit.z * 0.62 }, ax, { x: q.dx, y: 0, z: q.dz }, W + 0.4, 0.05, q.y + 4.9, q.y + 5.25);
+    for (const kant of [-1, 1]) {
+      // Zijwanden van de ingang, schuin aflopend met het talud.
+      for (let j = 0; j < 4; j++) {
+        const d = j * 3;
+        const p = { x: q.x + ax.x * kant * (W / 2 + 0.6) + uit.x * (d + 1.5), y: 0, z: q.z + ax.z * kant * (W / 2 + 0.6) + uit.z * (d + 1.5) };
+        const h = Math.max(q.y + 0.5, grond + 0.6 - (grond - q.y) * (d + 3) / 12);
+        mb.blok('beton', 'beton', p, uit, ax, 3, 0.8, q.y - 0.5, h);
+      }
+    }
+    // Tunnelbuis: plafond en wanden net binnen de ingang, zodat je geen terrein van onderen ziet.
+    const binnen = b ? R.slice(k, Math.min(R.length, k + 6)) : R.slice(Math.max(0, k - 6), k);
+    if (binnen.length > 1) {
+      const ds = binnen.map(rijS);
+      mb.strook('beton', binnen.map(rr => P(rr, W / 2 + 0.3, 5.2)), binnen.map(rr => P(rr, -W / 2 - 0.3, 5.2)), ds, 0, W, false);
+      for (const kant of [-1, 1] as const) mb.band('trimDonker', binnen.map(rr => P(rr, kant * (W / 2 + 0.3), -0.2)), binnen.map(rr => P(rr, kant * (W / 2 + 0.3), 5.2)), ds, binnen.map(rr => rechts(rr, -kant)));
+    }
+  }
+
   // ── Markering ──
   // Een lijn op offset o tussen booglengtes (gemeten op die offset).
   const sOp = (r: Rij, o: number) => lerp(r.sL, r.sR, (o + W / 2) / W);
@@ -215,7 +247,7 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
       const o = berm ? (x.a + x.b) / 2 : (x.a < 0 ? x.a + 0.9 : x.b - 0.9);
       const tussen = berm ? 11 : 14;
       for (let d = L0 + 7 + (x.a < 0 ? 0 : tussen / 2); d < L1 - 6; d += tussen) {
-        if (asPunt(pad, d).brug) continue;
+        if (asPunt(pad, d).brug || asPunt(pad, d).tunnel) continue;
         const p = plek(d, o, verhoogd(x.s));
         props.push({ soort: (Math.floor(d / tussen) + seg.id) % 3 === 0 ? 'linde' : 'plataan', x: p.x, y: p.y, z: p.z, rot: (d * 1.7) % 6.28, schaal: 0.85 + ((d * 7) % 1) * 0.25, variant: Math.floor(d) % 2 });
       }
@@ -224,6 +256,7 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
   const mid = g.find(x => x.s.soort === 'middenberm');
   let kant = seg.id % 2 === 0 ? 1 : -1;
   for (let d = L0 + 10; d < L1 - 6; d += 32) {
+    if (asPunt(pad, d).tunnel) continue;
     const rot = rotVan(d);
     if (mid && type.snelheid >= 70) {
       const p = plek(d, (mid.a + mid.b) / 2, BERM_H);

@@ -26,7 +26,9 @@ hierheen).
 |---|---|
 | X / Z / G / U / B / Esc | Wegen / Zones / Economie (gebieden) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
-| C | Recht of bocht |
+| C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend) |
+| PgUp / PgDn | Hoogte van de weg in stappen van 4 m: viaduct (omhoog) of tunnel (omlaag); wegen op verschillende hoogte kruisen zonder kruispunt |
+| H | Hulplijnen en snappen aan/uit (verlengden, haakse lijnen, evenwijdig op blokafstand van 2×25 of 2×50 m) |
 | Linkerklik | Beginpunt, (bochtpunt), eindpunt; zones: slepen met het penseel |
 | Rechterklik | Stoppen met tekenen |
 | + / − | Penseelgrootte |

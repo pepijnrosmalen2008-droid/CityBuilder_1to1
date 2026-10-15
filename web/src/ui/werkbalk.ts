@@ -1,4 +1,11 @@
-import { Gereedschap, Modus } from '../core/gereedschap';
+import { Gereedschap, Modus, Stijl } from '../core/gereedschap';
+
+const STIJL_ICOON: Record<Stijl | 'op', string> = {
+  recht: '<svg viewBox="0 0 24 24" class="si"><path d="M4 19 20 5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="4" cy="19" r="2.4" fill="currentColor"/><circle cx="20" cy="5" r="2.4" fill="currentColor"/></svg>',
+  bocht: '<svg viewBox="0 0 24 24" class="si"><path d="M4 20C4 9 9 4 20 4" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="4" cy="20" r="2.4" fill="currentColor"/><circle cx="20" cy="4" r="2.4" fill="currentColor"/><circle cx="4" cy="4" r="1.6" fill="none" stroke="currentColor"/></svg>',
+  vrij: '<svg viewBox="0 0 24 24" class="si"><path d="M3 18c4 0 4-10 9-10s5 8 9 6" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/></svg>',
+  op: '<svg viewBox="0 0 24 24" class="si"><path d="M12 4 5 12h4v8h6v-8h4z" fill="currentColor"/></svg>',
+};
 import { WEGTYPEN, WEGTYPE_VOLGORDE, WegTypeId, strookGrenzen, totaleBreedte } from '../core/wegen/typen';
 import { ZONES, Zone } from '../core/zones';
 import { ICOON } from './iconen';
@@ -55,7 +62,9 @@ export class Werkbalk {
       if (k === 'x') this.kies('weg');
       if (k === 'u') this.kies('opwaarderen');
       if (k === 'b') this.kies('sloop');
-      if (k === 'c' && this.g.modus === 'weg') { this.g.bocht = !this.g.bocht; this.g.annuleer(); this.teken(); }
+      if (k === 'c' && this.g.modus === 'weg') { const v: Stijl[] = ['recht', 'bocht', 'vrij']; this.g.stijl = v[(v.indexOf(this.g.stijl) + 1) % 3]; this.g.annuleer(); this.teken(); }
+      if ((e.key === 'PageUp' || e.key === 'PageDown') && this.g.modus === 'weg') { e.preventDefault(); this.g.hoger(e.key === 'PageUp' ? 1 : -1); this.teken(); }
+      if (k === 'h' && this.g.modus === 'weg') { this.g.hulplijnen = !this.g.hulplijnen; this.teken(); }
       if (/^[1-9]$/.test(k)) {
         const i = Number(k) - 1;
         if (this.g.modus === 'zone' && ZONES[i]) { this.g.zone = ZONES[i].id; this.teken(); }
@@ -77,7 +86,10 @@ export class Werkbalk {
     let items = '', opties = '';
     if (g.modus === 'weg' || g.modus === 'opwaarderen') {
       items = WEGTYPE_VOLGORDE.map((id, i) => `<div class="item ${g.wegtype === id ? 'aan' : ''}" data-w="${id}">${dwarsprofiel(id)}<div class="item-naam">${WEGTYPEN[id].naam}</div><div class="item-sub">${i + 1} · € ${WEGTYPEN[id].kosten}/m</div></div>`).join('');
-      if (g.modus === 'weg') opties = `<button class="knop ${!g.bocht ? 'aan' : ''}" data-b="0">Recht</button><button class="knop ${g.bocht ? 'aan' : ''}" data-b="1">Bocht</button><span>C wisselt</span>`;
+      const st = (id: Stijl, naam: string) => `<button class="knop ${g.modus === 'weg' && g.stijl === id ? 'aan' : ''}" data-st="${id}" title="${naam} (C wisselt)">${STIJL_ICOON[id]}<span class="tab-tekst">${naam}</span></button>`;
+      opties = `<div class="groep">${st('recht', 'Recht')}${st('bocht', 'Bocht')}${st('vrij', 'Vrij')}<button class="knop ${g.modus === 'opwaarderen' ? 'aan' : ''}" data-op title="Opwaarderen (U)">${STIJL_ICOON.op}<span class="tab-tekst">Opwaarderen</span></button></div>`;
+      if (g.modus === 'weg') opties += `<div class="groep hoogte"><button class="knop" data-h="-1" title="Lager (PgDn)">▼</button><span class="waarde">${g.niveau === 0 ? 'maaiveld' : g.niveau > 0 ? '+' + g.niveau + ' m' : g.niveau + ' m'}</span><button class="knop" data-h="1" title="Hoger (PgUp)">▲</button></div>` +
+        `<button class="knop schakel ${g.afronden ? 'aan' : ''}" data-af title="Knikken in rechte wegen automatisch afronden">Afronden</button><button class="knop schakel ${g.hulplijnen ? 'aan' : ''}" data-hl title="Hulplijnen en snappen (H)">Hulplijnen</button>`;
     } else if (g.modus === 'zone') {
       items = ZONES.map(z => `<div class="item ${g.zone === z.id ? 'aan' : ''}" data-z="${z.id}">${zoneIcoon(z.id, z.kleur)}<div class="item-naam">${z.naam}</div><div class="item-sub">${z.toets}</div></div>`).join('');
       opties = `<span>Penseel</span><button class="knop" data-p="-4">−</button><span style="color:#e9eef5;font-weight:600">${g.penseel} m</span><button class="knop" data-p="4">+</button>`;
@@ -89,11 +101,15 @@ export class Werkbalk {
     } else {
       items = `<div class="item-sub" style="padding:14px">Kies een gereedschap. Camera: WASD of middelste muisknop = schuiven, rechts slepen of Q/E = draaien, R/F = kantelen, scrollen = zoomen. Spatie = pauze.</div>`;
     }
-    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('gebied', 'Economie', 'G')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('kijk', 'Kijken', 'Esc')}<div class="opties">${opties}</div></div><div class="items">${items}</div>`;
+    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('gebied', 'Economie', 'G')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('kijk', 'Kijken', 'Esc')}</div>${opties ? `<div class="opties">${opties}</div>` : ''}<div class="items">${items}</div>`;
     this.el.querySelectorAll<HTMLElement>('[data-m]').forEach(e => (e.onclick = () => this.kies(e.dataset.m as Modus)));
     this.el.querySelectorAll<HTMLElement>('[data-w]').forEach(e => (e.onclick = () => { g.wegtype = e.dataset.w as WegTypeId; this.teken(); }));
     this.el.querySelectorAll<HTMLElement>('[data-z]').forEach(e => (e.onclick = () => { g.zone = e.dataset.z as Zone; this.teken(); }));
-    this.el.querySelectorAll<HTMLElement>('[data-b]').forEach(e => (e.onclick = () => { g.bocht = e.dataset.b === '1'; g.annuleer(); this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-st]').forEach(e => (e.onclick = () => { if (g.modus !== 'weg') g.zetModus('weg'); g.stijl = e.dataset.st as Stijl; g.annuleer(); this.teken(); }));
+    this.el.querySelector<HTMLElement>('[data-op]')?.addEventListener('click', () => this.kies('opwaarderen'));
+    this.el.querySelectorAll<HTMLElement>('[data-h]').forEach(e => (e.onclick = () => { g.hoger(Number(e.dataset.h)); this.teken(); }));
+    this.el.querySelector<HTMLElement>('[data-af]')?.addEventListener('click', () => { g.afronden = !g.afronden; this.teken(); });
+    this.el.querySelector<HTMLElement>('[data-hl]')?.addEventListener('click', () => { g.hulplijnen = !g.hulplijnen; this.teken(); });
     this.el.querySelectorAll<HTMLElement>('[data-gs]').forEach(e => (e.onclick = () => { g.grondstof = e.dataset.gs as Grondstof; g.annuleer(); this.teken(); }));
     this.el.querySelector<HTMLElement>('[data-eco]')?.addEventListener('click', () => this.opEconomie());
     this.el.querySelectorAll<HTMLElement>('[data-p]').forEach(e => (e.onclick = () => { g.penseel = Math.max(6, Math.min(80, g.penseel + Number(e.dataset.p))); this.teken(); }));
