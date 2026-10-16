@@ -42,10 +42,11 @@ hierheen).
 
 - **Voorrangsborden** per wegeinde: geen → voorrangsweg → voorrang verlenen → stop (rechts klikken = weg). Voertuigen houden zich eraan; bij een stopbord staat iedereen eerst stil. Haaientanden en stopstrepen op het wegdek volgen de borden.
 - **Voorrangsweg**: klik op een weg en de hele doorgaande weg krijgt voorrang, zijwegen voorrang verlenen of stop; lichten op die kruispunten gaan uit.
-- **Verkeerslichten** per kruispunt aan of uit (rechts klikken = automatisch), groentijd met − en +.
+- **Verkeerslichten** per kruispunt aan of uit (rechts klikken = automatisch), groentijd met − en +. Met ✎ open je de **lichtfasen**: per fase welke richtingen (A, B, C, … ook op de kaart) tegelijk groen hebben en hoe lang; de fase die nu groen is licht op.
+- **Rijstrookverbinder**: klik een aankomende strook (gekleurde stip) en dan de doelstroken (ringen); de verbindingen worden als lijnen over het kruispunt getekend. Rechts op een stip = standaard.
 - **Rijstrookpijlen** per strook (links, rechtdoor, rechts, keren), ↺ = standaard. De rijstrookgraaf en de pijlen op het wegdek passen zich aan, en de routeplanner rijdt alleen nog toegestane bewegingen.
 - **Kruispuntregels** per wegeinde: keren, van strook wisselen op het kruispunt, het kruispunt op rijden als het vol staat, oversteekplaats voor voetgangers (zonder: geen zebrapad), rechtsaf door rood.
-- **Maximumsnelheid** en **verboden** (auto's, vrachtverkeer, bussen) per weg, klikken of slepen. Routes houden rekening met beide.
+- **Maximumsnelheid** en **verboden** (auto's, vrachtverkeer, bussen, parkeren) per weg, klikken of slepen. Routes houden rekening met beide.
 - **Verkeer wissen** en **Vastgelopen verdwijnen** aan/uit.
 - Regels worden opgeslagen met de stad en gaan mee als een weg wordt gesplitst. Test: `scripts/test/tmpe.ts`.
 
@@ -56,10 +57,14 @@ hierheen).
 - Kiezen: klikken, Shift = erbij/eraf (of de knop *Meerdere*), slepen over de grond = rechthoek. Rechts klikken of Esc = selectie leeg.
 - Slepen = verplaatsen (met spooklijnen en afstand), pijltjes = 1 m (Shift 8 m) ten opzichte van de camera, Q/E = draaien 15° (Shift 1°), PgUp/PgDn = 1 m hoger/lager (Shift 4 m).
 - Eén weg gekozen: sleep de gele greep halverwege om hem te buigen. *Rechttrekken*, *Hoogte gelijk* (alle knopen op dezelfde hoogte).
-- Ctrl+C / Ctrl+V: kopiëren en plakken (het klembord hangt aan de muis, Q/E draait het), Delete = verwijderen.
+- Ctrl+C / Ctrl+V: kopiëren en plakken (het klembord hangt aan de muis, Q/E draait het), ook bomen; een geplakt gebouw neemt de vrije kavels eronder in. Delete = verwijderen.
 - Ctrl+Z / Ctrl+Y: ongedaan maken en opnieuw (60 stappen). Ook gebouwen die verdwenen omdat je een weg verlegde, komen terug.
 - Op een aanraakscherm: tik om te kiezen, sleep een gekozen ding om het te verplaatsen; elders schuift de kaart.
 - Test: `scripts/test/verplaats.ts`.
+
+## Parkeren
+
+`core/verkeer/parkeren.ts`: *Woonstraat met parkeren* en *Straat met parkeerhavens* hebben parkeervakken van 5,5 m. Auto's parkeren op hun bestemming en blijven een tijd staan; wie vanaf een gebouw vertrekt, neemt een geparkeerde auto mee (zelfde model en kleur). Een parkeerverbod (verkeersgereedschap, Verboden) haalt de vakken weg. Test: `scripts/test/parkeren.ts`.
 
 ## Leven op straat
 

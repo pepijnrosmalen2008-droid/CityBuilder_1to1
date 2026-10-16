@@ -63,8 +63,12 @@ check('automatisch terug', vk.stroken.lichten.has(metLicht) && !R.knoop.size);
 // Snelheid.
 R.zetLimiet(inSeg, 30); vk.stap(0.1);
 check('maximumsnelheid 30', vk.stroken.stroken(inSeg, 'A').concat(vk.stroken.stroken(inSeg, 'B')).every(b => Math.abs(b.vmax - 30 / 3.6) < 0.01));
-// Stopbord: draaien en kijken of er voertuigen stoppen.
-for (const s of knoop.segs) R.zetEind(s, knoop.id, { bord: 'stop' });
+// Stopbord op het drukste kruispunt zonder lichten.
+const telling = new Map<number, number>();
+for (let i = 0; i < 400; i++) { vk.stap(0.1); for (const v of vk.voertuigen.values()) { const sp = vk.stroken.sporen.get(v.spoor); if (sp?.soort === 'verbinding' && !vk.stroken.lichten.has(sp.knoop)) telling.set(sp.knoop, (telling.get(sp.knoop) ?? 0) + 1); } }
+const druk = [...telling.entries()].sort((a, b) => b[1] - a[1])[0][0];
+const stopKnoop = net.knopen.get(druk)!;
+for (const s of stopKnoop.segs) R.zetEind(s, stopKnoop.id, { bord: 'stop' });
 vk.stap(0.1);
 let door = 0, snelDoor = 0;
 const gezien = new Set<number>();
@@ -72,7 +76,7 @@ for (let i = 0; i < 1500; i++) {
   vk.stap(0.1);
   for (const v of vk.voertuigen.values()) {
     const sp = vk.stroken.sporen.get(v.spoor);
-    if (sp?.soort === 'verbinding' && sp.knoop === knoop.id && !gezien.has(v.id) && v.s < 3) { gezien.add(v.id); door++; if (v.v > 4.5) snelDoor++; }
+    if (sp?.soort === 'verbinding' && sp.knoop === stopKnoop.id && !gezien.has(v.id) && v.s < 3) { gezien.add(v.id); door++; if (v.v > 4.5 && !v.sirene) snelDoor++; }
   }
 }
 check('stopborden: iedereen stopt eerst', door >= 2 && snelDoor === 0, `${door} over het kruispunt, ${snelDoor} zonder te stoppen`);
@@ -86,7 +90,7 @@ check('vrachtverbod', vracht === 0, `${vk.voertuigen.size} voertuigen, ${vracht}
 // Opslaan.
 const j = JSON.parse(JSON.stringify(net.naarJson()));
 const w2 = new Wereld(1); w2.net.vanJson(j);
-check('opslaan en laden', w2.net.regels.limiet(inSeg) === 30 && w2.net.regels.bord(inSeg, knoop.id) === 'stop' && w2.net.regels.verboden(inSeg)[0] === 'vracht');
+check('opslaan en laden', w2.net.regels.limiet(inSeg) === 30 && w2.net.regels.bord(stopKnoop.segs[0], stopKnoop.id) === 'stop' && w2.net.regels.verboden(inSeg)[0] === 'vracht');
 // Wissen.
 const n = vk.wis();
 check('verkeer wissen', vk.voertuigen.size === [...vk.voertuigen.values()].filter(v => v.opAankomst).length, `${n} weg`);

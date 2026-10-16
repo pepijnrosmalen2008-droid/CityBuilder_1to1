@@ -1,5 +1,6 @@
 import { V3, lerp, clamp } from '../math';
 import { MeshBouwer, MeshData, samenvoegen } from './mesh';
+import { cilinder } from './props';
 import type { VoertuigSoort } from '../verkeer/verkeer';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -267,7 +268,8 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
   };
   // Onderbak: dwarsdoorsneden dicht bij de uiteinden en rond de wielkasten.
   const us: number[] = [];
-  for (let i = 0; i <= nU; i++) us.push(0.5 - 0.5 * Math.cos(i / nU * Math.PI));
+  // Niet helemaal tot 0 en 1: daar lopen de doorsneden samen tot een lijn (donkere naad in het midden).
+  for (let i = 0; i <= nU; i++) us.push(lerp(0.0025, 0.9975, 0.5 - 0.5 * Math.cos(i / nU * Math.PI)));
   if (!laag) for (const xw of wielX) for (let i = 0; i <= 14; i++) {
     const x = xw + (i / 14 * 2 - 1) * (boogR + 0.03);
     us.push(x / v.L + 0.5);
@@ -285,7 +287,7 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
   // Kopse kanten dicht (achter en voor).
   for (const [i, uit] of [[0, -1], [ringen.length - 1, 1]] as const) {
     const r = ringen[i], c = as[i];
-    for (let j = 0; j < r.length; j++) { const a = r[j], b = r[(j + 1) % r.length]; mb.driehoek(laag ? 'autolak' : 'autotrim', c, a, b, [0, 0], [1, 0], [1, 1], { x: uit, y: 0, z: 0 }); }
+    for (let j = 0; j < r.length; j++) { const a = r[j], b = r[(j + 1) % r.length]; mb.driehoek(!laag && (a.y < v.bodem + 0.2 || b.y < v.bodem + 0.2) ? 'autotrim' : 'autolak', c, a, b, [0, 0], [1, 0], [1, 1], { x: uit, y: 0, z: 0 }); }
   }
   // Wielkastvoering: donkere halve cilinder in de uitsparing.
   if (!laag) for (const xw of wielX) for (const s of [-1, 1]) {
@@ -345,7 +347,8 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
   const hL = v.neus - 0.11;
   const hA = soort === 'bestelbus' ? 0.95 : Math.min(v.kont, v.gordel) - 0.1;
   for (const s of [-1, 1]) {
-    // Koplamp in twee stukjes, schuin meelopend met de neus.
+    // Koplamp: donkere behuizing, lens in twee stukjes en een led-dagrijlicht erboven.
+    { const zm = s * (v.W / 2 - 0.44); kastje(mb, 'autotrim', { x: voorX(zm) - 0.03, y: hL, z: zm }, 0.05, 0.17, 0.37); kastje(mb, 'koplamp', { x: voorX(zm) - 0.014, y: hL + 0.078, z: zm }, 0.03, 0.022, 0.33); }
     for (const [z0, z1] of [[0.28, 0.45], [0.45, 0.6]]) {
       const zm = s * (v.W / 2 - (z0 + z1) / 2);
       kastje(mb, 'koplamp', { x: voorX(zm) - 0.035, y: hL, z: zm }, 0.06, 0.12, z1 - z0 + 0.01);
@@ -357,7 +360,8 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
     }
     // Spiegel tegen de deur, met een steuntje.
     const xm = xVan(v.c3) - 0.12, zb = zijZ(xm) - 0.03;
-    kastje(mb, 'autolak', { x: xm, y: v.gordel + 0.13, z: s * (zb + 0.12) }, 0.1, 0.13, 0.17);
+    kastje(mb, 'autolak', { x: xm, y: v.gordel + 0.13, z: s * (zb + 0.11) }, 0.09, 0.11, 0.15);
+    kastje(mb, 'autoglas', { x: xm - 0.046, y: v.gordel + 0.13, z: s * (zb + 0.11) }, 0.006, 0.085, 0.12);
     kastje(mb, 'autotrim', { x: xm + 0.01, y: v.gordel + 0.06, z: s * (zb + 0.04) }, 0.06, 0.04, 0.1);
     // Deurnaden en deurgrepen.
     const deuren = soort === 'bestelbus' ? [xVan(v.zijglasTot ?? 0.6)] : [xVan(v.c3) + 0.02, xVan((v.c1 + v.c2) / 2 + 0.03), ...(soort === 'hatchback' ? [] : [xVan(v.c1) + 0.08])];
@@ -381,6 +385,51 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
       const y0 = onderTop(v, u0), y1 = onderTop(v, u1);
       mb.quad('chroom', { x: xVan(u0), y: y0 - 0.005, z: z0 }, { x: xVan(u1), y: y1 - 0.005, z: z1 }, { x: xVan(u1), y: y1 + 0.02, z: z1 }, { x: xVan(u0), y: y0 + 0.02, z: z0 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
     }
+  }
+  // ── Details ──
+  const hatch = soort !== 'sedan' && soort !== 'bestelbus';
+  // Luchthapper onderin de bumper met mistlampen, chromen lat en logo op de grille.
+  kastje(mb, 'autotrim', { x: voorX(0) - 0.03, y: v.bodem + 0.13, z: 0 }, 0.06, 0.1, v.W * 0.52);
+  for (const s of [-1, 1]) kastje(mb, 'koplamp', { x: voorX(s * (v.W / 2 - 0.22)) - 0.02, y: v.bodem + 0.14, z: s * (v.W / 2 - 0.22) }, 0.04, 0.05, 0.12);
+  kastje(mb, 'chroom', { x: voorX(0) - 0.012, y: hL - 0.12, z: 0 }, 0.03, 0.016, v.W * 0.38);
+  kastje(mb, 'chroom', { x: voorX(0) - 0.006, y: hL - 0.05, z: 0 }, 0.02, 0.07, 0.1);
+  // Achter: doorlopende lichtbalk (moderne hatchbacks, stationwagens, SUV's), logo, uitlaat.
+  if (hatch) kastje(mb, 'achterlicht', { x: achterX(0) + 0.022, y: hA + 0.045, z: 0 }, 0.03, 0.026, v.W * 0.62);
+  kastje(mb, 'chroom', { x: achterX(0) + 0.008, y: hA - 0.07, z: 0 }, 0.02, 0.06, 0.09);
+  if (soort !== 'bestelbus') {
+    const zU = v.W / 2 - 0.42;
+    cilinder(mb, 'chroom', { x: xA + 0.3, y: v.bodem + 0.06, z: zU }, { x: achterX(zU) - 0.02, y: v.bodem + 0.06, z: zU }, 0.035, 0.035, 8);
+    if (soort === 'sedan' || soort === 'suv') cilinder(mb, 'chroom', { x: xA + 0.3, y: v.bodem + 0.06, z: -zU }, { x: achterX(-zU) - 0.02, y: v.bodem + 0.06, z: -zU }, 0.035, 0.035, 8);
+  }
+  // Ruitenwisser op de achterruit.
+  if (hatch && v.c1 > v.c0 + 0.015) {
+    const u = v.c0 + (v.c1 - v.c0) * 0.3;
+    kastje(mb, 'autotrim', { x: xVan(u) + 0.02, y: cabineTop(v, u) + 0.012, z: -0.08 }, 0.03, 0.018, 0.42);
+  }
+  // Haaienvin-antenne achter op het dak.
+  { const u = v.c1 + 0.05; const y = cabineTop(v, u); kastje(mb, 'autotrim', { x: xVan(u), y: y + 0.025, z: 0 }, 0.16, 0.05, 0.06); kastje(mb, 'autotrim', { x: xVan(u) + 0.02, y: y + 0.06, z: 0 }, 0.08, 0.03, 0.04); }
+  // Dakrails (stationwagen, SUV).
+  if (soort === 'stationwagen' || soort === 'suv') for (const s of [-1, 1]) {
+    const n = 8, u0 = v.c1 + 0.02, u1 = v.c2 - 0.03;
+    for (let i = 0; i < n; i++) {
+      const ua = lerp(u0, u1, i / n), ub = lerp(u0, u1, (i + 1) / n), um = (ua + ub) / 2;
+      const zr = s * ((plan(v, um) - 0.02) * (v.dakBreed ?? 0.8) / 2 - 0.09);
+      kastje(mb, i === 0 || i === n - 1 ? 'autotrim' : 'chroom', { x: xVan(um), y: cabineTop(v, um) + 0.05, z: zr }, xVan(ub) - xVan(ua) + 0.01, 0.025, 0.035);
+    }
+    for (const u of [u0 + 0.01, u1 - 0.01]) kastje(mb, 'autotrim', { x: xVan(u), y: cabineTop(v, u) + 0.025, z: s * ((plan(v, u) - 0.02) * (v.dakBreed ?? 0.8) / 2 - 0.09) }, 0.08, 0.05, 0.045);
+  }
+  // SUV: zwarte wielkastranden en een beschermlijst onderlangs.
+  if (soort === 'suv') for (const s of [-1, 1]) {
+    for (const xw of wielX) {
+      const zb = s * (plan(v, xw / v.L + 0.5) / 2 + 0.006), n = 12, r0 = boogR + 0.005, r1 = boogR + 0.075;
+      for (let i = 0; i < n; i++) {
+        const a0 = Math.PI * i / n, a1 = Math.PI * (i + 1) / n;
+        const p = (a: number, r: number) => ({ x: xw + Math.cos(a) * r, y: v.r + Math.sin(a) * r, z: zb });
+        mb.quad('autotrim', p(a0, r0), p(a0, r1), p(a1, r1), p(a1, r0), [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: s });
+      }
+    }
+    const x0 = wielX[0] + boogR + 0.08, x1 = wielX[1] - boogR - 0.08;
+    kastje(mb, 'autotrim', { x: (x0 + x1) / 2, y: v.bodem + 0.12, z: s * (zijZ((x0 + x1) / 2) + 0.004) }, x1 - x0, 0.12, 0.02);
   }
   void xV; void xA;
   return mb.bouw();

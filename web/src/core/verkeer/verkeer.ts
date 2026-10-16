@@ -610,7 +610,7 @@ export class Verkeer {
             // Bochtsnelheid: op tijd afremmen voor de verbinding.
             v0 = Math.min(v0, Math.sqrt(volgende.vmax * volgende.vmax + 2 * 1.8 * Math.max(0, rest)));
             if (rest < 45) { let l = aangemeld.get(volgende.id); if (!l) aangemeld.set(volgende.id, l = []); l.push({ id: v.id, eta: rest / Math.max(1.5, v.v) }); }
-            if (v.v < 0.4 && rest < 9) v.gestopt = volgende.knoop;
+            if (v.v < 0.4 && rest < 3) v.gestopt = volgende.knoop; // echt bij de streep, niet in de rij erachter
             const remweg = (v.v * v.v) / (2 * v.bc) + 4;
             if (v.res !== volgende.id && rest < Math.max(remweg + 2, 6)) {
               if (this.mag(v, volgende, rest)) { volgende.bezet++; v.res = volgende.id; v.wacht = 0; }
