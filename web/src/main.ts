@@ -7,6 +7,7 @@ import { KwaliteitRegelaar, Keuze } from './render/kwaliteit';
 import { StadCamera } from './render/camera';
 import { TextuurBron } from './render/texturen';
 import { Materialen } from './render/materialen';
+import { StraatLevenWeergave } from './render/straatleven';
 import { VerkeerWeergave } from './render/verkeer';
 import { DienstWeergave } from './render/diensten';
 import { DistrictLaag } from './render/districtlaag';
@@ -78,6 +79,10 @@ async function start() {
   sfeer.scene.add(stad.groep);
   const verkeer = new VerkeerWeergave(wereld, mats);
   sfeer.scene.add(verkeer.groep);
+  // Voetgangers en fietsers dichtbij; aantal per kwaliteitsniveau.
+  const straatLeven = new StraatLevenWeergave(wereld);
+  sfeer.scene.add(straatLeven.groep);
+  const levenMax = () => ({ laag: 110, midden: 200, hoog: 320 } as Record<string, number>)[sfeer.niveau] ?? 200;
   const diensten = new DienstWeergave(wereld, mats);
   sfeer.scene.add(diensten.groep);
   diensten.props = stad.props;
@@ -275,6 +280,7 @@ async function start() {
     if (verberg.includes('ui')) { hulp.style.display = 'none'; document.getElementById('nieuws')?.remove(); }
     dagNacht.stap(0, 0); lichtLaag.werkBij();
     verkeer.werkBij(sfeer.camera.position);
+    for (let i = 0; i < 40; i++) straatLeven.werkBij(0.1, camera.doel, camera.afstand, 1, levenMax());
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.camera.updateMatrixWorld();
     stad.tegels.kiesDetail(sfeer.camera.position);
@@ -323,6 +329,7 @@ async function start() {
     wereld.verkeer.max = maxVerkeer();
     wereld.stap(dt);
     verkeer.werkBij(sfeer.camera.position, dt);
+    straatLeven.werkBij(dt, camera.doel, camera.afstand, wereld.snelheid, levenMax());
     if (diensten.werkBij(dt, sfeer.camera, wereld.snelheid)) sfeer.schaduwVuil();
     const grond = grondOnder();
     gereedschap.beweeg(grond);

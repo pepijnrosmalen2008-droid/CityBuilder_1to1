@@ -29,6 +29,17 @@ hierheen).
 - Vloeiend rijden: een auto wordt getekend tussen een voor- en achterpunt die over de overgangen heen kijken (vorige strook, verbinding op het kruispunt, volgende strook); bij een strookwissel schuift hij precies de echte zijwaartse afstand. `scripts/test/vloeiend.ts` meet sprongen en draaiing per stap.
 - `geom/autos.ts`: procedurele voertuigen (hatchback, sedan, stationwagen, SUV, bestelbus, vrachtwagen, bus) met lak per voertuig, glas, wielkasten, lampen, kentekens en remlichten; een eenvoudige versie voor op afstand.
 
+## Wegen bouwen en zoneren zoals Cities: Skylines
+
+- **Wegen** (`core/gereedschap.ts`): recht, bocht, vrij en **raster** (klik 1 = hoek, klik 2 = richting en lengte, klik 3 = diepte; bouwblokken van 2×30 bij 2×45 m). **Parallel** (P) legt een tweede weg evenwijdig rechts ervan op bouwblokafstand. De spookweg toont lengte, kosten, hoek en helling.
+- **Opwaarderen** en **slopen** werken ook slepend: alles waar je overheen sleept, gaat mee. Rechts klikken bij opwaarderen draait de rijrichting om (eenrichtingsstraat).
+- **Kruispunten** (`core/geom/wegmesh.ts`): fietspaden en bermen lopen in rood asfalt om de hoek, rode fietsoversteken met blokmarkering, zebrapaden, stopstrepen bij verkeerslichten, haaientanden voor de weg die voorrang moet geven, voorsorteerpijlen bij twee of meer stroken, pijlen op eenrichtingsstraten.
+- **Zoneren**: vullen (een heel bouwblok in één klik), selectie (een rechthoek die met de weg meedraait) en penseel klein/groot. Rechts klikken haalt de zone weg met hetzelfde gereedschap. De kavels die veranderen, lichten op in de kleur van de zone.
+
+## Leven op straat
+
+`core/straatleven.ts` + `render/straatleven.ts`: voetgangers op de stoepen en fietsers op de fietspaden, alleen ingezoomd en rond het kijkpunt (110/200/320 per kwaliteitsniveau, 's nachts minder). Ze lopen om de hoek naar de volgende straat zonder te verspringen. Puur beeld, vier draw calls, ongeveer 0,1 ms per beeld.
+
 ## Nutsvoorzieningen
 
 `src/core/voorzieningen.ts`: stroom, drinkwater, riolering en afval zoals in Cities: Skylines 2 (leidingen en kabels lopen langs de wegen). Voorzieningen (windturbine, zonnepark, gascentrale, pompstation, rioolwaterzuivering, stortplaats, afvalenergiecentrale) leveren aan alle gebouwen die via het wegennet verbonden zijn. Per netwerk productie tegen verbruik (Nederlandse kengetallen); met een buitenaansluiting wordt een tekort duur ingekocht. Zonder voorziening lopen gebouwen leeg, daalt de vraag en de tevredenheid en verschijnen er meldingen boven de gebouwen. Een nieuwe kaart begint met een snelweg vanaf de rand (de buitenaansluiting).
@@ -66,11 +77,12 @@ hierheen).
 |---|---|
 | X / Z / K / G / N / U / B / Esc | Wegen / Zones / Districten / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Voorzieningen (stroom, water, afval, hulpdiensten) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
-| C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend) |
+| C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend), raster |
+| P | Parallel bouwen: uit, 2×30 m, 2×50 m |
 | PgUp / PgDn | Hoogte van de weg in stappen van 4 m: viaduct (omhoog) of tunnel (omlaag); wegen op verschillende hoogte kruisen zonder kruispunt |
 | H | Hulplijnen en snappen aan/uit (verlengden, haakse lijnen, evenwijdig op blokafstand van 2×25 of 2×50 m) |
-| Linkerklik | Beginpunt, (bochtpunt), eindpunt; zones: slepen met het penseel |
-| Rechterklik | Stoppen met tekenen |
+| Linkerklik | Beginpunt, (bochtpunt), eindpunt; zones: vullen, rechthoek slepen of penseel; slopen/opwaarderen: klikken of slepen |
+| Rechterklik | Stoppen met tekenen; zones: weghalen; opwaarderen: rijrichting omdraaien |
 | + / − | Penseelgrootte |
 | WASD, middelste knop | Schuiven |
 | Q/E, rechts slepen | Draaien |
