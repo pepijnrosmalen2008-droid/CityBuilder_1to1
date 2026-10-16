@@ -13,6 +13,8 @@ const ACHTER: Record<WegTypeId, string[]> = {
   woonstraat: ['straat', 'hof', 'erf', 'pad', 'plein', 'gaarde'],
   straat: ['straat', 'weg', 'straat', 'singel'],
   eenrichting: ['straat', 'steeg', 'gracht', 'straat'],
+  woonstraatP: ['straat', 'laan', 'hof', 'weg'],
+  straatP: ['straat', 'weg', 'singel'],
   straatBus: ['straat', 'weg'],
   laan: ['laan', 'laan', 'boulevard', 'singel'],
   tramstraat: ['straat', 'weg', 'laan'],

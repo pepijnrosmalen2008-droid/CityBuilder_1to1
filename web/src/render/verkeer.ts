@@ -249,6 +249,33 @@ export class VerkeerWeergave {
       this.m.compose(p, q, schaal);
       this.vlek.setMatrixAt(nv++, this.m);
     }
+    // Geparkeerde auto's (alleen in de buurt van de camera; wielen staan stil).
+    const PARK = 380 * 380;
+    for (const pv of vk.parkeren.vakken.values()) {
+      const a = pv.auto;
+      if (!a) continue;
+      const dx = pv.x - cam.x, dz = pv.z - cam.z;
+      if (dx * dx + dz * dz > PARK) continue;
+      const ver = dx * dx + dz * dz + (cam.y - pv.y) ** 2 > LOD_AFSTAND * LOD_AFSTAND;
+      const laag = this.lagen.get(`${a.soort}${ver ? 1 : 0}`);
+      if (!laag || laag.n >= this.max) continue;
+      f.set(pv.dx, 0, pv.dz).normalize(); r.set(-f.z, 0, f.x); u.set(0, 1, 0);
+      p.set(pv.x, pv.y + 0.03, pv.z);
+      this.m.makeBasis(f, u, r).setPosition(p);
+      laag.lak.setMatrixAt(laag.n, this.m); laag.rest?.setMatrixAt(laag.n, this.m);
+      laag.lak.setColorAt(laag.n, this.lakKleuren[a.lak] ?? this.wit);
+      laag.n++;
+      if (!ver) for (const { plek, sleutel } of this.wielenVan.get(a.soort) ?? []) {
+        const wl = this.wielLagen.get(sleutel)!;
+        if (wl.n >= wl.m.instanceMatrix.count) continue;
+        this.mW.makeTranslation(plek.x, plek.r, plek.z);
+        wl.m.setMatrixAt(wl.n++, this.mW.premultiply(this.m));
+      }
+      if (nv < this.vlek.instanceMatrix.count) {
+        q.setFromRotationMatrix(this.m); schaal.set(AFMETING[a.soort].l * 1.15, 1, AFMETING[a.soort].b * 1.35);
+        this.m.compose(p, q, schaal); this.vlek.setMatrixAt(nv++, this.m);
+      }
+    }
     for (const l of this.lagen.values()) {
       l.lak.count = l.n; l.lak.visible = l.n > 0; l.lak.instanceMatrix.needsUpdate = true; if (l.lak.instanceColor) l.lak.instanceColor.needsUpdate = true;
       if (l.rest) { l.rest.count = l.n; l.rest.visible = l.n > 0; l.rest.instanceMatrix.needsUpdate = true; }

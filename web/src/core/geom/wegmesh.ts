@@ -19,6 +19,7 @@ function materiaalVoor(s: Strook, dek: string): string {
     case 'fiets': return dek === 'klinkers' ? 'klinkers' : 'fietsasfalt';
     case 'bus': return 'busbaan';
     case 'berm': case 'middenberm': return 'gras';
+    case 'parkeer': return dek === 'klinkers' ? 'asfalt' : 'klinkers';
     default: return DEKMAT[dek];
   }
 }
@@ -207,6 +208,15 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
     if ((L.soort === 'fiets' && rijbaan(Rr)) || (rijbaan(L) && Rr.soort === 'fiets')) lijn(o, 0.15, 1, 1);
     if (snel && ((L.soort === 'berm' || L.soort === 'middenberm') && rijbaan(Rr))) lijn(o + 0.35, 0.15, 1e9, 0);
     if (snel && (rijbaan(L) && (Rr.soort === 'berm' || Rr.soort === 'middenberm'))) lijn(o - 0.35, 0.15, 1e9, 0);
+  }
+  // Parkeerhavens: een doorgetrokken lijn langs de rijbaan en witte vakstrepen om de 5,5 m.
+  for (let k = 0; k < g.length; k++) {
+    const x = g[k];
+    if (x.s.soort !== 'parkeer') continue;
+    const binnen = x.a < 0 ? x.b : x.a;
+    lijn(binnen + (x.a < 0 ? -0.08 : 0.08), 0.1, 1e9, 0, 3);
+    const s0 = Math.max(sOp(eerste, x.a), sOp(eerste, x.b)) + 4, s1 = Math.min(sOp(laatste, x.a), sOp(laatste, x.b)) - 4;
+    for (let d = s0; d <= s1; d += 5.5) lijnStuk(x.a + 0.08, x.b - 0.08, d, d + 0.1);
   }
   for (const x of g) if (x.s.soort === 'tram') {
     const m = (x.a + x.b) / 2;

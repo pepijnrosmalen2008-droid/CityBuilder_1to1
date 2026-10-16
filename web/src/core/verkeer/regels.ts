@@ -16,7 +16,7 @@ import type { Afslag } from './rijstroken';
 
 export type Bord = 'voorrang' | 'geef' | 'stop';
 export type LichtKeuze = 'auto' | 'aan' | 'uit';
-export type Verbod = 'auto' | 'vracht' | 'bus';
+export type Verbod = 'auto' | 'vracht' | 'bus' | 'parkeren';
 
 export interface EindRegels {
   bord?: Bord;

@@ -430,7 +430,7 @@ export class Wegennet {
 
   /** Afrondstraal per wegtype (zoals de automatische bochten in Cities: Skylines 2). */
   static afrondStraal(type: WegTypeId) {
-    return ({ voetpad: 6, fietspad: 10, woonstraat: 14, straat: 22, eenrichting: 22, straatBus: 26, laan: 36, tramstraat: 30, gow: 55, snelweg: 160 } as Record<WegTypeId, number>)[type];
+    return ({ voetpad: 6, fietspad: 10, woonstraat: 14, woonstraatP: 14, straat: 22, straatP: 22, eenrichting: 22, straatBus: 26, laan: 36, tramstraat: 30, gow: 55, snelweg: 160 } as Record<WegTypeId, number>)[type];
   }
 
   /** Punt (Bézier-parameter) op een segment op een afstand vanaf een uiteinde. */

@@ -64,7 +64,7 @@ const GRONDSTOF_ICOON: Record<Grondstof, string> = {
 
 const DIENST_VOLGORDE: DienstSoort[] = ['windmolen', 'zonnepark', 'gascentrale', 'pompstation', 'rwzi', 'stortplaats', 'afvalcentrale', 'brandweer', 'politie', 'ziekenhuis', 'gezondheidscentrum'];
 
-const STROOKKLEUR: Record<string, string> = { stoep: '#9aa0a6', fiets: '#a8473b', auto: '#3b3f45', gedeeld: '#7b4a3a', bus: '#7a3f35', tram: '#55575c', berm: '#5f8d3e', middenberm: '#5f8d3e', vluchtstrook: '#4a4e55' };
+const STROOKKLEUR: Record<string, string> = { stoep: '#9aa0a6', fiets: '#a8473b', auto: '#3b3f45', gedeeld: '#7b4a3a', bus: '#7a3f35', tram: '#55575c', berm: '#5f8d3e', middenberm: '#5f8d3e', vluchtstrook: '#4a4e55', parkeer: '#6d6a66' };
 
 function dwarsprofiel(type: WegTypeId): string {
   const t = WEGTYPEN[type], W = totaleBreedte(t.stroken), schaal = 80 / Math.max(W, 12);
@@ -155,7 +155,7 @@ export class Werkbalk {
       { id: 'pijlen', naam: 'Rijstrookpijlen', sub: 'per rijstrook', svg: '<svg viewBox="0 0 86 46"><g fill="none" stroke="#e9ecef" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M28 40V24a6 6 0 0 0-6-6h-8M18 13l-5 5 5 5"/><path d="M43 40V8M37 14l6-6 6 6"/><path d="M58 40V24a6 6 0 0 1 6-6h8M68 13l5 5-5 5"/></g></svg>' },
       { id: 'regels', naam: 'Kruispuntregels', sub: 'keren, wisselen, …', svg: '<svg viewBox="0 0 86 46"><rect x="24" y="8" width="38" height="30" rx="4" fill="none" stroke="#e9ecef" stroke-width="2.4"/><path d="M24 23h38M43 8v30" stroke="#e9ecef" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M50 33V24a5 5 0 0 0-10 0v4M36 25l4 4 4-4" fill="none" stroke="#74c0fc" stroke-width="2.6" stroke-linecap="round"/></svg>' },
       { id: 'snelheid', naam: 'Maximumsnelheid', sub: 'klik of sleep', svg: '<svg viewBox="0 0 86 46"><circle cx="43" cy="23" r="18" fill="#d6262c"/><circle cx="43" cy="23" r="14" fill="#fff"/><text x="43" y="29" text-anchor="middle" font-size="16" font-weight="800" fill="#111" font-family="Inter,sans-serif">30</text></svg>' },
-      { id: 'verbod', naam: 'Verboden', sub: 'auto, vracht, bus', svg: '<svg viewBox="0 0 86 46"><circle cx="43" cy="23" r="18" fill="#d6262c"/><circle cx="43" cy="23" r="14" fill="#fff"/><path d="M33 17h12v11H33zM45 20h5l3 4v4h-8z" fill="#222"/><circle cx="37" cy="30" r="2" fill="#222"/><circle cx="49" cy="30" r="2" fill="#222"/></svg>' },
+      { id: 'verbod', naam: 'Verboden', sub: 'vracht, bus, parkeren', svg: '<svg viewBox="0 0 86 46"><circle cx="43" cy="23" r="18" fill="#d6262c"/><circle cx="43" cy="23" r="14" fill="#fff"/><path d="M33 17h12v11H33zM45 20h5l3 4v4h-8z" fill="#222"/><circle cx="37" cy="30" r="2" fill="#222"/><circle cx="49" cy="30" r="2" fill="#222"/></svg>' },
     ];
     const items = tools.map(t => `<div class="item ${g.verkeerTool === t.id ? 'aan' : ''}" data-vt="${t.id}">${t.svg}<div class="item-naam">${t.naam}</div><div class="item-sub">${t.sub}</div></div>`).join('');
     let opties = '';
@@ -167,7 +167,7 @@ export class Werkbalk {
       case 'pijlen': opties = hint('Zet per rijstrook de richtingen aan of uit · ↺ = standaard'); break;
       case 'regels': opties = hint('Per wegeinde: keren, strook wisselen, kruispunt opblokken, oversteekplaats, rechtsaf door rood'); break;
       case 'snelheid': opties = `<div class="groep">${[30, 50, 60, 70, 80, 100, 120, 130].map(v => `<button class="knop ${g.snelheidKeuze === v ? 'aan' : ''}" data-kmu="${v}">${v}</button>`).join('')}<button class="knop ${g.snelheidKeuze === undefined ? 'aan' : ''}" data-kmu="">Standaard</button></div>` + hint('Klik of sleep over wegen · rechts = standaard'); break;
-      case 'verbod': opties = `<div class="groep">${(['auto', 'vracht', 'bus'] as Verbod[]).map(v => `<button class="knop ${g.verbodKeuze === v ? 'aan' : ''}" data-vb="${v}">${({ auto: "Auto's", vracht: 'Vrachtverkeer', bus: 'Bussen' } as const)[v]}</button>`).join('')}</div>` + hint('Klik of sleep: verbod aan/uit · rechts = alles toestaan'); break;
+      case 'verbod': opties = `<div class="groep">${(['auto', 'vracht', 'bus', 'parkeren'] as Verbod[]).map(v => `<button class="knop ${g.verbodKeuze === v ? 'aan' : ''}" data-vb="${v}">${({ auto: "Auto's", vracht: 'Vrachtverkeer', bus: 'Bussen', parkeren: 'Parkeren' } as const)[v]}</button>`).join('')}</div>` + hint('Klik of sleep: verbod aan/uit · rechts = alles toestaan'); break;
     }
     opties += `<div class="groep"><button class="knop" data-wis title="Alle voertuigen van de weg halen (hulpdiensten blijven rijden)">Verkeer wissen</button><button class="knop schakel ${R?.verdwijnen ? 'aan' : ''}" data-verdw title="Voertuigen die lang vaststaan verdwijnen (zoals in CS)">Vastgelopen verdwijnen</button></div>`;
     return { items, opties };

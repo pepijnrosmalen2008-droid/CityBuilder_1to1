@@ -787,7 +787,7 @@ export class Gereedschap {
           const s = net.segmentBij(p, 1);
           if (!s) return { soort: 'geen' };
           const R = net.regels, nu = R.limiet(s.seg.id) ?? WEGTYPEN[s.seg.type].snelheid;
-          const tekst = this.verkeerTool === 'snelheid' ? `${nu} km/u → ${this.snelheidKeuze ?? WEGTYPEN[s.seg.type].snelheid} km/u · slepen = meer wegen · rechts = standaard` : `Verbod ${({ auto: "auto's", vracht: 'vrachtverkeer', bus: 'bussen' } as const)[this.verbodKeuze]} aan/uit · rechts = alles toestaan`;
+          const tekst = this.verkeerTool === 'snelheid' ? `${nu} km/u → ${this.snelheidKeuze ?? WEGTYPEN[s.seg.type].snelheid} km/u · slepen = meer wegen · rechts = standaard` : `Verbod ${({ auto: "auto's", vracht: 'vrachtverkeer', bus: 'bussen', parkeren: 'parkeren' } as const)[this.verbodKeuze]} aan/uit · rechts = alles toestaan`;
           return { soort: 'markeer', segment: s.seg.id, kleur: this.verkeerTool === 'snelheid' ? '#4dabf7' : '#ff6b6b', tekst };
         }
         return { soort: 'geen' };

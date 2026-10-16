@@ -37,6 +37,7 @@ const REGELS: { k: RegelSleutel; naam: string; svg: string; alleenLicht?: boolea
 const VERBOD_SVG: Record<Verbod, string> = {
   auto: '<path d="M6 15v1.8M18 15v1.8M4.8 15v-2.6l1.7-3.7A1.6 1.6 0 0 1 8 7.8h8a1.6 1.6 0 0 1 1.5.9l1.7 3.7V15z" fill="none" stroke="#222" stroke-width="1.6" stroke-linejoin="round"/>',
   vracht: '<path d="M3.5 7.5h10v8h-10zM13.5 10h4l2.5 3v2.5h-6.5z" fill="#222"/><circle cx="7" cy="16.5" r="1.6" fill="#222"/><circle cx="16.5" cy="16.5" r="1.6" fill="#222"/>',
+  parkeren: '<rect x="4" y="4" width="16" height="16" rx="3" fill="#1c5fbf"/><text x="12" y="16.8" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="Inter,sans-serif">P</text>',
   bus: '<rect x="5" y="5" width="14" height="12" rx="2" fill="#222"/><rect x="6.6" y="7" width="10.8" height="4.4" fill="#fff"/><circle cx="8.5" cy="18" r="1.3" fill="#222"/><circle cx="15.5" cy="18" r="1.3" fill="#222"/>',
 };
 const verbodBord = (v: Verbod) => `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#d6262c"/><circle cx="12" cy="12" r="8.4" fill="#fff"/><g transform="translate(2.4 2.4) scale(.8)">${VERBOD_SVG[v]}</g></svg>`;

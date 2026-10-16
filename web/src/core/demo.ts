@@ -16,10 +16,10 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
   weg({ x: -520, z: -380 }, { x: 120, z: -400 }, 'gow', { x: -200, z: -440 });
   // Raster van straten ten noorden van de laan.
   for (let x = -560; x <= 120; x += 112) weg({ x, z: 40 }, { x, z: -360 }, x % 224 === 0 ? 'straat' : 'woonstraat');
-  for (let z = -60; z >= -300; z -= 96) weg({ x: -580, z }, { x: 140, z }, z === -156 ? 'straatBus' : 'woonstraat');
+  for (let z = -60; z >= -300; z -= 96) weg({ x: -580, z }, { x: 140, z }, z === -156 ? 'straatBus' : z === -252 ? 'woonstraatP' : 'woonstraat');
   // Ten zuiden: straten richting de kust.
   for (let x = -560; x <= 120; x += 112) weg({ x, z: 40 }, { x, z: 360 }, 'straat');
-  for (let z = 140; z <= 340; z += 100) weg({ x: -580, z }, { x: 140, z }, z === 240 ? 'tramstraat' : 'woonstraat');
+  for (let z = 140; z <= 340; z += 100) weg({ x: -580, z }, { x: 140, z }, z === 240 ? 'tramstraat' : z === 140 ? 'straatP' : 'woonstraat');
   // Een gebogen woonstraat.
   weg({ x: -620, z: 140 }, { x: -620, z: 340 }, 'woonstraat', { x: -700, z: 240 });
   weg({ x: -620, z: 140 }, { x: -580, z: 140 }, 'woonstraat');

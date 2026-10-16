@@ -5,6 +5,7 @@ import { Rijstroken, Baan, Verbinding, Spoor, RANG } from './rijstroken';
 export type { Spoor };
 import type { Wereld } from '../wereld';
 import type { Verbod } from './regels';
+import { Parkeren } from './parkeren';
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // VERKEER
@@ -62,6 +63,7 @@ export interface Voertuig {
 export interface Plek { seg: number; zijde: 1 | -1; p: V2; gewicht: number }
 
 const S0 = 2.2; // minimale afstand tot de voorligger (m)
+const PERSONEN: VoertuigSoort[] = ['hatchback', 'sedan', 'stationwagen', 'suv', 'bestelbus'];
 
 /** Categorie voor verboden (TM:PE): personenauto's, vrachtverkeer, bussen. */
 export function verbodSoort(soort: VoertuigSoort): Verbod {
@@ -87,7 +89,13 @@ export class Verkeer {
   private plekken: Record<'woning' | 'werk' | 'winkel' | 'industrie', Plek[]> = { woning: [], werk: [], winkel: [], industrie: [] };
   private buiten: number[] = [];
 
-  constructor(private w: Wereld) { this.stroken = new Rijstroken(w.net); }
+  /** Parkeerhavens met geparkeerde auto's. */
+  parkeren: Parkeren;
+
+  constructor(private w: Wereld) {
+    this.stroken = new Rijstroken(w.net);
+    this.parkeren = new Parkeren(w.net, () => { const soort = this.rng.kies(['hatchback', 'hatchback', 'sedan', 'stationwagen', 'stationwagen', 'suv', 'suv', 'bestelbus'] as const) as VoertuigSoort; return { soort, lak: this.lak(soort) }; });
+  }
 
   // ─── Graaf bijhouden ─────────────────────────────────────────────────────────
 
@@ -185,7 +193,7 @@ export class Verkeer {
   }
 
   private kosten(type: WegTypeId, lengte: number, seg?: number) {
-    const f: Record<string, number> = { woonstraat: 1.7, straat: 1.15, eenrichting: 1.2, straatBus: 1.15, tramstraat: 1.2, laan: 1, gow: 0.85, snelweg: 0.75 };
+    const f: Record<string, number> = { woonstraat: 1.7, woonstraatP: 1.75, straat: 1.15, straatP: 1.18, eenrichting: 1.2, straatBus: 1.15, tramstraat: 1.2, laan: 1, gow: 0.85, snelweg: 0.75 };
     const kmu = (seg !== undefined ? this.w.net.regels.limiet(seg) : undefined) ?? WEGTYPEN[type].snelheid;
     return lengte / (kmu / 3.6) * (f[type] ?? 1.3);
   }
@@ -299,17 +307,24 @@ export class Verkeer {
     if (!route) return false;
     const laatste = route[route.length - 1];
     const doel = doelen.find(d => d.seg === laatste.seg && d.r === laatste.r)!;
-    return !!this.maak(soort, start, route, doel.s, !!buitenVan, !!van);
+    // Vanaf een gebouw: zo mogelijk een geparkeerde auto in de buurt pakken (zelfde model en kleur).
+    let lak: number | undefined;
+    if (van && PERSONEN.includes(soort)) {
+      const b = start.baan, sAs = b.richting === 'A' ? b.s0 + start.s : b.s1 - start.s;
+      const p = this.parkeren.vertrek(b.seg, sAs);
+      if (p) { soort = p.soort; lak = p.lak; }
+    }
+    return !!this.maak(soort, start, route, doel.s, !!buitenVan, !!van, lak);
   }
 
   /** Voertuig op de weg zetten (als er ruimte is om in te voegen). */
-  private maak(soort: VoertuigSoort, start: { baan: Baan; s: number }, route: { seg: number; r: 'A' | 'B' }[], doelS: number, vanBuiten: boolean, vanGebouw: boolean): Voertuig | null {
+  private maak(soort: VoertuigSoort, start: { baan: Baan; s: number }, route: { seg: number; r: 'A' | 'B' }[], doelS: number, vanBuiten: boolean, vanGebouw: boolean, lak?: number): Voertuig | null {
     const b = start.baan;
     for (const o of this.voertuigen.values()) if (o.spoor === b.id && Math.abs(o.s - start.s) < 9) return null;
     const f = AFMETING[soort];
     const vracht = soort === 'vrachtwagen' || soort === 'bus';
     const v: Voertuig = {
-      id: this.volgende++, soort, lak: this.lak(soort), lengte: f.l,
+      id: this.volgende++, soort, lak: lak ?? this.lak(soort), lengte: f.l,
       spoor: b.id, s: start.s, v: vanBuiten ? b.vmax * 0.8 : 0, a: 0,
       route, ri: 0, doelS,
       v0f: vracht ? 0.85 : soort === 'bestelbus' ? 0.95 : 0.9 + this.rng.next() * 0.2,
@@ -520,7 +535,9 @@ export class Verkeer {
       this.bouwKlok += dtEcht;
       if (this.bouwKlok > 0.25 || this.versie === -1) { this.versie = this.w.net.versie; this.bouwKlok = 0; this.herbouw(); this.plekKlok = 99; }
     }
+    this.parkeren.bijwerken();
     if (dt <= 0) return;
+    this.parkeren.stap(dt);
     this.plekKlok += dtEcht;
     if (this.plekKlok > 5) { this.plekKlok = 0; this.verzamelPlekken(); }
     // Vraag per knoop en aanvoerend segment (uit de aanmeldingen bij de kruispunten).
@@ -617,7 +634,11 @@ export class Verkeer {
       let veilig = 0;
       while (veilig++ < 4) {
         const cur = this.spoor(v.spoor)!;
-        if (cur.soort === 'baan' && v.ri >= v.route.length - 1 && v.s >= v.doelS - 0.3) { v.opAankomst?.(v); this.verwijder(v); break; }
+        if (cur.soort === 'baan' && v.ri >= v.route.length - 1 && v.s >= v.doelS - 0.3) {
+          // Aangekomen: parkeren in een vak in de buurt (als die er is), anders 'naar binnen'.
+          if (!v.opAankomst && PERSONEN.includes(v.soort)) this.parkeren.parkeer(cur.seg, cur.richting === 'A' ? cur.s0 + v.s : cur.s1 - v.s, v.soort, v.lak);
+          v.opAankomst?.(v); this.verwijder(v); break;
+        }
         if (v.s < cur.lengte) break;
         if (cur.soort === 'baan') {
           if (v.res && this.stroken.verbinding(v.res)?.van === cur.id) { v.s -= cur.lengte; v.vorige = [cur.id, ...(v.vorige ?? [])].slice(0, 3); v.spoor = v.res; }

@@ -2,11 +2,11 @@
 // tekenrichting in, A = met de tekenrichting mee; Nederlands rechts rijden). Breedtes volgen de
 // orde van grootte van de CROW-richtlijnen. Overgenomen uit de Unity-versie (WegTypeCatalogus).
 
-export type StrookSoort = 'auto' | 'bus' | 'tram' | 'fiets' | 'stoep' | 'gedeeld' | 'berm' | 'middenberm' | 'vluchtstrook';
+export type StrookSoort = 'auto' | 'bus' | 'tram' | 'fiets' | 'stoep' | 'gedeeld' | 'berm' | 'middenberm' | 'vluchtstrook' | 'parkeer';
 export type Richting = 'A' | 'B' | 'T';
 export interface Strook { soort: StrookSoort; richting: Richting; breedte: number }
 
-export type WegTypeId = 'voetpad' | 'fietspad' | 'woonstraat' | 'straat' | 'straatBus' | 'laan' | 'tramstraat' | 'gow' | 'snelweg' | 'eenrichting';
+export type WegTypeId = 'voetpad' | 'fietspad' | 'woonstraat' | 'straat' | 'straatBus' | 'laan' | 'tramstraat' | 'gow' | 'snelweg' | 'eenrichting' | 'woonstraatP' | 'straatP';
 
 export interface WegType {
   id: WegTypeId;
@@ -33,6 +33,14 @@ export const WEGTYPEN: Record<WegTypeId, WegType> = {
   straat: {
     id: 'straat', naam: 'Straat (50)', snelheid: 50, erf: true, dek: 'asfalt', kosten: 1400, bomen: true,
     stroken: [S('stoep', 'T', 2), S('fiets', 'B', 1.75), S('auto', 'B', 3), S('auto', 'A', 3), S('fiets', 'A', 1.75), S('stoep', 'T', 2)],
+  },
+  woonstraatP: {
+    id: 'woonstraatP', naam: 'Woonstraat met parkeren', snelheid: 30, erf: true, dek: 'klinkers', kosten: 1150, bomen: true,
+    stroken: [S('stoep', 'T', 1.8), S('parkeer', 'T', 2.0), S('gedeeld', 'B', 2.75), S('gedeeld', 'A', 2.75), S('parkeer', 'T', 2.0), S('stoep', 'T', 1.8)],
+  },
+  straatP: {
+    id: 'straatP', naam: 'Straat met parkeerhavens', snelheid: 50, erf: true, dek: 'asfalt', kosten: 1750, bomen: true,
+    stroken: [S('stoep', 'T', 2), S('parkeer', 'T', 2.0), S('fiets', 'B', 1.75), S('auto', 'B', 3), S('auto', 'A', 3), S('fiets', 'A', 1.75), S('parkeer', 'T', 2.0), S('stoep', 'T', 2)],
   },
   eenrichting: {
     id: 'eenrichting', naam: 'Eenrichtingsstraat', snelheid: 50, erf: true, dek: 'asfalt', kosten: 1300, bomen: true,
@@ -63,7 +71,7 @@ export const WEGTYPEN: Record<WegTypeId, WegType> = {
   },
 };
 
-export const WEGTYPE_VOLGORDE: WegTypeId[] = ['woonstraat', 'straat', 'eenrichting', 'straatBus', 'laan', 'tramstraat', 'gow', 'snelweg', 'fietspad', 'voetpad'];
+export const WEGTYPE_VOLGORDE: WegTypeId[] = ['woonstraat', 'woonstraatP', 'straat', 'straatP', 'eenrichting', 'straatBus', 'laan', 'tramstraat', 'gow', 'snelweg', 'fietspad', 'voetpad'];
 
 export function totaleBreedte(stroken: Strook[]) { return stroken.reduce((s, l) => s + l.breedte, 0); }
 export function halveBreedte(type: WegTypeId) { return totaleBreedte(WEGTYPEN[type].stroken) / 2; }
@@ -95,10 +103,10 @@ export function randen(stroken: Strook[]) {
 }
 
 /** Straal van de stoeprandhoek op een kruispunt, naar wegtype. */
-export const HOEKSTRAAL: Record<WegTypeId, number> = { voetpad: 1, fietspad: 2, woonstraat: 3.5, straat: 4.5, eenrichting: 4.5, straatBus: 6, laan: 7, tramstraat: 6, gow: 9, snelweg: 14 };
+export const HOEKSTRAAL: Record<WegTypeId, number> = { voetpad: 1, fietspad: 2, woonstraat: 3.5, woonstraatP: 3.5, straat: 4.5, straatP: 4.5, eenrichting: 4.5, straatBus: 6, laan: 7, tramstraat: 6, gow: 9, snelweg: 14 };
 
 /** Rang van een wegtype (voorrang en verkeerslichten). */
-export const RANG: Record<WegTypeId, number> = { voetpad: 0, fietspad: 0, woonstraat: 1, straat: 2, eenrichting: 2, straatBus: 2, tramstraat: 2, laan: 3, gow: 4, snelweg: 5 };
+export const RANG: Record<WegTypeId, number> = { voetpad: 0, fietspad: 0, woonstraat: 1, woonstraatP: 1, straat: 2, straatP: 2, eenrichting: 2, straatBus: 2, tramstraat: 2, laan: 3, gow: 4, snelweg: 5 };
 /** Krijgt een kruispunt met deze wegen verkeerslichten? (een laan of groter, en minstens twee straten) */
 export function heeftLichten(typen: WegTypeId[]): boolean {
   if (typen.length < 3) return false;
