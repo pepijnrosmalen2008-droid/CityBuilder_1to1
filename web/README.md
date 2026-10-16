@@ -49,6 +49,11 @@ hierheen).
 - Opwaarderen zoals in CS2: een pand dat een niveau stijgt gaat in de steigers (bewoners blijven) en komt terug als ontwerp van het nieuwe niveau, vaak hoger en in een nieuwere stijl.
 - Meshes van de nieuwe types: `src/core/geom/stijlmesh.ts`.
 
+## Dag en nacht en prestaties
+
+- `src/render/dagnacht.ts`: zon van oost naar west (etmaal = 12 minuten), warm licht bij opkomst en ondergang, maanlicht; 's nachts verlichte ramen (per raamvak aan/uit), etalages, lantaarns met lichtvlekken (`render/licht.ts`) en koplampbundels. Aan/uit in het instellingenmenu.
+- Detailniveaus: vakken van 256 m dichtbij, blokken van 512 m veraf met vereenvoudigde gebouwen en één textuurreeks (`core/geom/lod.ts`); samenvoegen in een Web Worker (`render/tegelworker.ts`); per vak één schaduwvervanger; grondwaarde verdeeld over de beelden.
+
 ## Info en opslaan
 
 - Kijken (Esc) en klik op een gebouw of voorziening: infopaneel met adres, bewoners/banen, grondwaarde met factoren, wat er nodig is voor het volgende niveau, voorzieningen en dekking.

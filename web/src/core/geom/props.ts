@@ -206,7 +206,7 @@ function bankMesh(): MeshData {
 function afvalbakMesh(): MeshData {
   const mb = new MeshBouwer();
   cilinder(mb, 'paal', { x: 0, y: 0, z: -0.25 }, { x: 0, y: 1.0, z: -0.25 }, 0.04, 0.04, 6);
-  cilinder(mb, 'verkeerslichtGroen', { x: 0, y: 0.45, z: 0 }, { x: 0, y: 1.0, z: 0 }, 0.24, 0.26, 12);
+  cilinder(mb, 'groenLak', { x: 0, y: 0.45, z: 0 }, { x: 0, y: 1.0, z: 0 }, 0.24, 0.26, 12);
   cilinder(mb, 'trimDonker', { x: 0, y: 1.0, z: 0 }, { x: 0, y: 1.05, z: 0 }, 0.27, 0.27, 12);
   return mb.bouw();
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Wereld } from '../core/wereld';
-import { Materialen } from './materialen';
+import { Materialen, NACHT } from './materialen';
 import { naarMesh } from './meshes';
 import { MeshData, MeshBouwer } from '../core/geom/mesh';
 import { voertuigMesh, voertuigZonderWielen, losWiel, WielPlek, remlichten, zwaailichten } from '../core/geom/autos';
@@ -47,6 +47,9 @@ export class VerkeerWeergave {
   private wielenVan = new Map<VoertuigSoort, { plek: WielPlek; sleutel: string }[]>();
   /** Afgelegde weg per voertuig (voor de draaihoek van de wielen) en de vorige plek. */
   private gereden = new Map<number, { x: number; z: number; s: number }>();
+  /** Lichtbundels van de koplampen op het wegdek (alleen als het donker is). */
+  private bundel: THREE.InstancedMesh;
+  private mB = new THREE.Matrix4();
   private m = new THREE.Matrix4();
   private mW = new THREE.Matrix4();
   private mR = new THREE.Matrix4();
@@ -115,6 +118,24 @@ export class VerkeerWeergave {
     this.vlek = new THREE.InstancedMesh(vlakGeo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }), max);
     this.vlek.count = 0; this.vlek.frustumCulled = false; this.vlek.renderOrder = 2;
     this.groep.add(this.vlek);
+    // Koplampbundel: helder vlak voor de auto, uitwaaierend en vervagend naar voren.
+    {
+      const d = document.createElement('canvas'); d.width = 128; d.height = 64;
+      const c = d.getContext('2d')!;
+      const img = c.createImageData(128, 64);
+      for (let y = 0; y < 64; y++) for (let x = 0; x < 128; x++) {
+        const u = x / 127, v = Math.abs(y / 63 - 0.5) * 2;
+        const breed = 0.25 + 0.75 * u;
+        const a = Math.max(0, 1 - v / breed) * Math.pow(1 - u, 1.4) * Math.min(1, u * 8);
+        const i = (y * 128 + x) * 4; img.data[i] = 255; img.data[i + 1] = 236; img.data[i + 2] = 200; img.data[i + 3] = a * 255;
+      }
+      c.putImageData(img, 0, 0);
+      const t = new THREE.CanvasTexture(d); t.colorSpace = THREE.SRGBColorSpace;
+      const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+      this.bundel = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }), max);
+      this.bundel.count = 0; this.bundel.frustumCulled = false; this.bundel.renderOrder = 3; this.bundel.userData.geenAO = true;
+      this.groep.add(this.bundel);
+    }
     // Lampen van de verkeerslichten.
     const lampGeo = new THREE.SphereGeometry(0.11, 10, 8);
     const lamp = (sleutel: string) => { const im = new THREE.InstancedMesh(lampGeo, mats.haal(sleutel), 2000); im.count = 0; im.frustumCulled = false; this.groep.add(im); return im; };
@@ -172,7 +193,9 @@ export class VerkeerWeergave {
     for (const l of this.lagen.values()) l.n = 0;
     for (const r of this.rem.values()) r.n = 0;
     for (const wl of this.wielLagen.values()) wl.n = 0;
-    let nv = 0;
+    let nv = 0, nb = 0;
+    const nacht = NACHT.value;
+    (this.bundel.material as THREE.MeshBasicMaterial).opacity = Math.min(1, nacht * 1.3) * 0.6;
     const { f, u, r, p } = this.tmp;
     const schaal = new THREE.Vector3(1, 1, 1);
     const q = new THREE.Quaternion();
@@ -200,6 +223,11 @@ export class VerkeerWeergave {
       if (v.sirene && aan) { const z = this.zwaai.get(v.soort); if (z) z.m.setMatrixAt(z.n++, this.m); }
       laag.lak.setColorAt(laag.n, kleur);
       laag.n++;
+      if (nacht > 0.05) {
+        const lengte = v.soort === 'vrachtwagen' || v.soort === 'bus' || v.soort === 'brandweer' ? 16 : 13;
+        this.mB.makeScale(lengte, 1, AFMETING[v.soort].b * 2.1).setPosition(L * 0.5 + lengte * 0.5 - 0.3, 0.08, 0);
+        this.bundel.setMatrixAt(nb++, this.mB.premultiply(this.m));
+      }
       // Afgelegde weg bijhouden (ook bij versnelde tijd klopt de draaiing zo met de beweging).
       let g = this.gereden.get(v.id);
       if (!g) { g = { x: p.x, z: p.z, s: 0 }; this.gereden.set(v.id, g); }
@@ -228,6 +256,7 @@ export class VerkeerWeergave {
     for (const rm of this.rem.values()) { rm.m.count = rm.n; rm.m.visible = rm.n > 0; rm.m.instanceMatrix.needsUpdate = true; }
     for (const z of this.zwaai.values()) { z.m.count = z.n; z.m.visible = z.n > 0; z.m.instanceMatrix.needsUpdate = true; }
     this.vlek.count = nv; this.vlek.instanceMatrix.needsUpdate = true;
+    this.bundel.count = nb; this.bundel.visible = nb > 0; this.bundel.instanceMatrix.needsUpdate = true;
     for (const wl of this.wielLagen.values()) { wl.m.count = wl.n; wl.m.visible = wl.n > 0; wl.m.instanceMatrix.needsUpdate = true; }
     if (this.gereden.size > vk.voertuigen.size + 200) for (const id of this.gereden.keys()) if (!vk.voertuigen.has(id)) this.gereden.delete(id);
     // Verkeerslichten.

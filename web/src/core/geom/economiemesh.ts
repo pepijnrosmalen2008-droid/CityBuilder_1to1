@@ -94,7 +94,7 @@ export function bouwBedrijf(b: Bedrijf, g: Gebied, hoogte: H): { mesh: MeshData;
       // Voordeur, luiken en een schoorsteen.
       const vh = p(-6, 11.05);
       mb.quad('deur:2', P3({ x: vh.x - u.x * 0.55, z: vh.z - u.z * 0.55 }, Y), P3({ x: vh.x + u.x * 0.55, z: vh.z + u.z * 0.55 }, Y), P3({ x: vh.x + u.x * 0.55, z: vh.z + u.z * 0.55 }, Y + 2.2), P3({ x: vh.x - u.x * 0.55, z: vh.z - u.z * 0.55 }, Y + 2.2), [0, 0], [1, 0], [1, 1], [0, 1], { x: v.x, y: 0, z: v.z });
-      for (const a of [-3.2, 3.2]) for (const k of [-0.95, 0.95]) { const q = p(-6 + a + k, 11.08); doos(mb, 'verkeerslichtGroen', 'verkeerslichtGroen', q, u, 0.45, 0.06, Y + 0.85, Y + 2.35); }
+      for (const a of [-3.2, 3.2]) for (const k of [-0.95, 0.95]) { const q = p(-6 + a + k, 11.08); doos(mb, 'groenLak', 'groenLak', q, u, 0.45, 0.06, Y + 0.85, Y + 2.35); }
       doos(mb, `muur:${stijl}`, 'trimDonker', p(-9, 6), u, 0.7, 0.7, Y + 7, Y + 10.2);
       // Inrijdeuren van de schuur (achter en opzij) en kleine stalramen.
       for (const [c, n] of [[-20.05, -1], [-3.95, 1]] as const) {
@@ -125,7 +125,7 @@ export function bouwBedrijf(b: Bedrijf, g: Gebied, hoogte: H): { mesh: MeshData;
       doos(mb, 'golfplaat:2', 'golfdak', { x: loods.x - v.x * 4.6, z: loods.z - v.z * 4.6 }, u, 14, 0.8, Y - 0.3, Y + 5.5);
       for (const k of [-6.6, 6.6]) doos(mb, 'golfplaat:2', 'golfdak', { x: loods.x + u.x * k, z: loods.z + u.z * k }, v, 10, 0.8, Y - 0.3, Y + 5.5);
       doos(mb, 'golfdak', 'golfdak', loods, u, 14.4, 10.4, Y + 5.5, Y + 5.8);
-      trekker(mb, { x: loods.x + u.x * 2, z: loods.z + u.z * 2 }, v, Y, r.kies(['politieoranje', 'verkeerslichtGroen', 'remklauw']));
+      trekker(mb, { x: loods.x + u.x * 2, z: loods.z + u.z * 2 }, v, Y, r.kies(['politieoranje', 'groenLak', 'remklauw']));
       // Ronde balen, mestkelder en een melktank.
       for (let i = 0; i < 6; i++) hooibaal(mb, p(-18 + (i % 3) * 1.4, -16 + Math.floor(i / 3) * 1.4), u, Y, i % 4 !== 3);
       const mest = p(18, -40);

@@ -10,6 +10,8 @@ import { Materialen } from './render/materialen';
 import { VerkeerWeergave } from './render/verkeer';
 import { DienstWeergave } from './render/diensten';
 import { DistrictLaag } from './render/districtlaag';
+import { DagNacht } from './render/dagnacht';
+import { LichtLaag } from './render/licht';
 import { InfoLaag, InfoSoort, INFO_NAAM, INFO_LEGENDA } from './render/infolaag';
 import { InfoPaneel } from './ui/infopaneel';
 import { ICOON } from './ui/iconen';
@@ -83,6 +85,12 @@ async function start() {
   sfeer.scene.add(infoLaag.groep);
   const districtLaag = new DistrictLaag(wereld, sfeer.camera);
   sfeer.scene.add(districtLaag.groep);
+  // Dag en nacht (instelling bewaard; ?uur=21 voor schermafbeeldingen).
+  const dagNacht = new DagNacht(sfeer, mats, Number(param.get('uur') ?? 10));
+  try { dagNacht.aan = localStorage.getItem('stad_dagnacht') !== 'uit'; } catch { /* geen opslag */ }
+  if (param.has('uur')) dagNacht.aan = true;
+  const lichtLaag = new LichtLaag(stad.props, (x, z) => wereld.terrein.hoogte(x, z));
+  sfeer.scene.add(lichtLaag.groep);
   const maxVerkeer = () => ({ laag: 300, midden: 650, hoog: 1100 } as Record<string, number>)[sfeer.niveau] ?? 600;
   const camera = new StadCamera(sfeer.camera, sfeer.renderer.domElement, wereld.terrein);
   const plek = test && TEST_PLEKKEN[test];
@@ -101,6 +109,9 @@ async function start() {
   const voorbeeld = new VoorbeeldLaag(wereld);
   sfeer.scene.add(voorbeeld.groep);
   const hud = new Hud(wereld, regelaar);
+  hud.dagNacht = () => dagNacht.aan;
+  hud.wisselDagNacht = () => { dagNacht.aan = !dagNacht.aan; try { localStorage.setItem('stad_dagnacht', dagNacht.aan ? 'aan' : 'uit'); } catch { /* geen opslag */ } };
+  hud.klok = () => dagNacht.aan ? dagNacht.uurTekst() : '';
   const labels = new StraatLabels(wereld, sfeer.camera);
   const werkbalk = new Werkbalk(gereedschap, aan => { stad.zones.toonAlles = aan; stad.zones.vuil = true; }, wereld.voorzieningen);
   const ecoPaneel = new EconomiePaneel(wereld);
@@ -260,6 +271,8 @@ async function start() {
     if (verberg.includes('ao') && sfeer.ao) sfeer.ao.enabled = false;
     if (verberg.includes('ui')) for (const id of ['hud', 'werkbalk', 'zoomknoppen', 'infoknoppen']) document.getElementById(id)!.style.display = 'none';
     if (verberg.includes('ui')) { hulp.style.display = 'none'; document.getElementById('nieuws')?.remove(); }
+    dagNacht.stap(0, 0); lichtLaag.werkBij();
+    verkeer.werkBij(sfeer.camera.position);
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.camera.updateMatrixWorld();
     stad.tegels.kiesDetail(sfeer.camera.position);
@@ -341,6 +354,8 @@ async function start() {
     melding.textContent = gereedschap.melding;
     hudKlok += dt;
     if (hudKlok > 0.25) { hudKlok = 0; hud.werkBij(); hud.fps(regelaar); ecoPaneel.werkBij(); werkbalk.werkBijBalans(); infoPaneel.werkBij(); }
+    if (dagNacht.stap(dt, wereld.snelheid)) sfeer.schaduwVuil();
+    lichtLaag.werkBij();
     sfeer.volg(camera.doel, camera.afstand);
     sfeer.render();
     labels.werkBij(dt, camera.afstand);

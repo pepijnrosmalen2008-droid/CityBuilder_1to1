@@ -38,8 +38,18 @@ export class PropLaag {
     return m;
   }
 
+  /** Telt elke wijziging (voor lagen die van de props afhangen, zoals de lichtvlekken). */
+  versie = 0;
+  /** Alle props van de gegeven soorten (bijv. lantaarns). */
+  verzamel(soorten: Set<string>): Prop[] {
+    const r: Prop[] = [];
+    for (const b of this.bronnen.values()) for (const p of b.props) if (soorten.has(p.soort)) r.push(p);
+    return r;
+  }
+
   zet(eigenaar: string, props: Prop[]) {
     this.wis(eigenaar);
+    this.versie++;
     if (!props.length) return;
     const vakken = new Set<number>();
     for (const p of props) vakken.add(vakVan(p.x, p.z));
@@ -53,6 +63,7 @@ export class PropLaag {
   wis(eigenaar: string) {
     const b = this.bronnen.get(eigenaar);
     if (!b) return;
+    this.versie++;
     for (const v of b.vakken) { this.vakInhoud.get(v)?.delete(eigenaar); this.vuil.add(v); }
     this.bronnen.delete(eigenaar);
   }

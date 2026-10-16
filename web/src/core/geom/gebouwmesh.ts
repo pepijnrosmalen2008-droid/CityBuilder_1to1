@@ -573,7 +573,7 @@ export function winkels(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, lu
       if (r.next() > 0.45) continue;
       const sp = (i + (r.next() < 0.5 ? 0.12 : 0.88)) * pw;
       const m = { x: x.a.x + x.t.x * sp + x.n.x * 0.55, z: x.a.z + x.t.z * sp + x.n.z * 0.55 };
-      const kleur = r.kies(['remklauw', 'politieblauw', 'verkeerslichtGroen', 'trimDonker', 'politieoranje'] as const);
+      const kleur = r.kies(['remklauw', 'politieblauw', 'groenLak', 'trimDonker', 'politieoranje'] as const);
       doos(mb, 'metaal', 'metaal', { x: x.a.x + x.t.x * sp + x.n.x * 0.12, z: x.a.z + x.t.z * sp + x.n.z * 0.12 }, x.n, 0.25, 0.05, Y + hBG + 1.15, Y + hBG + 1.2);
       doos(mb, kleur, kleur, m, x.n, 0.75, 0.1, Y + hBG + 0.55, Y + hBG + 1.15);
       doos(mb, 'trim', 'trim', m, x.n, 0.55, 0.12, Y + hBG + 0.7, Y + hBG + 1.0);

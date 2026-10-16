@@ -3,6 +3,22 @@ import { materiaal } from '../core/materialen';
 import { TextuurBron } from './texturen';
 import { atlas } from '../core/geom/lod';
 
+/** Nachtwaarde (0 = dag, 1 = nacht), gedeeld door alle materialen die 's nachts licht geven. */
+export const NACHT = { value: 0 };
+
+/** GLSL: willekeurig getal per raamvak en de kleur van het licht erachter (warm, soms koel of tv-blauw). */
+const RAAM_GLSL = `
+uniform float uNacht;
+float raamHash(vec2 c) { return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }
+vec3 raamLicht(vec2 cel, float glas) {
+  float h = raamHash(cel), h2 = raamHash(cel + 17.3);
+  // Een deel van de ramen brandt (meer naarmate het later en donkerder is); de rest is donker.
+  float aan = step(h, 0.12 + uNacht * 0.33) * glas;
+  vec3 kl = h2 < 0.72 ? vec3(1.0, 0.62, 0.32) : h2 < 0.92 ? vec3(1.0, 0.8, 0.58) : vec3(0.45, 0.62, 1.0);
+  float sterk = 0.35 + 0.65 * raamHash(cel + 3.1);
+  return kl * aan * sterk * uNacht * uNacht;
+}`
+
 /** MatDef (engine-onafhankelijk) → three.js-materiaal. Texturen komen later binnen uit de workers. */
 export class Materialen {
   private cache = new Map<string, THREE.MeshStandardMaterial>();
@@ -22,8 +38,10 @@ export class Materialen {
       // Kleur, ruwheid en metaal per hoekpunt (samengevoegde effen materialen).
       m.vertexColors = true; m.roughness = 1; m.metalness = 1;
       m.onBeforeCompile = s => {
-        s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 rm;\nvarying vec2 vRm;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvRm = rm;');
-        s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vRm;')
+        s.uniforms.uNacht = NACHT;
+        s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 rm;\nvarying vec2 vRm;\nvarying vec3 vWereldP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvRm = rm;\nvWereldP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vRm;\nvarying vec3 vWereldP;\n' + RAAM_GLSL)
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n// Glas (glad en spiegelend): ramen in deuren, dakkapellen, lobby\'s lichten op.\ntotalEmissiveRadiance += raamLicht(floor(vWereldP.xz / 3.0 + vWereldP.y / 3.0), step(vRm.x, 0.16) * step(0.25, vRm.y)) * 0.7;')
           .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRm.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vRm.y;');
       };
     }
@@ -45,6 +63,7 @@ export class Materialen {
       };
     }
     if (sleutel.startsWith('gevel:')) parallaxRamen(m);
+    if (sleutel.startsWith('winkelpui:')) etalage(m);
     if (d.bovenop) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -4; }
     if (d.tex) {
       // Zolang de textuur er niet is: een rustige grijswaarde in plaats van wit.
@@ -113,9 +132,12 @@ export class Materialen {
     m.name = 'atlasVer';
     m.onBeforeCompile = s => {
       s.uniforms.tAtlas = { value: arr };
+      s.uniforms.uNacht = NACHT;
+      s.uniforms.uGevels = { value: sleutels.filter(k => k.startsWith('gevel:')).length };
       s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute float atlaslaag;\nvarying float vLaag;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLaag = atlaslaag;');
-      s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform highp sampler2DArray tAtlas;\nvarying float vLaag;')
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform highp sampler2DArray tAtlas;\nuniform float uGevels;\nvarying float vLaag;\n' + RAAM_GLSL)
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (vLaag < uGevels - 0.5) totalEmissiveRadiance += raamLicht(floor(vMapUv * 2.0), smoothstep(0.55, 0.8, atlasT.a)) * 0.9;')
         .replace('#include <map_fragment>', 'vec4 atlasT = texture(tAtlas, vec3(vMapUv, floor(vLaag + 0.5)));\ndiffuseColor.rgb *= atlasT.rgb;')
         .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.95, 0.12, atlasT.a);');
     };
@@ -130,6 +152,16 @@ export class Materialen {
  */
 function parallaxRamen(m: THREE.MeshStandardMaterial) {
   m.onBeforeCompile = s => {
+    s.uniforms.uNacht = NACHT;
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\n' + RAAM_GLSL)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  #ifdef USE_NORMALMAP
+  {
+    // Glas = lage delen van de hoogtekaart; per raamvak (2 × 2 per textuurherhaling) aan of uit.
+    float glasM = smoothstep(0.32, 0.18, texture2D(normalMap, pUv).a);
+    totalEmissiveRadiance += raamLicht(floor(pUv * 2.0), glasM) * 0.9;
+  }
+  #endif`);
     const C = THREE.ShaderChunk;
     const met = (chunk: string) => chunk.replace(/vMapUv|vNormalMapUv|vRoughnessMapUv|vMetalnessMapUv/g, 'pUv');
     s.fragmentShader = s.fragmentShader
@@ -168,5 +200,17 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
       .replace('#include <roughnessmap_fragment>', met(C.roughnessmap_fragment))
       .replace('#include <metalnessmap_fragment>', met(C.metalnessmap_fragment))
       .replace('#include <normal_fragment_maps>', met(C.normal_fragment_maps));
+  };
+}
+
+/** Etalages branden 's avonds: het glas (gladde delen) licht warm op. */
+function etalage(m: THREE.MeshStandardMaterial) {
+  m.onBeforeCompile = s => {
+    s.uniforms.uNacht = NACHT;
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNacht;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  #ifdef USE_ROUGHNESSMAP
+  totalEmissiveRadiance += diffuseColor.rgb * vec3(1.6, 1.3, 1.0) * smoothstep(0.35, 0.15, texture2D(roughnessMap, vRoughnessMapUv).g) * uNacht * 1.2;
+  #endif`);
   };
 }

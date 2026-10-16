@@ -51,6 +51,14 @@ export class Sfeer {
   /** Dynamische resolutie bovenop het niveau (0.5–1). */
   dynamisch = 1;
   private fxaa?: ShaderPass;
+  private bloom?: UnrealBloomPass;
+  private gloed: [number, number] = [0.12, 0.92];
+
+  /** Sterkte en drempel van de gloed (bloom): 's nachts sterker, zodat lampen en ramen stralen. */
+  zetGloed(sterkte: number, drempel: number) {
+    this.gloed = [sterkte, drempel];
+    if (this.bloom) { this.bloom.strength = sterkte; this.bloom.threshold = drempel; }
+  }
   private vorigDoel = new THREE.Vector3(1e9, 0, 0);
   private vorigeAfstand = 0;
 
@@ -133,7 +141,8 @@ export class Sfeer {
       this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
       this.composer.addPass(this.ao);
     }
-    if (k.bloom) this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.12, 0.4, 0.92));
+    this.bloom = undefined;
+    if (k.bloom) { this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), this.gloed[0], 0.4, this.gloed[1]); this.composer.addPass(this.bloom); }
     this.composer.addPass(new OutputPass());
     this.composer.addPass(new ShaderPass(KLEURCORRECTIE));
     this.fxaa = undefined;
