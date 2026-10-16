@@ -134,7 +134,8 @@ async function start() {
   const doek = sfeer.renderer.domElement;
   // Muis: links = gereedschap, rechts klikken = stoppen. Aanraken: tikken = klikken, slepen = schuiven
   // (in de zonemodus: schilderen), twee vingers = camera.
-  camera.eenVingerPannen = () => gereedschap.modus !== 'zone';
+  const zoneSleept = () => gereedschap.modus === 'zone' && gereedschap.zoneTool !== 'vullen';
+  camera.eenVingerPannen = () => !zoneSleept();
   let tik: { x: number; y: number; t: number; id: number } | null = null;
   doek.addEventListener('pointermove', e => {
     if (e.pointerType === 'touch' && camera.aantalVingers > 1) return;
@@ -147,7 +148,7 @@ async function start() {
       muis = { x: e.clientX, y: e.clientY };
       if (camera.aantalVingers > 1) { tik = null; gereedschap.los(); return; }
       tik = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
-      if (gereedschap.modus === 'zone') gereedschap.klik(grondOnder());
+      if (zoneSleept()) gereedschap.klik(grondOnder());
       return;
     }
     if (e.button === 0) gereedschap.klik(grondOnder());
@@ -156,7 +157,7 @@ async function start() {
   addEventListener('pointerup', e => {
     if (e.pointerType === 'touch') {
       gereedschap.los();
-      if (tik && tik.id === e.pointerId && performance.now() - tik.t < 400 && gereedschap.modus !== 'zone') {
+      if (tik && tik.id === e.pointerId && performance.now() - tik.t < 400 && !zoneSleept()) {
         muis = { x: tik.x, y: tik.y };
         gereedschap.klik(grondOnder());
       }
@@ -164,7 +165,7 @@ async function start() {
       return;
     }
     if (e.button === 0) gereedschap.los();
-    if (e.button === 2 && rechtsStart && Math.hypot(e.clientX - rechtsStart.x, e.clientY - rechtsStart.y) < 5) gereedschap.terug();
+    if (e.button === 2 && rechtsStart && Math.hypot(e.clientX - rechtsStart.x, e.clientY - rechtsStart.y) < 5 && !gereedschap.rechts(grondOnder())) gereedschap.terug();
     rechtsStart = null;
   });
   // Knop "Klaar" tijdens het tekenen van een weg (vooral voor aanraakschermen).
@@ -342,7 +343,7 @@ async function start() {
     const selSleutel = sel ? `${sel.soort}${sel.id}` : '';
     if (selSleutel !== selectieNu) { selectieNu = selSleutel; infoPaneel.toon(sel); }
     infoLaag.werkBij(dt);
-    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' || vb.soort === 'dienst' ? vb.tekst : '';
+    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' || vb.soort === 'dienst' || vb.soort === 'zoneSel' ? vb.tekst : '';
     tip.style.display = tekst && grond ? 'block' : 'none';
     tip.textContent = tekst;
     tip.className = (vb.soort === 'weg' || vb.soort === 'dienst') && !vb.geldig ? 'fout' : '';

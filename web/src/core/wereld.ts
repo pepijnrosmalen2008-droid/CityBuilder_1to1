@@ -376,6 +376,88 @@ export class Wereld {
     this.events.push({ soort: 'kavel-', id });
   }
 
+  // ─── Zoneren zoals in Cities: Skylines: vullen, selecteren, penseel ─────────
+
+  private buurCache: { sleutel: string; buren: Map<number, number[]> } | null = null;
+
+  /** Kavels die elkaar raken (zelfde bouwblok): langs de straat en rug aan rug. */
+  private kavelBuren(): Map<number, number[]> {
+    const sleutel = `${this.kavels.size}:${this.volgende}`;
+    if (this.buurCache?.sleutel === sleutel) return this.buurCache.buren;
+    const cel = (x: number, z: number) => (Math.floor(x / 20) + 1000) * 10000 + Math.floor(z / 20) + 1000;
+    const raster = new Map<number, number[]>();
+    for (const k of this.kavels.values()) {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (const p of k.poly) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+      for (let i = Math.floor(x0 / 20); i <= Math.floor(x1 / 20); i++) for (let j = Math.floor(z0 / 20); j <= Math.floor(z1 / 20); j++) {
+        const c = (i + 1000) * 10000 + j + 1000; let l = raster.get(c); if (!l) raster.set(c, l = []); l.push(k.id);
+      }
+    }
+    const buren = new Map<number, number[]>();
+    for (const k of this.kavels.values()) {
+      const kand = new Set<number>();
+      for (const p of k.poly) for (const id of raster.get(cel(p.x, p.z)) ?? []) if (id !== k.id) kand.add(id);
+      const r: number[] = [];
+      for (const id of kand) {
+        const o = this.kavels.get(id)!;
+        const rand = [...o.poly, o.poly[0]];
+        if (k.poly.some(p => afstandTotLijn(p, rand).d < 0.9) || o.poly.some(p => afstandTotLijn(p, [...k.poly, k.poly[0]]).d < 0.9)) r.push(id);
+      }
+      buren.set(k.id, r);
+    }
+    this.buurCache = { sleutel, buren };
+    return buren;
+  }
+
+  /** Kavel onder een punt (of de dichtstbijzijnde binnen 3 m). */
+  kavelOp(p: V2): Kavel | null {
+    let best: Kavel | null = null, bd = 3;
+    for (const k of this.kavels.values()) {
+      if (puntInPolygoon(p, k.poly)) return k;
+      const d = afstandTotRand(p, k.poly);
+      if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+  }
+
+  /** Vullen: alle kavels van het bouwblok die dezelfde zone hebben als de aangeklikte (emmertje). */
+  blokVan(start: Kavel, max = 600): number[] {
+    const buren = this.kavelBuren();
+    const zone = start.zone;
+    const gezien = new Set([start.id]), rij = [start.id];
+    while (rij.length && gezien.size < max) {
+      const id = rij.shift()!;
+      for (const b of buren.get(id) ?? []) {
+        if (gezien.has(b)) continue;
+        const k = this.kavels.get(b);
+        if (!k || k.zone !== zone) continue;
+        gezien.add(b); rij.push(b);
+      }
+    }
+    return [...gezien];
+  }
+
+  /** Kavels waarvan het midden van de voorkant in een (gedraaide) rechthoek ligt. */
+  kavelsIn(hoeken: V2[]): number[] {
+    const r: number[] = [];
+    for (const k of this.kavels.values()) if (puntInPolygoon(zwaartepunt(k.poly), hoeken) || puntInPolygoon(k.voor, hoeken)) r.push(k.id);
+    return r;
+  }
+
+  /** Zone toekennen aan een lijst kavels (zelfde regels als het penseel). */
+  zoneerKavels(ids: number[], zone: Zone): number {
+    let n = 0;
+    for (const id of ids) {
+      const k = this.kavels.get(id);
+      if (!k || k.zone === zone) continue;
+      if (zone !== 'geen' && this.voorzieningen.binnen(k.voor)) continue;
+      if (k.gebouw) { if (zone !== 'geen') continue; this.verwijderGebouw(k.gebouw); }
+      k.zone = zone; n++;
+      this.events.push({ soort: 'kavel~', id: k.id });
+    }
+    return n;
+  }
+
   /** Zoneer alle percelen die het penseel raakt. */
   zoneer(m: V2, straal: number, zone: Zone): number {
     let n = 0;

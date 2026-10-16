@@ -79,6 +79,8 @@ export class VoorbeeldLaag {
           this.kavelVlak.geometry.dispose(); this.kavelVlak.geometry = g1; this.kavelVlak.visible = true;
           const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(lijn, 3));
           this.kavelLijn.geometry.dispose(); this.kavelLijn.geometry = g2; this.kavelLijn.visible = true;
+          const vm = this.kavelVlak.material as THREE.MeshBasicMaterial; vm.color.set(0xffffff); vm.opacity = 0.16;
+          (this.kavelLijn.material as THREE.LineBasicMaterial).color.set(0xffffff);
         }
         const m = new THREE.Matrix4();
         v.punten.slice(0, 4).forEach((p, i) => this.stippen.setMatrixAt(i, m.makeTranslation(p.x, Math.max(p.y, 0) + 0.6, p.z)));
@@ -103,6 +105,43 @@ export class VoorbeeldLaag {
         this.ring.geometry.dispose(); this.ring.geometry = g;
         this.ringMat.color.set(v.kleur);
         this.ring.visible = true;
+        break;
+      }
+      case 'zoneSel': {
+        if (v.m && v.r) {
+          const pos: number[] = [], idx: number[] = [];
+          const n = 72;
+          for (let i = 0; i <= n; i++) {
+            const a = i / n * Math.PI * 2;
+            for (const r of [v.r - 0.8, v.r + 0.8]) { const x = v.m.x + Math.cos(a) * r, z = v.m.z + Math.sin(a) * r; pos.push(x, t.hoogte(x, z) + 0.8, z); }
+            if (i) { const o = (i - 1) * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
+          }
+          const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+          this.ring.geometry.dispose(); this.ring.geometry = g; this.ringMat.color.set(v.kleur); this.ring.visible = true;
+        }
+        if (v.kader) {
+          const pos: number[] = [];
+          for (let i = 0; i < v.kader.length; i++) { const a = v.kader[i], b = v.kader[(i + 1) % v.kader.length]; pos.push(a.x, a.y + 0.8, a.z, b.x, b.y + 0.8, b.z); }
+          const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+          this.kader.geometry.dispose(); this.kader.geometry = geo; (this.kader.material as THREE.LineBasicMaterial).color.set(v.kleur); this.kader.visible = true;
+        }
+        // De kavels die veranderen: oplichten in de kleur van de zone, met omlijning per kavel (zoals de cellen in CS).
+        if (v.kavels.length) {
+          const pos: number[] = [], idx: number[] = [], lijn: number[] = [];
+          for (const id of v.kavels) {
+            const k = this.w.kavels.get(id); if (!k) continue;
+            const o = pos.length / 3, n = k.poly.length;
+            for (const q of k.poly) pos.push(q.x, t.hoogte(q.x, q.z) + 0.5, q.z);
+            for (let i = 1; i < n - 1; i++) idx.push(o, o + i, o + i + 1);
+            for (let i = 0; i < n; i++) { const a = k.poly[i], b = k.poly[(i + 1) % n]; lijn.push(a.x, t.hoogte(a.x, a.z) + 0.6, a.z, b.x, t.hoogte(b.x, b.z) + 0.6, b.z); }
+          }
+          const g1 = new THREE.BufferGeometry(); g1.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g1.setIndex(idx);
+          this.kavelVlak.geometry.dispose(); this.kavelVlak.geometry = g1; this.kavelVlak.visible = true;
+          const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(lijn, 3));
+          this.kavelLijn.geometry.dispose(); this.kavelLijn.geometry = g2; this.kavelLijn.visible = true;
+          const vm = this.kavelVlak.material as THREE.MeshBasicMaterial; vm.color.set(v.kleur); vm.opacity = 0.5;
+          (this.kavelLijn.material as THREE.LineBasicMaterial).color.set(v.kleur);
+        }
         break;
       }
       case 'gebied': {

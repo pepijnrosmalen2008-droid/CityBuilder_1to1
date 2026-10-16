@@ -1,5 +1,11 @@
 import { Gereedschap, Modus, Stijl } from '../core/gereedschap';
 
+const ZONE_TOOL_ICOON: Record<'vullen' | 'selectie' | 'penseel' | 'groot', string> = {
+  vullen: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 11l7-7 7 7-7 7z" fill="#74c0fc"/><path d="M19 14c1.5 2 1.5 3.5 0 4s-1.5-2 0-4z" fill="#74c0fc"/></svg>',
+  selectie: '<svg viewBox="0 0 24 24" width="18" height="18"><rect x="4" y="6" width="16" height="12" fill="none" stroke="#e9ecef" stroke-width="2" stroke-dasharray="3 2"/></svg>',
+  penseel: '<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="4" fill="none" stroke="#e9ecef" stroke-width="2"/></svg>',
+  groot: '<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="8" fill="none" stroke="#e9ecef" stroke-width="2"/></svg>',
+};
 const WEG_STIJL_ICOON: Record<Stijl | 'op', string> = {
   recht: '<svg viewBox="0 0 24 24" class="si"><path d="M4 19 20 5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="4" cy="19" r="2.4" fill="currentColor"/><circle cx="20" cy="5" r="2.4" fill="currentColor"/></svg>',
   bocht: '<svg viewBox="0 0 24 24" class="si"><path d="M4 20C4 9 9 4 20 4" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="4" cy="20" r="2.4" fill="currentColor"/><circle cx="20" cy="4" r="2.4" fill="currentColor"/><circle cx="4" cy="4" r="1.6" fill="none" stroke="currentColor"/></svg>',
@@ -163,7 +169,11 @@ export class Werkbalk {
         `<button class="knop schakel ${g.afronden ? 'aan' : ''}" data-af title="Knikken in rechte wegen automatisch afronden">Afronden</button><button class="knop schakel ${g.hulplijnen ? 'aan' : ''}" data-hl title="Hulplijnen en snappen (H)">Hulplijnen</button>`;
     } else if (g.modus === 'zone') {
       items = ZONES.map(z => `<div class="item ${g.zone === z.id ? 'aan' : ''}" data-z="${z.id}">${zoneIcoon(z.id, z.kleur)}<div class="item-naam">${z.naam}</div><div class="item-sub">${z.toets}</div></div>`).join('');
-      opties = `<span>Penseel</span><button class="knop" data-p="-4">−</button><span style="color:#e9eef5;font-weight:600">${g.penseel} m</span><button class="knop" data-p="4">+</button>`;
+      // Gereedschap zoals in Cities: Skylines: vullen, selectie, penseel klein/groot. Rechts klikken haalt weg.
+      const zt = (id: typeof g.zoneTool, naam: string, tip: string, r?: number) => `<button class="knop ${g.zoneTool === id && (r === undefined || g.penseel === r) ? 'aan' : ''}" data-zt="${id}"${r ? ` data-zr="${r}"` : ''} title="${tip}">${ZONE_TOOL_ICOON[r === 34 ? 'groot' : id]}<span class="tab-tekst">${naam}</span></button>`;
+      opties = `<div class="groep">${zt('vullen', 'Vullen', 'Heel bouwblok in één klik')}${zt('selectie', 'Selectie', 'Sleep een rechthoek langs de weg')}${zt('penseel', 'Klein', 'Penseel, klein', 10)}${zt('penseel', 'Groot', 'Penseel, groot', 34)}</div>`
+        + (g.zoneTool === 'penseel' ? `<div class="groep"><button class="knop" data-p="-4">−</button><span class="waarde">${g.penseel} m</span><button class="knop" data-p="4">+</button></div>` : '')
+        + `<span class="hint">Rechts klikken = zone weghalen</span>`;
     } else if (g.modus === 'district') {
       ({ items, opties } = this.districtTab());
     } else if (g.modus === 'gebied') {
@@ -191,6 +201,7 @@ export class Werkbalk {
     this.werkBijBalans();
     this.el.querySelectorAll<HTMLElement>('[data-gs]').forEach(e => (e.onclick = () => { g.grondstof = e.dataset.gs as Grondstof; g.annuleer(); this.teken(); }));
     this.el.querySelector<HTMLElement>('[data-eco]')?.addEventListener('click', () => this.opEconomie());
+    this.el.querySelectorAll<HTMLElement>('[data-zt]').forEach(e => (e.onclick = () => { g.zoneTool = e.dataset.zt as typeof g.zoneTool; if (e.dataset.zr) g.penseel = Number(e.dataset.zr); this.teken(); }));
     this.el.querySelectorAll<HTMLElement>('[data-p]').forEach(e => (e.onclick = () => { g.penseel = Math.max(6, Math.min(80, g.penseel + Number(e.dataset.p))); this.teken(); }));
     // Districten.
     const ds = this.districten, huidig = ds?.lijst.get(g.district);

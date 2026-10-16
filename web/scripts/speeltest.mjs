@@ -28,6 +28,7 @@ await page.mouse.click(1150, 380, { button: 'right' });
 console.log('na bocht', JSON.stringify(await stand()));
 // Zoneren met het penseel.
 await page.keyboard.press('z');
+await page.evaluate(() => { window.__stad.gereedschap.zoneTool = 'penseel'; });
 await page.mouse.move(500, 370); await page.mouse.down();
 for (let x = 500; x <= 780; x += 40) { await page.mouse.move(x, 375); await page.waitForTimeout(400); }
 await page.mouse.up();

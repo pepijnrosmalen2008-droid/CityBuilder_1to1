@@ -3,7 +3,7 @@ import { Wereld } from './wereld';
 
 import { WegTypeId, halveBreedte, WEGTYPEN } from './wegen/typen';
 import { Wegennet } from './wegen/netwerk';
-import { Zone, zoneKleur } from './zones';
+import { Zone, zoneKleur, ZONES } from './zones';
 import { Grondstof, GRONDSTOFFEN, HoofdPlek } from './economie';
 import { DienstSoort, DIENSTEN, NUT_EENHEID } from './voorzieningen';
 import { getekendOppervlak, afstandTotLijn } from './poly';
@@ -27,6 +27,7 @@ export type Voorbeeld =
   | { soort: 'geen' }
   | { soort: 'weg'; as: V3[]; breedte: number; geldig: boolean; tekst: string; punten: V3[]; lijnen: [V3, V3][]; snap: V3 | null; kavels: KavelBand[] }
   | { soort: 'penseel'; m: V3; r: number; kleur: string }
+  | { soort: 'zoneSel'; kavels: number[]; kleur: string; tekst: string; kader: V3[] | null; m: V3 | null; r: number }
   | { soort: 'markeer'; segment?: number; gebouw?: number; gebied?: number; dienst?: number; kleur: string; tekst: string }
   | { soort: 'dienst'; voet: V3[]; geldig: boolean; tekst: string }
   | { soort: 'gebied'; punten: V3[]; kleur: string; tekst: string; dicht: boolean; hoofd: { p: V3; rot: number; geldig: boolean } | null };
@@ -45,6 +46,9 @@ export class Gereedschap {
   get bocht() { return this.stijl === 'bocht'; }
   zone: Zone = 'wonenLaag';
   penseel = 22;
+  /** Zoneergereedschap zoals in Cities: Skylines: vullen (bouwblok), selectie (rechthoek), penseel. */
+  zoneTool: 'vullen' | 'selectie' | 'penseel' = 'vullen';
+  private selStart: V2 | null = null;
   /** District waarmee geschilderd wordt (0 = gum). */
   district = 0;
   gum = false;
@@ -303,7 +307,10 @@ export class Gereedschap {
         } else this.melding = r.fout ?? '';
         return;
       }
-      case 'zone': this.schilderen = true; this.schilder(p); return;
+      case 'zone':
+        if (this.zoneTool === 'penseel') { this.schilderen = true; this.schilder(p); return; }
+        if (this.zoneTool === 'vullen') { const k = w.kavelOp(p); if (k) w.zoneerKavels(w.blokVan(k), this.zone); return; }
+        this.selStart = p; return;
       case 'district':
         if (!this.gum && !w.districten.lijst.has(this.district)) { this.melding = 'Maak eerst een district (Nieuw district)'; return; }
         this.schilderen = true; this.schilder(p); return;
@@ -351,7 +358,35 @@ export class Gereedschap {
     }
   }
 
-  los() { this.schilderen = false; }
+  los() {
+    this.schilderen = false;
+    // Selectie loslaten: alle kavels in de rechthoek zoneren.
+    if (this.modus === 'zone' && this.selStart && this.muis) {
+      const h = this.selectieHoeken(this.selStart, { x: this.muis.x, z: this.muis.z });
+      if (h) this.wereld.zoneerKavels(this.wereld.kavelsIn(h), this.zone);
+    }
+    this.selStart = null;
+  }
+
+  /** Rechts klikken (zonder slepen): in Zones weghalen met hetzelfde gereedschap, zoals in CS. Geeft true als dat gebeurde. */
+  rechts(grond: V3 | null): boolean {
+    if (this.modus !== 'zone' || !grond) return false;
+    const p = { x: grond.x, z: grond.z }, w = this.wereld;
+    if (this.zoneTool === 'penseel') w.zoneer(p, this.penseel, 'geen');
+    else { const k = w.kavelOp(p); if (k && k.zone !== 'geen') w.zoneerKavels(w.blokVan(k), 'geen'); }
+    return true;
+  }
+
+  /** Rechthoek van a naar b, gedraaid langs de weg bij a (zoals het zoneraster in CS). */
+  private selectieHoeken(a: V2, b: V2): V2[] | null {
+    if (dist2(a, b) < 1) return null;
+    const s = this.wereld.net.segmentBij(a, 60);
+    let t = { x: 1, z: 0 };
+    if (s) { const A = this.wereld.net.knopen.get(s.seg.a)!, B = this.wereld.net.knopen.get(s.seg.b)!; const q1 = bezier2(A.p, s.seg.c, B.p, Math.min(1, s.t + 0.01)), q0 = bezier2(A.p, s.seg.c, B.p, Math.max(0, s.t - 0.01)); t = norm2(sub2(q1, q0)); }
+    const n = { x: -t.z, z: t.x };
+    const d = sub2(b, a), u = d.x * t.x + d.z * t.z, v = d.x * n.x + d.z * n.z;
+    return [a, { x: a.x + t.x * u, z: a.z + t.z * u }, b, { x: a.x + n.x * v, z: a.z + n.z * v }];
+  }
 
   /** Rechtermuisknop / Escape: eerst de lopende actie stoppen. Geeft true als er iets te stoppen was. */
   terug(): boolean {
@@ -432,7 +467,20 @@ export class Gereedschap {
           lijnen: lijnenV3(b), snap: snapNu ? { x: b.x, y: yb, z: b.z } : null, kavels,
         };
       }
-      case 'zone': return { soort: 'penseel', m, r: this.penseel, kleur: zoneKleur(this.zone) };
+      case 'zone': {
+        const kleur = zoneKleur(this.zone), naam = ZONES.find(z => z.id === this.zone)?.naam ?? '';
+        if (this.zoneTool === 'penseel') return { soort: 'zoneSel', kavels: [], kleur, tekst: '', kader: null, m, r: this.penseel };
+        if (this.zoneTool === 'selectie') {
+          if (!this.selStart) return { soort: 'zoneSel', kavels: [], kleur, tekst: `${naam}: sleep een rechthoek`, kader: null, m: null, r: 0 };
+          const h = this.selectieHoeken(this.selStart, p);
+          const ids = h ? w.kavelsIn(h).filter(id => { const k = w.kavels.get(id)!; return k.zone !== this.zone && (!k.gebouw || this.zone === 'geen'); }) : [];
+          return { soort: 'zoneSel', kavels: ids, kleur, tekst: `${ids.length} kavels → ${naam}`, kader: h ? h.map(q => ({ x: q.x, y: w.terrein.hoogte(q.x, q.z), z: q.z })) : null, m: null, r: 0 };
+        }
+        const k = w.kavelOp(p);
+        if (!k) return { soort: 'zoneSel', kavels: [], kleur, tekst: '', kader: null, m: null, r: 0 };
+        const ids = w.blokVan(k).filter(id => { const x = w.kavels.get(id)!; return x.zone !== this.zone && (!x.gebouw || this.zone === 'geen'); });
+        return { soort: 'zoneSel', kavels: ids, kleur, tekst: ids.length ? `Bouwblok vullen: ${ids.length} kavels → ${naam} · rechts = weghalen` : 'Rechts klikken haalt de zone weg', kader: null, m: null, r: 0 };
+      }
       case 'district': return { soort: 'penseel', m, r: this.penseel * 1.5, kleur: this.gum ? '#ffffff' : w.districten.lijst.get(this.district)?.kleur ?? '#ffffff' };
       case 'gebied': {
         const t = w.terrein;
