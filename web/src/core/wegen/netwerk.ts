@@ -17,6 +17,8 @@ export interface Segment {
   naam: string;
   lengte: number;
   pad: PadPunt[];
+  /** Rijrichting omgekeerd (eenrichtingsweg die tegen de tekenrichting in loopt). */
+  om?: boolean;
 }
 
 export const PAD_STAP = 4;
@@ -308,6 +310,7 @@ export class Wegennet {
     M.y = yM; M.niveau = A.niveau || B.niveau ? Math.round(yM - this.knoopHoogte(m)) : 0;
     const d1 = this.nieuwSegment(A, q0, M, type, naam);
     const d2 = this.nieuwSegment(M, q1, B, type, naam);
+    if (seg.om) d1.om = d2.om = true;
     return { knoop: M, delen: [d1, d2] };
   }
 
@@ -423,7 +426,7 @@ export class Wegennet {
 
   /** Afrondstraal per wegtype (zoals de automatische bochten in Cities: Skylines 2). */
   static afrondStraal(type: WegTypeId) {
-    return ({ voetpad: 6, fietspad: 10, woonstraat: 14, straat: 22, straatBus: 26, laan: 36, tramstraat: 30, gow: 55, snelweg: 160 } as Record<WegTypeId, number>)[type];
+    return ({ voetpad: 6, fietspad: 10, woonstraat: 14, straat: 22, eenrichting: 22, straatBus: 26, laan: 36, tramstraat: 30, gow: 55, snelweg: 160 } as Record<WegTypeId, number>)[type];
   }
 
   /** Punt (Bézier-parameter) op een segment op een afstand vanaf een uiteinde. */
@@ -487,13 +490,23 @@ export class Wegennet {
     return true;
   }
 
+  /** Rijrichting omdraaien (eenrichtingswegen; bij tweerichtingswegen spiegelt het profiel). */
+  keerOm(id: number) {
+    const seg = this.segmenten.get(id);
+    if (!seg) return false;
+    seg.om = !seg.om;
+    this.events.push({ soort: 'seg+', id }); this.versie++;
+    this.meldKnoop(seg.a); this.meldKnoop(seg.b);
+    return true;
+  }
+
   haalEvents() { const e = this.events; this.events = []; return e; }
 
   // ─── Opslaan ──────────────────────────────────────────────────────────────────
   naarJson() {
     return {
       knopen: [...this.knopen.values()].map(k => ({ id: k.id, x: k.p.x, z: k.p.z, y: k.y, niveau: k.niveau })),
-      segmenten: [...this.segmenten.values()].map(s => ({ id: s.id, a: s.a, b: s.b, cx: s.c.x, cz: s.c.z, type: s.type, naam: s.naam })),
+      segmenten: [...this.segmenten.values()].map(s => ({ id: s.id, a: s.a, b: s.b, cx: s.c.x, cz: s.c.z, type: s.type, naam: s.naam, om: s.om ? 1 : 0 })),
       volgende: this.volgende,
     };
   }
@@ -501,7 +514,7 @@ export class Wegennet {
     this.knopen.clear(); this.segmenten.clear();
     for (const k of j.knopen) this.knopen.set(k.id, { id: k.id, p: { x: k.x, z: k.z }, y: k.y, niveau: k.niveau ?? 0, segs: [] });
     for (const s of j.segmenten) {
-      const seg: Segment = { id: s.id, a: s.a, b: s.b, c: { x: s.cx, z: s.cz }, type: s.type, naam: s.naam ?? '', lengte: 0, pad: [] };
+      const seg: Segment = { id: s.id, a: s.a, b: s.b, c: { x: s.cx, z: s.cz }, type: s.type, naam: s.naam ?? '', lengte: 0, pad: [], om: !!(s as { om?: number }).om };
       this.segmenten.set(seg.id, seg);
       this.knopen.get(s.a)!.segs.push(seg.id); this.knopen.get(s.b)!.segs.push(seg.id);
       this.berekenPad(seg); this.egaliseer(seg);

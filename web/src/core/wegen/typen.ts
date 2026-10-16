@@ -6,7 +6,7 @@ export type StrookSoort = 'auto' | 'bus' | 'tram' | 'fiets' | 'stoep' | 'gedeeld
 export type Richting = 'A' | 'B' | 'T';
 export interface Strook { soort: StrookSoort; richting: Richting; breedte: number }
 
-export type WegTypeId = 'voetpad' | 'fietspad' | 'woonstraat' | 'straat' | 'straatBus' | 'laan' | 'tramstraat' | 'gow' | 'snelweg';
+export type WegTypeId = 'voetpad' | 'fietspad' | 'woonstraat' | 'straat' | 'straatBus' | 'laan' | 'tramstraat' | 'gow' | 'snelweg' | 'eenrichting';
 
 export interface WegType {
   id: WegTypeId;
@@ -34,6 +34,10 @@ export const WEGTYPEN: Record<WegTypeId, WegType> = {
     id: 'straat', naam: 'Straat (50)', snelheid: 50, erf: true, dek: 'asfalt', kosten: 1400, bomen: true,
     stroken: [S('stoep', 'T', 2), S('fiets', 'B', 1.75), S('auto', 'B', 3), S('auto', 'A', 3), S('fiets', 'A', 1.75), S('stoep', 'T', 2)],
   },
+  eenrichting: {
+    id: 'eenrichting', naam: 'Eenrichtingsstraat', snelheid: 50, erf: true, dek: 'asfalt', kosten: 1300, bomen: true,
+    stroken: [S('stoep', 'T', 2), S('fiets', 'B', 1.75), S('auto', 'A', 3), S('auto', 'A', 3), S('fiets', 'A', 1.75), S('stoep', 'T', 2)],
+  },
   straatBus: {
     id: 'straatBus', naam: 'Straat met busbaan', snelheid: 50, erf: true, dek: 'asfalt', kosten: 1900, bomen: true,
     stroken: [S('stoep', 'T', 2.2), S('fiets', 'B', 1.75), S('bus', 'B', 3.25), S('auto', 'B', 3), S('auto', 'A', 3), S('bus', 'A', 3.25), S('fiets', 'A', 1.75), S('stoep', 'T', 2.2)],
@@ -59,7 +63,7 @@ export const WEGTYPEN: Record<WegTypeId, WegType> = {
   },
 };
 
-export const WEGTYPE_VOLGORDE: WegTypeId[] = ['woonstraat', 'straat', 'straatBus', 'laan', 'tramstraat', 'gow', 'snelweg', 'fietspad', 'voetpad'];
+export const WEGTYPE_VOLGORDE: WegTypeId[] = ['woonstraat', 'straat', 'eenrichting', 'straatBus', 'laan', 'tramstraat', 'gow', 'snelweg', 'fietspad', 'voetpad'];
 
 export function totaleBreedte(stroken: Strook[]) { return stroken.reduce((s, l) => s + l.breedte, 0); }
 export function halveBreedte(type: WegTypeId) { return totaleBreedte(WEGTYPEN[type].stroken) / 2; }
@@ -91,4 +95,20 @@ export function randen(stroken: Strook[]) {
 }
 
 /** Straal van de stoeprandhoek op een kruispunt, naar wegtype. */
-export const HOEKSTRAAL: Record<WegTypeId, number> = { voetpad: 1, fietspad: 2, woonstraat: 3.5, straat: 4.5, straatBus: 6, laan: 7, tramstraat: 6, gow: 9, snelweg: 14 };
+export const HOEKSTRAAL: Record<WegTypeId, number> = { voetpad: 1, fietspad: 2, woonstraat: 3.5, straat: 4.5, eenrichting: 4.5, straatBus: 6, laan: 7, tramstraat: 6, gow: 9, snelweg: 14 };
+
+/** Rang van een wegtype (voorrang en verkeerslichten). */
+export const RANG: Record<WegTypeId, number> = { voetpad: 0, fietspad: 0, woonstraat: 1, straat: 2, eenrichting: 2, straatBus: 2, tramstraat: 2, laan: 3, gow: 4, snelweg: 5 };
+/** Krijgt een kruispunt met deze wegen verkeerslichten? (een laan of groter, en minstens twee straten) */
+export function heeftLichten(typen: WegTypeId[]): boolean {
+  if (typen.length < 3) return false;
+  const r = typen.map(t => RANG[t]);
+  return Math.max(...r) >= 3 && r.filter(x => x >= 2).length >= 2;
+}
+
+/** Dwarsprofiel van een segment: bij een omgekeerd segment gespiegeld en met omgedraaide rijrichting. */
+export function profiel(type: WegTypeId, om = false): Strook[] {
+  const st = WEGTYPEN[type].stroken;
+  if (!om) return st;
+  return [...st].reverse().map(x => ({ ...x, richting: x.richting === 'A' ? 'B' : x.richting === 'B' ? 'A' : 'T' }));
+}

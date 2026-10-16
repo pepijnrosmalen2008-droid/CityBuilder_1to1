@@ -1,6 +1,6 @@
 import { V2, V3, lerp, norm2, snijLijnstukken, dist2 } from '../math';
 import { Wegennet, Segment } from '../wegen/netwerk';
-import { WEGTYPEN, WegTypeId, strookGrenzen, totaleBreedte } from '../wegen/typen';
+import { WEGTYPEN, strookGrenzen, totaleBreedte, RANG, heeftLichten, profiel } from '../wegen/typen';
 import { asPunt } from '../geom/wegmesh';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -55,7 +55,7 @@ export interface Lichten {
 }
 
 /** Rangorde van wegtypen voor voorrang en routekeuze. */
-export const RANG: Record<WegTypeId, number> = { voetpad: 0, fietspad: 0, woonstraat: 1, straat: 2, straatBus: 2, tramstraat: 2, laan: 3, gow: 4, snelweg: 5 };
+export { RANG };
 
 const isAuto = (s: string) => s === 'auto' || s === 'gedeeld';
 
@@ -96,7 +96,7 @@ export class Rijstroken {
   private stroken_(seg: Segment) {
     const type = WEGTYPEN[seg.type];
     if (!seg.pad.length) return;
-    const g = strookGrenzen(type.stroken);
+    const g = strookGrenzen(profiel(seg.type, seg.om));
     const W = totaleBreedte(type.stroken);
     const ka = this.net.eindKnip(seg, 'a'), kb = this.net.eindKnip(seg, 'b');
     const L = seg.lengte;
@@ -213,10 +213,8 @@ export class Rijstroken {
     const k = this.net.knopen.get(knoopId)!;
     if (k.segs.length < 3) return;
     const segs = k.segs.map(id => this.net.segmenten.get(id)!).filter(Boolean);
-    const rangen = segs.map(s => RANG[s.type]);
-    const max = Math.max(...rangen);
-    const aantalStraat = rangen.filter(r => r >= 2).length;
-    if (!(max >= 3 && aantalStraat >= 2)) return;
+    const max = Math.max(...segs.map(s => RANG[s.type]));
+    if (!heeftLichten(segs.map(s => s.type))) return;
     // Armen met inkomend verkeer, gegroepeerd per as.
     const armen = segs.filter(s => this.stroken(s.id, s.b === knoopId ? 'A' : 'B').length).map(s => ({ s, h: Math.atan2(this.net.wegVan(s, knoopId).z, this.net.wegVan(s, knoopId).x) }));
     const fases: number[][] = [];

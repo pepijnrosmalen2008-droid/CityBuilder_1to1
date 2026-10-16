@@ -12,6 +12,7 @@ const MENSEN = ['Erasmus', 'Rembrandt', 'Vondel', 'Spinoza', 'Huygens', 'Mondria
 const ACHTER: Record<WegTypeId, string[]> = {
   woonstraat: ['straat', 'hof', 'erf', 'pad', 'plein', 'gaarde'],
   straat: ['straat', 'weg', 'straat', 'singel'],
+  eenrichting: ['straat', 'steeg', 'gracht', 'straat'],
   straatBus: ['straat', 'weg'],
   laan: ['laan', 'laan', 'boulevard', 'singel'],
   tramstraat: ['straat', 'weg', 'laan'],

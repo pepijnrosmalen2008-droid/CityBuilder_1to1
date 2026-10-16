@@ -1,6 +1,6 @@
 import { V3, V2, lerp, norm2, bezier2, dist2 } from '../math';
 import { Wegennet, Segment, PadPunt } from '../wegen/netwerk';
-import { WEGTYPEN, Strook, strookGrenzen, totaleBreedte, randen } from '../wegen/typen';
+import { WEGTYPEN, Strook, strookGrenzen, totaleBreedte, randen, profiel, RANG, heeftLichten } from '../wegen/typen';
 import { MeshBouwer, MeshData, Prop } from './mesh';
 import { ZEENIVEAU } from '../terrain';
 import { driehoeken } from '../poly';
@@ -78,7 +78,7 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
   const props: Prop[] = [];
   if (R.length < 2) return { mesh: mb.bouw(), props };
   const pad = seg.pad;
-  const g = strookGrenzen(type.stroken);
+  const g = strookGrenzen(profiel(seg.type, seg.om));
   const W = totaleBreedte(type.stroken);
   const P = (r: Rij, o: number, dy = 0) => punt(pad, r, o, dy);
   const s = R.map(rijS);
@@ -213,25 +213,89 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
     for (const o of [m - 0.7175, m + 0.7175]) mb.strook('rail', R.map(r => P(r, o - 0.04, 0.02)), R.map(r => P(r, o + 0.04, 0.02)), s, 0, 0.08);
   }
 
-  // ── Zebrapaden en stopstrepen bij kruispunten ──
+  // ── Kruispuntmarkering: fietsoversteek, zebrapad, stopstreep of haaientanden, voorsorteerpijlen ──
+  // Van het kruispunt naar buiten, zoals op Nederlandse kruispunten (en in CS2).
   const rd = randen(type.stroken);
+  // Driehoek in (offset, booglengte)-coördinaten, altijd met de bovenkant omhoog.
+  const drie = (m: string, q: [number, number][], dy = 0.013) => {
+    const v = q.map(([o, ss]) => P({ sL: ss, sR: ss, W }, o, dy));
+    const ny = (v[1].z - v[0].z) * (v[2].x - v[0].x) - (v[1].x - v[0].x) * (v[2].z - v[0].z);
+    if (ny < 0) [v[1], v[2]] = [v[2], v[1]];
+    mb.driehoek(m, v[0], v[1], v[2], [v[0].x, v[0].z], [v[1].x, v[1].z], [v[2].x, v[2].z], { x: 0, y: 1, z: 0 });
+  };
+  const vak = (m: string, o0: number, o1: number, s0: number, s1: number, dy = 0.013) => { drie(m, [[o0, s0], [o1, s0], [o1, s1]], dy); drie(m, [[o0, s0], [o1, s1], [o0, s1]], dy); };
+  // Pijl op de weg: lengte langs de rijrichting r (+1/-1), soort rechtdoor/links/rechts (combinaties).
+  const pijl = (o: number, s0: number, r: number, soort: { rd: boolean; l: boolean; re: boolean }) => {
+    const L = (d: number) => s0 + r * d;
+    const zij = (kant: number) => kant * r; // links in rijrichting = negatieve offset bij r=+1
+    vak('markering', o - 0.08, o + 0.08, Math.min(L(0), L(soort.rd ? 3.4 : 2.2)), Math.max(L(0), L(soort.rd ? 3.4 : 2.2)));
+    if (soort.rd) drie('markering', [[o - 0.45, L(3.4)], [o + 0.45, L(3.4)], [o, L(4.8)]]);
+    for (const [aan, kant] of [[soort.l, -1], [soort.re, 1]] as const) {
+      if (!aan) continue;
+      const k = zij(kant);
+      // Schuine arm naar de zijkant met een pijlpunt.
+      const ax = o + k * 0.75;
+      drie('markering', [[o - 0.08 * Math.sign(k), L(1.8)], [o + 0.08 * Math.sign(k), L(2.2)], [ax, L(2.9)]]);
+      drie('markering', [[ax - k * 0.05, L(2.45)], [ax + k * 0.5, L(3.1)], [ax - k * 0.35, L(3.45)]]);
+    }
+  };
+  const knoopTypen = (k: number) => (net.knopen.get(k)?.segs ?? []).map(id => net.segmenten.get(id)?.type).filter((t): t is NonNullable<typeof t> => !!t);
   for (const eind of ['a', 'b'] as const) {
     const k = eind === 'a' ? seg.a : seg.b;
     if (net.graad(k) < 3) continue;
     const r = eind === 'a' ? eerste : laatste, richting = eind === 'a' ? 1 : -1;
-    const zebraAf = 1.0, zebraL = 3.5;
-    if (rd.stoep) for (let o = rd.binnenL + 0.5; o + 0.5 <= rd.binnenR - 0.3; o += 1.0) {
-      const sa = sOp(r, o + 0.25) + richting * zebraAf, sb = sa + richting * zebraL;
-      lijnStuk(o, o + 0.5, Math.min(sa, sb), Math.max(sa, sb));
+    const typen = knoopTypen(k), andere = (net.knopen.get(k)?.segs ?? []).filter(id => id !== seg.id).map(id => net.segmenten.get(id)).filter(Boolean);
+    const sb = (o: number) => sOp(r, o);
+    let af = 0.3;
+    // Fietsoversteek (rood met blokmarkering) als de doorgaande weg fietspaden heeft.
+    const fietsW = Math.max(0, ...andere.map(x => Math.max(0, ...profiel(x!.type).filter(q => q.soort === 'fiets').map(q => q.breedte))));
+    if (fietsW > 0 && rd.stoep && type.dek !== 'klinkers') {
+      const s0 = (o: number) => sb(o) + richting * af, s1 = (o: number) => sb(o) + richting * (af + fietsW);
+      const om = (rd.binnenL + rd.binnenR) / 2;
+      vak('fietsasfalt', rd.binnenL, rd.binnenR, Math.min(s0(om), s1(om)), Math.max(s0(om), s1(om)), 0.008);
+      for (let o = rd.binnenL + 0.1; o + 0.5 <= rd.binnenR; o += 1.0) for (const ss of [s0(o), s1(o) - richting * 0.5]) vak('markering', o, o + 0.5, Math.min(ss, ss + richting * 0.5), Math.max(ss, ss + richting * 0.5));
+      af += fietsW + 0.6;
     }
-    // Stopstreep over de stroken die naar de knoop rijden.
+    // Zebrapad.
+    const zebraL = 3.5;
+    if (rd.stoep) {
+      for (let o = rd.binnenL + 0.5; o + 0.5 <= rd.binnenR - 0.3; o += 1.0) {
+        const sa = sb(o + 0.25) + richting * af, se = sa + richting * zebraL;
+        lijnStuk(o, o + 0.5, Math.min(sa, se), Math.max(sa, se));
+      }
+      af += zebraL + 0.8;
+    } else af += 1.2;
+    // Stopstreep (verkeerslichten) of haaientanden (voorrang verlenen); gelijkwaardig: niets.
     const naar = eind === 'a' ? 'B' : 'A';
-    for (const x of g) {
-      if (!(x.s.soort === 'auto' || x.s.soort === 'bus' || x.s.soort === 'gedeeld') || x.s.richting !== naar) continue;
-      if (x.s.soort === 'gedeeld') continue;
-      const sa = sOp(r, (x.a + x.b) / 2) + richting * (rd.stoep ? zebraAf + zebraL + 0.8 : 1.5);
-      lijnStuk(x.a + 0.1, x.b - 0.1, Math.min(sa, sa + richting * 0.4), Math.max(sa, sa + richting * 0.4));
+    const lichten = heeftLichten(typen);
+    const ondergeschikt = !lichten && RANG[seg.type] < Math.max(...typen.map(t => RANG[t]));
+    const inkomend = g.filter(x => (x.s.soort === 'auto' || x.s.soort === 'bus') && x.s.richting === naar);
+    for (const x of inkomend) {
+      const sa = sb((x.a + x.b) / 2) + richting * af;
+      if (lichten) lijnStuk(x.a + 0.1, x.b - 0.1, Math.min(sa, sa + richting * 0.4), Math.max(sa, sa + richting * 0.4));
+      else if (ondergeschikt) for (let o = x.a + 0.2; o + 0.55 <= x.b - 0.1; o += 0.95) drie('markering', [[o, sa], [o + 0.55, sa], [o + 0.275, sa + richting * 0.65]]);
     }
+    if (ondergeschikt && !inkomend.length) {
+      // Woonstraat (gedeelde rijbaan): haaientanden over de rechterhelft.
+      for (const x of g.filter(q => q.s.soort === 'gedeeld' && q.s.richting === naar)) {
+        const sa = sb((x.a + x.b) / 2) + richting * af;
+        for (let o = x.a + 0.2; o + 0.55 <= x.b - 0.1; o += 0.95) drie('markering', [[o, sa], [o + 0.55, sa], [o + 0.275, sa + richting * 0.65]]);
+      }
+    }
+    // Voorsorteerpijlen bij twee of meer stroken: links = linksaf, rechts = rechtdoor + rechtsaf.
+    const auto = inkomend.filter(x => x.s.soort === 'auto').sort((p, q) => (p.a - q.a) * -richting);
+    const lengte = Math.abs(sOp(laatste, 0) - sOp(eerste, 0));
+    if (auto.length >= 2 && lengte > af + 14) auto.forEach((x, i) => {
+      const o = (x.a + x.b) / 2, s0 = sb(o) + richting * (af + 7.5);
+      pijl(o, s0, -richting, { rd: i > 0 || auto.length === 1, l: i === 0, re: i === auto.length - 1 });
+    });
+  }
+  // Eenrichtingsweg: om de 40 m een pijl in de rijrichting.
+  if (!g.some(x => x.s.soort === 'auto' && x.s.richting === 'B') !== !g.some(x => x.s.soort === 'auto' && x.s.richting === 'A')) {
+    const r = g.some(x => x.s.soort === 'auto' && x.s.richting === 'A') ? 1 : -1;
+    const lanes = g.filter(x => x.s.soort === 'auto');
+    const a0 = sOp(eerste, 0) + 18, a1 = sOp(laatste, 0) - 18;
+    for (let d = a0; d < a1 - 5; d += 40) for (const x of lanes) pijl((x.a + x.b) / 2, d + (r < 0 ? 4.8 : 0), r, { rd: true, l: false, re: false });
   }
 
   // ── Straatmeubilair en bomen ──
@@ -306,7 +370,8 @@ export function bouwKruispunt(net: Wegennet, knoopId: number): MeshData {
   const mb = new MeshBouwer();
   const knoop = net.knopen.get(knoopId);
   if (!knoop || !net.isKruispunt(knoopId)) return mb.bouw();
-  interface Eind { weg: V2; bL: V3; bR: V3; oL: V3; oR: V3; hL: number; hR: number; dek: string }
+  interface Laag { soort: string; p: V3 }
+  interface Eind { weg: V2; bL: V3; bR: V3; oL: V3; oR: V3; lL: Laag[]; lR: Laag[]; hL: number; hR: number; dek: string }
   const einden: Eind[] = [];
   for (const sid of knoop.segs) {
     const seg = net.segmenten.get(sid)!;
@@ -315,15 +380,21 @@ export function bouwKruispunt(net: Wegennet, knoopId: number): MeshData {
     const t = WEGTYPEN[seg.type];
     const r = seg.a === knoopId ? R[0] : R[R.length - 1];
     const rd = randen(t.stroken);
-    const g = strookGrenzen(t.stroken);
+    const g = strookGrenzen(profiel(seg.type, seg.om));
     const p = (o: number) => punt(seg.pad, r, o);
     const bL = p(rd.binnenL), bR = p(rd.binnenR), oL = p(rd.buitenL), oR = p(rd.buitenR);
     const hL = verhoogd(g[0].s), hR = verhoogd(g[g.length - 1].s);
+    // Fietspad direct naast de rijbaan: loopt op het kruispunt als rode boog op wegniveau om de hoek.
+    const motor = (q: Strook) => q.soort === 'auto' || q.soort === 'bus' || q.soort === 'tram' || q.soort === 'gedeeld';
+    const i0 = g.findIndex(x => motor(x.s)), i1 = g.length - 1 - [...g].reverse().findIndex(x => motor(x.s));
+    // Lagen van de rijbaan naar buiten (berm, fietspad, stoep) met hun buitenrand, per kant.
+    const lagenL = i0 > 0 ? g.slice(0, i0).reverse().map(x => ({ soort: x.s.soort, p: p(x.a) })) : [];
+    const lagenR = i0 >= 0 && i1 < g.length - 1 ? g.slice(i1 + 1).map(x => ({ soort: x.s.soort, p: p(x.b) })) : [];
     const wegV = (() => { const q = seg.a === knoopId ? seg.pad[0] : seg.pad[seg.pad.length - 1]; return seg.a === knoopId ? { x: q.dx, z: q.dz } : { x: -q.dx, z: -q.dz }; })();
     // In "weg-van-de-knoop"-termen: bij uiteinde b zijn links en rechts verwisseld.
     einden.push(seg.b === knoopId
-      ? { weg: wegV, bL: bR, bR: bL, oL: oR, oR: oL, hL: hR, hR: hL, dek: t.dek }
-      : { weg: wegV, bL, bR, oL, oR, hL, hR, dek: t.dek });
+      ? { weg: wegV, bL: bR, bR: bL, oL: oR, oR: oL, lL: lagenR, lR: lagenL, hL: hR, hR: hL, dek: t.dek }
+      : { weg: wegV, bL, bR, oL, oR, lL: lagenL, lR: lagenR, hL, hR, dek: t.dek });
   }
   if (einden.length < 2) return mb.bouw();
   einden.sort((a, b) => Math.atan2(a.weg.z, a.weg.x) - Math.atan2(b.weg.z, b.weg.x));
@@ -357,9 +428,27 @@ export function bouwKruispunt(net: Wegennet, knoopId: number): MeshData {
     const naarBinnen = (p: V3) => ({ x: c.x - p.x, y: 0, z: c.z - p.z });
     if (dist2({ x: e.bR.x, z: e.bR.z }, { x: e.oR.x, z: e.oR.z }) > 0.1 && buiten.length === binnen.length) {
       const hmat = 'stoeptegels';
-      const L = binnen.map(p => ({ ...p, y: p.y + hoogte })), Rr = buiten.map(p => ({ ...p, y: p.y + hoogte }));
+      // Fietsboog: rood asfalt op wegniveau om de hoek, met de berm ertussen als beide wegen die hebben.
+      let rand0 = binnen;
+      const ka = e.lR.findIndex(l => l.soort === 'fiets'), kb = f.lL.findIndex(l => l.soort === 'fiets');
+      if (!n2 && ka >= 0 && kb >= 0) {
+        const binA = ka > 0 ? e.lR[ka - 1].p : e.bR, binB = kb > 0 ? f.lL[kb - 1].p : f.bL;
+        const fBin = boog(binA, e.weg, binB, f.weg), fBuit = boog(e.lR[ka].p, e.weg, f.lL[kb].p, f.weg);
+        if (fBin.length === binnen.length && fBuit.length === binnen.length) {
+          if (ka > 0 || kb > 0) {
+            // Berm tussen rijbaan en fietspad: gras, iets verhoogd met een band aan beide kanten.
+            const Bb = binnen.map(p => ({ ...p, y: p.y + BERM_H })), Bf = fBin.map(p => ({ ...p, y: p.y + BERM_H }));
+            mb.strook('gras', Bb, Bf, ss, 0, 1);
+            mb.band('band', binnen, Bb, ss, binnen.map(naarBinnen));
+            mb.band('band', fBin, Bf, ss, fBin.map(p => ({ x: -naarBinnen(p).x, y: 0, z: -naarBinnen(p).z })));
+          }
+          mb.strook('fietsasfalt', fBin.map(p => ({ ...p, y: p.y + 0.004 })), fBuit.map(p => ({ ...p, y: p.y + 0.004 })), ss, 0, 1);
+          rand0 = fBuit;
+        }
+      }
+      const L = rand0.map(p => ({ ...p, y: p.y + hoogte })), Rr = buiten.map(p => ({ ...p, y: p.y + hoogte }));
       mb.strook(hmat, L, Rr, ss, 0, 1);
-      mb.band('band', binnen, L, ss, binnen.map(naarBinnen));
+      mb.band('band', rand0, L, ss, rand0.map(naarBinnen));
       mb.band('beton', buiten.map(p => ({ ...p, y: p.y - ROK })), Rr, ss, buiten.map(p => ({ x: -naarBinnen(p).x, y: 0, z: -naarBinnen(p).z })));
     } else {
       mb.band('beton', buiten.map(p => ({ ...p, y: p.y - ROK })), buiten, buiten.map((_, k) => k), buiten.map(p => ({ x: p.x - c.x, y: 0, z: p.z - c.z })));

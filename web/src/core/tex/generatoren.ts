@@ -76,9 +76,7 @@ export function asfalt(soort: 'grijs' | 'rood' | 'bus'): TexData {
     if (!rood) k = mix(k, mul(k, 0.72), teer * 0.6);
     let hoogte = h2 * 0.6 + h * 0.4;
     if (!rood) {
-      // Reparatievlak (iets donkerder, rechte randen) en haarscheurtjes.
-      const vx = Math.floor(u * 3), vy = Math.floor(v * 3);
-      if (hash01(vx, vy, s + 6) > 0.8) { const fx = frac(u * 3), fy = frac(v * 3); if (fx > 0.15 && fx < 0.75 && fy > 0.2 && fy < 0.6) k = mul(k, 0.8); }
+      // Haarscheurtjes (geen reparatievlakken meer: die herhaalden zich als donkere vierkanten).
       const w = worley(u, v, 7, s + 7);
       const scheur = 1 - glad01(0, 0.012, w.f2 - w.f1);
       if (hash01(Math.floor(u * 7), Math.floor(v * 7), s + 8) > 0.55) { k = mul(k, 1 - 0.45 * scheur); hoogte -= scheur * 0.5; }
