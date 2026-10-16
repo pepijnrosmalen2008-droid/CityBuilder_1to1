@@ -31,6 +31,7 @@ interface Klembord {
   wegen: { a: V2; c: V2; b: V2; type: WegTypeId; niveau: number }[];
   gebouwen: Gebouw[];
   diensten: Dienst[];
+  bomen: { x: number; z: number; soort: number; variant: number; schaal: number; rot: number }[];
 }
 
 const draaiOm = (c: V2, hoek: number) => { const co = Math.cos(hoek), si = Math.sin(hoek); return (p: V2): V2 => ({ x: c.x + (p.x - c.x) * co - (p.z - c.z) * si, z: c.z + (p.x - c.x) * si + (p.z - c.z) * co }); };
@@ -143,6 +144,7 @@ export class Verplaatser {
     const gVoor = new Set(w.gebouwen.keys());
     const bomen = [...this.sel.boom];
     const voor = this.stand(gIds, dVoor, bomen);
+    const nBoom = w.bomen.n;
     w.opname = new Map();
     try { fn(); } finally {
       const opname = w.opname;
@@ -152,6 +154,8 @@ export class Verplaatser {
       for (const id of w.gebouwen.keys()) if (!gVoor.has(id)) { gIds.add(id); voor.gebouwen.set(id, null); }
       const dIds = new Set([...dVoor, ...w.voorzieningen.diensten.keys()]);
       for (const id of dIds) if (!voor.diensten.has(id)) voor.diensten.set(id, null);
+      // Geplante bomen: vóór de bewerking bestonden ze niet (levend = false).
+      for (let i = nBoom; i < w.bomen.n; i++) { voor.bomen.push({ i, x: w.bomen.x[i], z: w.bomen.z[i], rot: w.bomen.rot[i], levend: false }); bomen.push(i); }
       const na = this.stand(gIds, dIds, bomen);
       this.terugStapel.push({ naam, voor, na });
       if (this.terugStapel.length > 60) this.terugStapel.shift();
@@ -273,6 +277,7 @@ export class Verplaatser {
       wegen: [...segs].map(id => { const s = net.segmenten.get(id)!, A = net.knopen.get(s.a)!, B = net.knopen.get(s.b)!; return { a: { ...A.p }, c: { ...s.c }, b: { ...B.p }, type: s.type, niveau: Math.max(A.niveau, B.niveau) }; }),
       gebouwen: [...this.sel.gebouw].map(id => structuredClone(w.gebouwen.get(id)!)).filter(Boolean),
       diensten: [...this.sel.dienst].map(id => structuredClone(w.voorzieningen.diensten.get(id)!)).filter(Boolean),
+      bomen: [...this.sel.boom].map(i => { const b = w.bomen; return { x: b.x[i], z: b.z[i], soort: b.soort[i], variant: b.variant[i], schaal: b.schaal[i], rot: b.rot[i] }; }),
     };
     return true;
   }
@@ -285,14 +290,17 @@ export class Verplaatser {
     const draai = draaiOm(kb.pivot, hoek), d = { x: p.x - kb.pivot.x, z: p.z - kb.pivot.z };
     const f = (q: V2) => { const r = draai(q); return { x: r.x + d.x, z: r.z + d.z }; };
     let fout: string | null = null;
-    const voorG = new Set(w.gebouwen.keys()), voorD = new Set(w.voorzieningen.diensten.keys());
+    const voorG = new Set(w.gebouwen.keys()), voorD = new Set(w.voorzieningen.diensten.keys()), nBoomVoor = w.bomen.n;
     this.actie('Plakken', [], () => {
       for (const x of kb.wegen) { const r = w.legWeg(f(x.a), f(x.c), f(x.b), x.type, x.niveau); if (!r.ok) fout = r.fout ?? 'Een weg past hier niet'; }
       for (const g of kb.gebouwen) w.plakGebouw(g, f, hoek);
       for (const dd of kb.diensten) w.voorzieningen.plak(dd, f, hoek);
+      for (const b of kb.bomen) { const q = f(b); this.sel.boom.add(w.bomen.plant(q.x, q.z, b.soort, b.variant, b.schaal, b.rot + hoek)); }
     });
     // De geplakte dingen worden de nieuwe selectie (meteen verder schuiven of draaien).
+    const nieuweBomen = [...this.sel.boom].filter(i => i >= nBoomVoor);
     this.leegmaken();
+    for (const i of nieuweBomen) this.sel.boom.add(i);
     for (const id of w.gebouwen.keys()) if (!voorG.has(id)) this.sel.gebouw.add(id);
     for (const id of w.voorzieningen.diensten.keys()) if (!voorD.has(id)) this.sel.dienst.add(id);
     return fout;
@@ -315,6 +323,7 @@ export class Verplaatser {
       for (const x of this.klembord.wegen) lijn(Wegennet.curve(x.a, x.c, x.b, 16));
       for (const g of this.klembord.gebouwen) ring(g.voet, hoogte(g));
       for (const d of this.klembord.diensten) ring(d.voet);
+      for (const b of this.klembord.bomen.slice(0, 300)) ring([0, 1, 2, 3, 4, 5].map(k => ({ x: b.x + Math.cos(k * 1.047) * 1.6, z: b.z + Math.sin(k * 1.047) * 1.6 })));
       return l;
     }
     const net = w.net, knopen = new Set(this.bewegendeKnopen());

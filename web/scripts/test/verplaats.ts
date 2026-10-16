@@ -78,6 +78,30 @@ m.verschuif({ x: 5, z: 0 });
 check('boom verplaatst', Math.abs(w.bomen.x[bi] - bx - 5) < 1e-3);
 m.terug();
 check('boom terug', Math.abs(w.bomen.x[bi] - bx) < 1e-3);
+// 7b. Bomen kopiëren en plakken, ongedaan maken.
+{
+  const nb = w.bomen.n;
+  m.leegmaken(); m.kies({ soort: 'boom', id: bi });
+  m.kopieer(); m.plak({ x: w.bomen.x[bi] + 40, z: w.bomen.z[bi] });
+  check('boom geplakt', w.bomen.n === nb + 1 && !!w.bomen.levend[nb]);
+  m.terug();
+  check('plakken boom ongedaan', !w.bomen.levend[nb]);
+  m.opnieuw();
+  check('opnieuw: boom terug', !!w.bomen.levend[nb]);
+}
+// 7c. Geplakt gebouw neemt een vrije kavel in.
+{
+  const vrij = [...w.kavels.values()].find(k => !k.gebouw && k.zone !== 'geen' && k.oppervlak > 150);
+  if (vrij) {
+    m.leegmaken(); m.kies({ soort: 'gebouw', id: g.id }); m.kopieer();
+    const c = vrij.poly.reduce((s, p) => ({ x: s.x + p.x / vrij.poly.length, z: s.z + p.z / vrij.poly.length }), { x: 0, z: 0 });
+    m.plak(c);
+    const nieuw = [...m.sel.gebouw][0];
+    check('geplakt gebouw op vrije kavel', w.kavels.get(vrij.id)!.gebouw === nieuw, `kavel ${vrij.id}`);
+    m.terug();
+    check('ongedaan: kavel weer vrij', !w.kavels.get(vrij.id)!.gebouw || w.kavels.get(vrij.id)!.gebouw !== nieuw);
+  }
+}
 // 8. Opslaan met verplaatst gebouw.
 m.kies({ soort: 'gebouw', id: g.id }); m.verschuif({ x: 3, z: 0 });
 const j = JSON.parse(JSON.stringify(w.naarJson()));

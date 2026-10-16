@@ -44,7 +44,28 @@ export class Bomen {
       }
     }
     this.n = i;
+    this.nOrig = i;
   }
+
+  /** Aantal natuurbomen bij het maken van de kaart; daarna komen geplante bomen (Move It: plakken). */
+  nOrig = 0;
+
+  /** Een nieuwe boom planten; geeft de index. */
+  plant(x: number, z: number, soort: number, variant: number, schaal: number, rot: number): number {
+    if (this.n >= this.x.length) {
+      const groei = <T extends Float32Array | Uint8Array>(a: T): T => { const b = new (a.constructor as new (n: number) => T)(Math.max(64, a.length * 2)); b.set(a); return b; };
+      this.x = groei(this.x); this.z = groei(this.z); this.schaal = groei(this.schaal); this.rot = groei(this.rot);
+      this.soort = groei(this.soort); this.variant = groei(this.variant); this.levend = groei(this.levend);
+    }
+    const i = this.n++;
+    this.x[i] = x; this.z[i] = z; this.schaal[i] = schaal; this.rot[i] = rot; this.soort[i] = soort; this.variant[i] = variant; this.levend[i] = 1;
+    const c = this.cel(x, z);
+    let l = this.raster.get(c); if (!l) this.raster.set(c, l = []); l.push(i);
+    this.vuileVakken.add(this.vak(x, z));
+    return i;
+  }
+  naarJsonGeplant() { const r: number[][] = []; for (let i = this.nOrig; i < this.n; i++) r.push([this.x[i], this.z[i], this.soort[i], this.variant[i], this.schaal[i], this.rot[i]]); return r; }
+  laadGeplant(l: number[][] | undefined) { for (const b of l ?? []) this.plant(b[0], b[1], b[2], b[3], b[4], b[5]); }
 
   private cel(x: number, z: number) { return (Math.floor(x / 16) + 1000) * 4096 + (Math.floor(z / 16) + 1000); }
   vak(x: number, z: number) { return (Math.floor(x / Bomen.VAK) + 100) * 1000 + (Math.floor(z / Bomen.VAK) + 100); }

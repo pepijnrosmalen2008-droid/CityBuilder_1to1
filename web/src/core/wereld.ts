@@ -697,6 +697,12 @@ export class Wereld {
     this.gebouwen.set(g.id, g);
     this.events.push({ soort: 'gebouw+', id: g.id });
     this.transformeerGebouw(g.id, f, drot);
+    // Vrije kavels onder de kopie worden van dit gebouw (dan telt het mee op die plek, met eigen toegang).
+    const vrij = [...this.kavels.values()].filter(k => !k.gebouw && puntInPolygoon(zwaartepunt(k.poly), g.voet));
+    if (vrij.length) {
+      g.kavel = vrij[0].id; g.kavels = vrij.map(k => k.id);
+      for (const k of vrij) { k.gebouw = g.id; if (k.zone === 'geen') k.zone = g.zone; this.events.push({ soort: 'kavel~', id: k.id }); }
+    }
     return g.id;
   }
 
@@ -924,7 +930,7 @@ export class Wereld {
       versie: 4, seed: this.seed, naam: this.naam, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
       tarieven: this.tarieven, mijlpaal: this.mijlpaal, maandKlok: this.maandKlok, vorigeMaand: this.vorigeMaand,
       gemeld: [...this.gemeld], nieuws: this.nieuws.slice(0, 20), nieuwsId: this.nieuwsId,
-      terrein: this.terrein.wijzigingen(), bomen: this.bomen.gekapt(), bomenVerplaatst: this.bomen.naarJsonVerplaatst(), namen: this.namen.naarJson(),
+      terrein: this.terrein.wijzigingen(), bomen: this.bomen.gekapt(), bomenVerplaatst: this.bomen.naarJsonVerplaatst(), bomenGeplant: this.bomen.naarJsonGeplant(), namen: this.namen.naarJson(),
       net: this.net.naarJson(),
       kavels: [...this.kavels.values()],
       gebouwen: [...this.gebouwen.values()],
@@ -941,6 +947,7 @@ export class Wereld {
     this.tarieven = j.tarieven; this.mijlpaal = j.mijlpaal; this.maandKlok = j.maandKlok; this.vorigeMaand = j.vorigeMaand;
     this.gemeld = new Set(j.gemeld); this.nieuws = j.nieuws ?? []; this.nieuwsId = j.nieuwsId ?? 1;
     this.terrein.laadWijzigingen(j.terrein);
+    this.bomen.laadGeplant(j.bomenGeplant);
     this.bomen.laadGekapt(j.bomen);
     this.bomen.laadVerplaatst(j.bomenVerplaatst);
     this.namen.laadJson(j.namen);
