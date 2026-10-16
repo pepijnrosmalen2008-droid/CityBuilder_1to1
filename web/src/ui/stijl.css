@@ -75,10 +75,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
   text-shadow: 0 0 3px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.6); display: none; will-change: transform; }
 
 /* Werkbalk onderaan */
-#werkbalk { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); width: min(1060px, calc(100vw - 24px)); z-index: 5; padding: 8px; }
+#werkbalk { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); width: min(1180px, calc(100vw - 24px)); z-index: 5; padding: 8px; }
 .tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
-@media (max-width: 1100px) { .tab .toets { display: none; } .tab { padding: 7px 10px; } }
+@media (max-width: 1500px) { .tab .toets { display: none; } .tab { padding: 7px 10px; gap: 6px; } }
 .tab { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 7px 12px; }
 .tab .ic { width: 16px; height: 16px; color: inherit; }
 .tab .toets { font-size: 10px; color: var(--zacht); border: 1px solid var(--paneel-rand); border-radius: 4px; padding: 0 4px; }
@@ -236,3 +236,38 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
 .dist-naam { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); border-radius: 8px; color: #e9eef5; font: 600 13px Inter, sans-serif; padding: 6px 10px; width: 150px; }
 .opties .hint { color: var(--zacht, #9aa5b1); font-size: 12px; margin-left: 6px; }
 @media (max-width: 640px) { .opties .hint { display: none; } }
+
+/* ── Verkeersgereedschap (TM:PE): klikbare iconen boven de kaart ── */
+#verkeerslaag { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+#verkeerslaag > div { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 3px; pointer-events: none; will-change: transform; }
+#verkeerslaag button { pointer-events: auto; cursor: pointer; border: 0; padding: 0; background: none; color: #fff; font: inherit; }
+.vl-knop { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); transition: transform .12s; }
+.vl-knop svg { width: 100%; height: 100%; }
+.vl-knop:hover { transform: scale(1.18); }
+.vl-knop.leeg { opacity: .8; }
+.vl-knop.leeg:hover { opacity: 1; }
+.vl-knop.gedimd { opacity: .45; }
+.vl-knop.klein { width: 24px; height: 24px; }
+.vl-licht .vl-knop { width: 26px; height: 34px; border-radius: 6px; }
+.vl-licht .vl-knop:not(.aan) { opacity: .6; }
+.vl-label { font: 600 10px Inter, sans-serif; color: #fff; background: rgba(15,20,28,.75); padding: 2px 6px; border-radius: 6px; }
+.vl-groen { display: flex; align-items: center; gap: 2px; background: rgba(15,20,28,.82); border-radius: 8px; padding: 2px; font: 600 11px Inter, sans-serif; color: #e9ecef; }
+.vl-groen b { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+.vl-groen button { width: 20px; height: 20px; border-radius: 6px !important; background: #2b3442 !important; font-weight: 700 !important; }
+.vl-groen button:hover { background: #3b4658 !important; }
+.vl-strook { display: flex; gap: 1px; background: rgba(15,20,28,.82); border-radius: 8px; padding: 2px; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.vl-pijl { width: 21px; height: 21px; border-radius: 6px !important; color: #6c7a8c !important; display: grid; place-items: center; }
+.vl-pijl svg { width: 17px; height: 17px; }
+.vl-pijl.aan { color: #fff !important; background: #2f7de1 !important; }
+.vl-pijl:hover { outline: 1px solid #74c0fc; }
+.vl-terug { width: 20px; height: 20px; border-radius: 50% !important; background: rgba(15,20,28,.82) !important; font-size: 13px !important; }
+.vl-regels { background: rgba(15,20,28,.82); border-radius: 9px; padding: 2px; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.vl-regel { width: 22px; height: 22px; border-radius: 6px !important; color: #6c7a8c !important; display: grid; place-items: center; }
+.vl-regel svg { width: 17px; height: 17px; }
+.vl-regel.aan { color: #fff !important; background: #2f9e44 !important; }
+.vl-punt { width: 6px; height: 6px; border-radius: 50%; background: #adb5bd; margin: 6px; }
+@media (max-width: 640px) { .vl-knop { width: 26px; height: 26px; } .vl-pijl, .vl-regel { width: 24px; height: 24px; } }
+
+.vl-paneel { display: flex; align-items: flex-end; gap: 2px; background: rgba(15,20,28,.86); border-radius: 9px; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,.4); pointer-events: auto; }
+.vl-kolom { display: flex; flex-direction: column; gap: 1px; padding: 1px; border-radius: 6px; }
+.vl-kolom + .vl-kolom { border-left: 1px dashed rgba(255,255,255,.18); padding-left: 3px; }

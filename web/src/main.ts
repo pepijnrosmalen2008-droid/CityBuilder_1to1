@@ -8,6 +8,7 @@ import { StadCamera } from './render/camera';
 import { TextuurBron } from './render/texturen';
 import { Materialen } from './render/materialen';
 import { StraatLevenWeergave } from './render/straatleven';
+import { VerkeersLaag } from './render/verkeerslaag';
 import { VerkeerWeergave } from './render/verkeer';
 import { DienstWeergave } from './render/diensten';
 import { DistrictLaag } from './render/districtlaag';
@@ -124,6 +125,11 @@ async function start() {
   werkbalk.hulpStat = () => wereld.hulpdiensten.stat;
   werkbalk.districten = wereld.districten;
   werkbalk.opDistrictModus = aan => districtLaag.toon(aan);
+  // Verkeersgereedschap (TM:PE): klikbare iconen boven de kruispunten.
+  const verkeersLaag = new VerkeersLaag(wereld, sfeer.camera, gereedschap, () => werkbalk.teken());
+  werkbalk.regels = () => wereld.net.regels;
+  werkbalk.opVerkeerWissen = () => wereld.verkeer.wis();
+  werkbalk.opModus = m => { verkeersLaag.aan = m === 'verkeer'; };
 
   // Muis → grondpunt.
   const tip = document.getElementById('tip')!, melding = document.getElementById('melding')!;
@@ -219,7 +225,7 @@ async function start() {
   await voortgang('Klaar', 1);
   await bron.wacht();
   document.getElementById('laden')!.classList.add('weg');
-  (window as unknown as Record<string, unknown>).__stad = { wereld, stad, sfeer, camera, gereedschap, bron, THREE };
+  (window as unknown as Record<string, unknown>).__stad = { wereld, stad, sfeer, camera, gereedschap, bron, THREE, werkbalk };
 
   if (param.has('shot')) {
     // Fotomodus (voor geautomatiseerde screenshots zonder GPU): alles opbouwen, één frame renderen.
@@ -330,6 +336,7 @@ async function start() {
     wereld.stap(dt);
     verkeer.werkBij(sfeer.camera.position, dt);
     straatLeven.werkBij(dt, camera.doel, camera.afstand, wereld.snelheid, levenMax());
+    verkeersLaag.werkBij(camera.doel, camera.afstand);
     if (diensten.werkBij(dt, sfeer.camera, wereld.snelheid)) sfeer.schaduwVuil();
     const grond = grondOnder();
     gereedschap.beweeg(grond);

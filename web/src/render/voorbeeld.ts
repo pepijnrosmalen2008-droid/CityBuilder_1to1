@@ -211,7 +211,12 @@ export class VoorbeeldLaag {
           const gb = this.w.economie.gebieden.get(v.gebied);
           if (gb) { this.lintLangs([...gb.poly, gb.poly[0]].map(q => ({ x: q.x, y: this.w.terrein.hoogte(q.x, q.z), z: q.z })), 3, 0.8); this.lintMat.color.set(v.kleur); this.lint.visible = true; }
         }
-        if (v.segment !== undefined) {
+        if (v.segmenten?.length) {
+          const lijnen = v.segmenten.map(id => this.w.net.segmenten.get(id)).filter(Boolean).map(seg => seg!.pad.map(p => ({ x: p.x, y: p.y, z: p.z })));
+          const br = Math.max(...v.segmenten.map(id => { const sg = this.w.net.segmenten.get(id); return sg ? halveBreedte(sg.type) * 2 : 0; }));
+          this.lintenLangs(lijnen, br + 1, 0.5); this.lintMat.color.set(v.kleur); this.lint.visible = true;
+        }
+                if (v.segment !== undefined) {
           const seg = this.w.net.segmenten.get(v.segment);
           if (seg) {
             this.lintLangs(seg.pad.map(p => ({ x: p.x, y: p.y, z: p.z })), halveBreedte(seg.type) * 2 + 1, 0.5);

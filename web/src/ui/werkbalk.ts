@@ -1,4 +1,5 @@
-import { Gereedschap, Modus, Stijl } from '../core/gereedschap';
+import { Gereedschap, Modus, Stijl, VerkeerTool } from '../core/gereedschap';
+import type { Verbod } from '../core/verkeer/regels';
 
 const ZONE_TOOL_ICOON: Record<'vullen' | 'selectie' | 'penseel' | 'groot', string> = {
   vullen: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 11l7-7 7 7-7 7z" fill="#74c0fc"/><path d="M19 14c1.5 2 1.5 3.5 0 4s-1.5-2 0-4z" fill="#74c0fc"/></svg>',
@@ -109,6 +110,8 @@ export class Werkbalk {
       if (k === 'x') this.kies('weg');
       if (k === 'u') this.kies('opwaarderen');
       if (k === 'b') this.kies('sloop');
+      if (k === 't') this.kies('verkeer');
+      if (k === 'm') this.kies('verplaats');
       if (k === 'c' && this.g.modus === 'weg') { const v: Stijl[] = ['recht', 'bocht', 'vrij', 'raster']; this.g.stijl = v[(v.indexOf(this.g.stijl) + 1) % 4]; this.g.annuleer(); this.teken(); }
       if ((e.key === 'PageUp' || e.key === 'PageDown') && this.g.modus === 'weg') { e.preventDefault(); this.g.hoger(e.key === 'PageUp' ? 1 : -1); this.teken(); }
       if (k === 'p' && this.g.modus === 'weg') this.wisselParallel();
@@ -135,12 +138,50 @@ export class Werkbalk {
     this.teken();
   }
 
+  /** Verkeersregels en verkeer wissen (gezet door main.ts). */
+  regels: () => import('../core/verkeer/regels').Verkeersregels | null = () => null;
+  opVerkeerWissen: () => number = () => 0;
+
+  /** Tabblad Verkeer: het verkeersgereedschap zoals TM:PE. */
+  private verkeerTab(): { items: string; opties: string } {
+    const g = this.g, R = this.regels();
+    const tools: { id: VerkeerTool; naam: string; sub: string; svg: string }[] = [
+      { id: 'voorrang', naam: 'Voorrangsborden', sub: 'per wegeinde', svg: '<svg viewBox="0 0 86 46"><path d="M24 8 38 22 24 36 10 22z" fill="#fff"/><path d="M24 12.5 33.5 22 24 31.5 14.5 22z" fill="#f2c200"/><path d="M46 10h28L60 36z" fill="#d6262c"/><path d="M51.5 13.4h17L60 29z" fill="#fff"/></svg>' },
+      { id: 'hoofdweg', naam: 'Voorrangsweg', sub: 'hele weg in één klik', svg: '<svg viewBox="0 0 86 46"><path d="M6 23h74" stroke="#f2c200" stroke-width="7"/><path d="M30 6v12M56 28v12" stroke="#adb5bd" stroke-width="5"/><path d="M43 14 50 21 43 28 36 21z" fill="#fff" stroke="#f2c200" stroke-width="2"/></svg>' },
+      { id: 'lichten', naam: 'Verkeerslichten', sub: 'aan/uit, groentijd', svg: '<svg viewBox="0 0 86 46"><rect x="36" y="4" width="14" height="36" rx="4" fill="#1f2328" stroke="#adb5bd"/><circle cx="43" cy="12" r="4" fill="#ff4d4f"/><circle cx="43" cy="22" r="4" fill="#ffb300"/><circle cx="43" cy="32" r="4" fill="#40c057"/></svg>' },
+      { id: 'pijlen', naam: 'Rijstrookpijlen', sub: 'per rijstrook', svg: '<svg viewBox="0 0 86 46"><g fill="none" stroke="#e9ecef" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M28 40V24a6 6 0 0 0-6-6h-8M18 13l-5 5 5 5"/><path d="M43 40V8M37 14l6-6 6 6"/><path d="M58 40V24a6 6 0 0 1 6-6h8M68 13l5 5-5 5"/></g></svg>' },
+      { id: 'regels', naam: 'Kruispuntregels', sub: 'keren, wisselen, …', svg: '<svg viewBox="0 0 86 46"><rect x="24" y="8" width="38" height="30" rx="4" fill="none" stroke="#e9ecef" stroke-width="2.4"/><path d="M24 23h38M43 8v30" stroke="#e9ecef" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M50 33V24a5 5 0 0 0-10 0v4M36 25l4 4 4-4" fill="none" stroke="#74c0fc" stroke-width="2.6" stroke-linecap="round"/></svg>' },
+      { id: 'snelheid', naam: 'Maximumsnelheid', sub: 'klik of sleep', svg: '<svg viewBox="0 0 86 46"><circle cx="43" cy="23" r="18" fill="#d6262c"/><circle cx="43" cy="23" r="14" fill="#fff"/><text x="43" y="29" text-anchor="middle" font-size="16" font-weight="800" fill="#111" font-family="Inter,sans-serif">30</text></svg>' },
+      { id: 'verbod', naam: 'Verboden', sub: 'auto, vracht, bus', svg: '<svg viewBox="0 0 86 46"><circle cx="43" cy="23" r="18" fill="#d6262c"/><circle cx="43" cy="23" r="14" fill="#fff"/><path d="M33 17h12v11H33zM45 20h5l3 4v4h-8z" fill="#222"/><circle cx="37" cy="30" r="2" fill="#222"/><circle cx="49" cy="30" r="2" fill="#222"/></svg>' },
+    ];
+    const items = tools.map(t => `<div class="item ${g.verkeerTool === t.id ? 'aan' : ''}" data-vt="${t.id}">${t.svg}<div class="item-naam">${t.naam}</div><div class="item-sub">${t.sub}</div></div>`).join('');
+    let opties = '';
+    const hint = (t: string) => `<span class="hint">${t}</span>`;
+    switch (g.verkeerTool) {
+      case 'voorrang': opties = hint('Klik op een bord: geen → voorrangsweg → voorrang verlenen → stop · rechts = weg'); break;
+      case 'hoofdweg': opties = `<div class="groep"><span>Zijwegen</span><button class="knop ${g.zijBord === 'geef' ? 'aan' : ''}" data-zb="geef">Voorrang verlenen</button><button class="knop ${g.zijBord === 'stop' ? 'aan' : ''}" data-zb="stop">Stop</button></div>` + hint('Klik op een weg: de hele doorgaande weg krijgt voorrang'); break;
+      case 'lichten': opties = hint('Klik op een kruispunt: lichten plaatsen of weghalen · − / + = groentijd · rechts = automatisch'); break;
+      case 'pijlen': opties = hint('Zet per rijstrook de richtingen aan of uit · ↺ = standaard'); break;
+      case 'regels': opties = hint('Per wegeinde: keren, strook wisselen, kruispunt opblokken, oversteekplaats, rechtsaf door rood'); break;
+      case 'snelheid': opties = `<div class="groep">${[30, 50, 60, 70, 80, 100, 120, 130].map(v => `<button class="knop ${g.snelheidKeuze === v ? 'aan' : ''}" data-kmu="${v}">${v}</button>`).join('')}<button class="knop ${g.snelheidKeuze === undefined ? 'aan' : ''}" data-kmu="">Standaard</button></div>` + hint('Klik of sleep over wegen · rechts = standaard'); break;
+      case 'verbod': opties = `<div class="groep">${(['auto', 'vracht', 'bus'] as Verbod[]).map(v => `<button class="knop ${g.verbodKeuze === v ? 'aan' : ''}" data-vb="${v}">${({ auto: "Auto's", vracht: 'Vrachtverkeer', bus: 'Bussen' } as const)[v]}</button>`).join('')}</div>` + hint('Klik of sleep: verbod aan/uit · rechts = alles toestaan'); break;
+    }
+    opties += `<div class="groep"><button class="knop" data-wis title="Alle voertuigen van de weg halen (hulpdiensten blijven rijden)">Verkeer wissen</button><button class="knop schakel ${R?.verdwijnen ? 'aan' : ''}" data-verdw title="Voertuigen die lang vaststaan verdwijnen (zoals in CS)">Vastgelopen verdwijnen</button></div>`;
+    return { items, opties };
+  }
+
+  /** Tabblad Verplaatsen (Move It): ingevuld door main.ts. */
+  verplaatsTab: () => { items: string; opties: string } = () => ({ items: '', opties: '' });
+  verplaatsKnoppen: () => void = () => {};
+
   /** Districten van de wereld (gezet door main.ts). */
   districten: Districten | null = null;
   /** Wordt aangeroepen als de districtsmodus aan of uit gaat (voor de kaartlaag). */
   opDistrictModus: (aan: boolean) => void = () => {};
 
-  kies(m: Modus) { this.g.zetModus(m); this.opZoneModus(m === 'zone'); this.opDistrictModus(m === 'district'); this.teken(); }
+  kies(m: Modus) { this.g.zetModus(m); this.opZoneModus(m === 'zone'); this.opDistrictModus(m === 'district'); this.opModus(m); this.teken(); }
+  /** Wordt aangeroepen bij elke modus-wissel (verkeerslaag, verplaatsen). */
+  opModus: (m: Modus) => void = () => {};
 
   /** Tabblad Districten: lijst, en voor het gekozen district naam, stijl en regels. */
   private districtTab(): { items: string; opties: string } {
@@ -169,7 +210,7 @@ export class Werkbalk {
 
   teken() {
     const g = this.g;
-    const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, district: ICOON.district, gebied: ICOON.fabriek, dienst: ICOON.bliksem, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog };
+    const ic: Record<Modus, string> = { weg: ICOON.weg, zone: ICOON.zone, district: ICOON.district, gebied: ICOON.fabriek, dienst: ICOON.bliksem, opwaarderen: ICOON.pijl, sloop: ICOON.sloop, kijk: ICOON.oog, verkeer: ICOON.verkeer, verplaats: ICOON.verplaats };
     const tab = (m: Modus, naam: string, toets: string) => `<button class="knop tab ${g.modus === m ? 'aan' : ''}" data-m="${m}"><span class="ic">${ic[m]}</span><span class="tab-tekst">${naam}</span><span class="toets">${toets}</span></button>`;
     let items = '', opties = '';
     if (g.modus === 'weg' || g.modus === 'opwaarderen') {
@@ -195,13 +236,18 @@ export class Werkbalk {
     } else if (g.modus === 'dienst') {
       items = this.inGroep().map((id, i) => { const d = DIENSTEN[id]; const lev = d.dekking ? `${(d.dekking.bereik / 1000).toLocaleString('nl-NL')} km · ${d.dekking.voertuigen} wagen${d.dekking.voertuigen > 1 ? 's' : ''}` : Object.entries(d.levert).map(([n, x]) => `${(x as number).toLocaleString('nl-NL')} ${NUT_EENHEID[n as Nut]}`).join(' + '); return `<div class="item ${g.dienst === id ? 'aan' : ''}" data-d="${id}" title="${d.uitleg}">${DIENST_ICOON[id]}<div class="item-naam">${d.naam}</div><div class="item-sub">${i + 1} · € ${(d.kosten / 1e6).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} mln · ${lev}</div></div>`; }).join('');
       opties = `<div class="groep">${GROEPEN.map(x => `<button class="knop ${this.groep === x.id ? 'aan' : ''}" data-grp="${x.id}">${x.naam}</button>`).join('')}</div><div class="balans" data-balans></div>`;
+    } else if (g.modus === 'verkeer') {
+      ({ items, opties } = this.verkeerTab());
+    } else if (g.modus === 'verplaats') {
+      ({ items, opties } = this.verplaatsTab());
     } else if (g.modus === 'sloop') {
       items = `<div class="item-sub" style="padding:14px">Klik of sleep over wegen en gebouwen om ze te slopen. Je krijgt een kwart van de wegkosten terug.</div>`;
     } else {
       items = `<div class="item-sub" style="padding:14px">Kies een gereedschap. Camera: WASD of middelste muisknop = schuiven, rechts slepen of Q/E = draaien, R/F = kantelen, scrollen = zoomen. Spatie = pauze.</div>`;
     }
-    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('district', 'Districten', 'K')}${tab('gebied', 'Economie', 'G')}${tab('dienst', 'Voorzieningen', 'N')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('kijk', 'Kijken', 'Esc')}</div>${opties ? `<div class="opties">${opties}</div>` : ''}<div class="items">${items}</div>`;
+    this.el.innerHTML = `<div class="tabs">${tab('weg', 'Wegen', 'X')}${tab('zone', 'Zones', 'Z')}${tab('district', 'Districten', 'K')}${tab('gebied', 'Economie', 'G')}${tab('dienst', 'Voorzieningen', 'N')}${tab('opwaarderen', 'Opwaarderen', 'U')}${tab('sloop', 'Slopen', 'B')}${tab('verkeer', 'Verkeer', 'T')}${tab('verplaats', 'Verplaatsen', 'M')}${tab('kijk', 'Kijken', 'Esc')}</div>${opties ? `<div class="opties">${opties}</div>` : ''}<div class="items">${items}</div>`;
     this.el.querySelectorAll<HTMLElement>('[data-m]').forEach(e => (e.onclick = () => this.kies(e.dataset.m as Modus)));
+    this.el.querySelector<HTMLElement>('.tab.aan')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
     this.el.querySelectorAll<HTMLElement>('[data-w]').forEach(e => (e.onclick = () => { g.wegtype = e.dataset.w as WegTypeId; this.teken(); }));
     this.el.querySelectorAll<HTMLElement>('[data-z]').forEach(e => (e.onclick = () => { g.zone = e.dataset.z as Zone; this.teken(); }));
     this.el.querySelectorAll<HTMLElement>('[data-st]').forEach(e => (e.onclick = () => { if (g.modus !== 'weg') g.zetModus('weg'); g.stijl = e.dataset.st as Stijl; g.annuleer(); this.teken(); }));
@@ -216,6 +262,13 @@ export class Werkbalk {
     this.el.querySelectorAll<HTMLElement>('[data-gs]').forEach(e => (e.onclick = () => { g.grondstof = e.dataset.gs as Grondstof; g.annuleer(); this.teken(); }));
     this.el.querySelector<HTMLElement>('[data-eco]')?.addEventListener('click', () => this.opEconomie());
     this.el.querySelectorAll<HTMLElement>('[data-zt]').forEach(e => (e.onclick = () => { g.zoneTool = e.dataset.zt as typeof g.zoneTool; if (e.dataset.zr) g.penseel = Number(e.dataset.zr); this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-vt]').forEach(e => (e.onclick = () => { g.verkeerTool = e.dataset.vt as VerkeerTool; this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-kmu]').forEach(e => (e.onclick = () => { g.snelheidKeuze = e.dataset.kmu ? Number(e.dataset.kmu) : undefined; this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-vb]').forEach(e => (e.onclick = () => { g.verbodKeuze = e.dataset.vb as Verbod; this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-zb]').forEach(e => (e.onclick = () => { g.zijBord = e.dataset.zb as 'geef' | 'stop'; this.teken(); }));
+    this.el.querySelector<HTMLElement>('[data-wis]')?.addEventListener('click', () => { const n = this.opVerkeerWissen(); g.melding = `${n} voertuigen van de weg gehaald`; });
+    this.el.querySelector<HTMLElement>('[data-verdw]')?.addEventListener('click', () => { const R = this.regels(); if (R) R.verdwijnen = !R.verdwijnen; this.teken(); });
+    this.verplaatsKnoppen();
     this.el.querySelectorAll<HTMLElement>('[data-p]').forEach(e => (e.onclick = () => { g.penseel = Math.max(6, Math.min(80, g.penseel + Number(e.dataset.p))); this.teken(); }));
     // Districten.
     const ds = this.districten, huidig = ds?.lijst.get(g.district);

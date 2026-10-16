@@ -4,6 +4,8 @@ import { Wereld } from './wereld';
 import { WegTypeId, halveBreedte, WEGTYPEN } from './wegen/typen';
 import { Wegennet } from './wegen/netwerk';
 import { Zone, zoneKleur, ZONES } from './zones';
+import type { Bord, Verbod } from './verkeer/regels';
+import { wegeindeBij, kruispuntBij, maakHoofdweg, hoofdwegKeten } from './verkeer/tmpe';
 import { Grondstof, GRONDSTOFFEN, HoofdPlek } from './economie';
 import { DienstSoort, DIENSTEN, NUT_EENHEID } from './voorzieningen';
 import { getekendOppervlak, afstandTotLijn } from './poly';
@@ -12,7 +14,9 @@ import { PERCEEL_BREEDTE, vrijeDiepte } from './percelen';
 // Gereedschap met abstracte invoer: de render-/ui-laag geeft het grondpunt onder de muis en de
 // knoppen door; dit bestand bepaalt wat er gebeurt en welk voorbeeld getekend moet worden.
 
-export type Modus = 'weg' | 'zone' | 'district' | 'gebied' | 'dienst' | 'opwaarderen' | 'sloop' | 'kijk';
+export type Modus = 'weg' | 'zone' | 'district' | 'gebied' | 'dienst' | 'opwaarderen' | 'sloop' | 'kijk' | 'verkeer' | 'verplaats';
+/** Onderdelen van het verkeersgereedschap (zoals TM:PE). */
+export type VerkeerTool = 'voorrang' | 'hoofdweg' | 'lichten' | 'pijlen' | 'regels' | 'snelheid' | 'verbod';
 
 /** Tekenstijl van het wegengereedschap (zoals in Cities: Skylines). */
 export type Stijl = 'recht' | 'bocht' | 'vrij' | 'raster';
@@ -28,7 +32,7 @@ export type Voorbeeld =
   | { soort: 'weg'; as: V3[]; breedte: number; geldig: boolean; tekst: string; punten: V3[]; lijnen: [V3, V3][]; snap: V3 | null; kavels: KavelBand[]; meer?: V3[][] }
   | { soort: 'penseel'; m: V3; r: number; kleur: string }
   | { soort: 'zoneSel'; kavels: number[]; kleur: string; tekst: string; kader: V3[] | null; m: V3 | null; r: number }
-  | { soort: 'markeer'; segment?: number; gebouw?: number; gebied?: number; dienst?: number; kleur: string; tekst: string }
+  | { soort: 'markeer'; segmenten?: number[]; segment?: number; gebouw?: number; gebied?: number; dienst?: number; kleur: string; tekst: string }
   | { soort: 'dienst'; voet: V3[]; geldig: boolean; tekst: string }
   | { soort: 'gebied'; punten: V3[]; kleur: string; tekst: string; dicht: boolean; hoofd: { p: V3; rot: number; geldig: boolean } | null };
 
@@ -65,6 +69,7 @@ export class Gereedschap {
   private slepen = false;
   private gesleept = new Set<string>();
   private sleepPunt: V2 | null = null;
+  private verbodAan = true;
   /** Raster: tweede punt (richting en lengte). */
   private rasterB: V2 | null = null;
   /** Parallel bouwen: afstand van de tweede weg (0 = uit), rechts van de tekenrichting. */
@@ -76,6 +81,13 @@ export class Gereedschap {
   /** Geselecteerd gebouw of voorziening (Kijken). */
   selectie: { soort: 'gebouw' | 'dienst'; id: number } | null = null;
   private gebiedPunten: V2[] = [];
+  /** Verkeersgereedschap (TM:PE). */
+  verkeerTool: VerkeerTool = 'voorrang';
+  /** Gekozen maximumsnelheid (km/u; undefined = standaard van het wegtype). */
+  snelheidKeuze: number | undefined = 30;
+  verbodKeuze: Verbod = 'vracht';
+  /** Bord voor de zijwegen van een voorrangsweg. */
+  zijBord: Bord = 'geef';
   private hoofd: HoofdPlek | null = null;
 
   constructor(private wereld: Wereld) {}
@@ -344,6 +356,7 @@ export class Gereedschap {
         this.sleepStap(p);
         return;
       }
+      case 'verkeer': this.verkeerKlik(p); return;
       case 'dienst': {
         const fout = w.voorzieningen.bouw(this.dienst, p);
         if (fout) this.melding = fout;
@@ -363,9 +376,53 @@ export class Gereedschap {
     }
   }
 
+  /** Volgende bord in de reeks: geen → voorrangsweg → voorrang verlenen → stop → geen. */
+  static volgendBord(b: Bord | undefined): Bord | undefined { return b === undefined ? 'voorrang' : b === 'voorrang' ? 'geef' : b === 'geef' ? 'stop' : undefined; }
+
+  /** Klik in het verkeersgereedschap (de iconen boven de kruispunten zijn ook klikbaar). */
+  private verkeerKlik(p: V2) {
+    const net = this.wereld.net, R = net.regels;
+    switch (this.verkeerTool) {
+      case 'voorrang': {
+        const e = wegeindeBij(net, p);
+        if (e) R.zetEind(e.seg, e.knoop, { bord: Gereedschap.volgendBord(R.bord(e.seg, e.knoop)) });
+        return;
+      }
+      case 'hoofdweg': {
+        const s = net.segmentBij(p, 2);
+        if (s) { const n = maakHoofdweg(net, s.seg.id, this.zijBord); this.melding = n ? `Voorrangsweg: ${n} borden gezet` : 'Geen kruispunten op deze weg'; }
+        return;
+      }
+      case 'lichten': {
+        const k = kruispuntBij(net, p);
+        if (k !== null) R.zetKnoop(k, { licht: net.heeftLichten(k) ? 'uit' : 'aan' });
+        return;
+      }
+      case 'snelheid': case 'verbod':
+        this.slepen = true; this.gesleept.clear(); this.sleepPunt = null;
+        this.sleepStap(p);
+        return;
+      default: return;
+    }
+  }
+
   /** Eén stap van slepend slopen/opwaarderen: neem wat onder de muis ligt, één keer per sleep. */
   private sleepStap(p: V2) {
     const w = this.wereld;
+    if (this.modus === 'verkeer') {
+      const s = w.net.segmentBij(p, 1);
+      if (!s || this.gesleept.has('s' + s.seg.id)) return;
+      this.gesleept.add('s' + s.seg.id);
+      const R = w.net.regels;
+      if (this.verkeerTool === 'snelheid') R.zetLimiet(s.seg.id, this.snelheidKeuze);
+      else if (this.verkeerTool === 'verbod') {
+        // De eerste weg van de sleep bepaalt of het verbod aan of uit gaat.
+        if (this.gesleept.size === 1) this.verbodAan = !R.verboden(s.seg.id).includes(this.verbodKeuze);
+        const l = R.verboden(s.seg.id).filter(x => x !== this.verbodKeuze);
+        R.zetVerbod(s.seg.id, this.verbodAan ? [...l, this.verbodKeuze] : l);
+      }
+      return;
+    }
     if (this.modus === 'opwaarderen') {
       const s = w.net.segmentBij(p, 1);
       if (!s || this.gesleept.has('s' + s.seg.id)) return;
@@ -408,6 +465,14 @@ export class Gereedschap {
       const s = this.wereld.net.segmentBij({ x: grond.x, z: grond.z }, 1);
       if (s) { this.wereld.keerWegOm(s.seg.id); return true; }
       return false;
+    }
+    if (this.modus === 'verkeer' && grond) {
+      const p = { x: grond.x, z: grond.z }, net = this.wereld.net, R = net.regels;
+      if (this.verkeerTool === 'voorrang') { const e = wegeindeBij(net, p); if (e) R.zetEind(e.seg, e.knoop, { bord: undefined }); return true; }
+      if (this.verkeerTool === 'lichten') { const k = kruispuntBij(net, p); if (k !== null) R.zetKnoop(k, { licht: 'auto', groen: undefined }); return true; }
+      if (this.verkeerTool === 'snelheid') { const s = net.segmentBij(p, 1); if (s) R.zetLimiet(s.seg.id, undefined); return true; }
+      if (this.verkeerTool === 'verbod') { const s = net.segmentBij(p, 1); if (s) R.zetVerbod(s.seg.id, []); return true; }
+      return true;
     }
     if (this.modus !== 'zone' || !grond) return false;
     const p = { x: grond.x, z: grond.z }, w = this.wereld;
@@ -484,7 +549,7 @@ export class Gereedschap {
 
   stap(dt: number) {
     if (this.melding) { this.meldingKlok += dt; if (this.meldingKlok > 2.5) { this.melding = ''; this.meldingKlok = 0; } } else this.meldingKlok = 0;
-    if (this.slepen && this.muis && (this.modus === 'sloop' || this.modus === 'opwaarderen')) this.sleepStap({ x: this.muis.x, z: this.muis.z });
+    if (this.slepen && this.muis && (this.modus === 'sloop' || this.modus === 'opwaarderen' || this.modus === 'verkeer')) this.sleepStap({ x: this.muis.x, z: this.muis.z });
     if ((this.modus === 'zone' || this.modus === 'district') && this.schilderen && this.muis) {
       this.schilderKlok += dt;
       if (this.schilderKlok > 0.05) { this.schilderKlok = 0; this.schilder({ x: this.muis.x, z: this.muis.z }); }
@@ -561,6 +626,21 @@ export class Gereedschap {
           lijnen: lijnenV3(b), snap: snapNu ? { x: b.x, y: yb, z: b.z } : null, kavels,
           meer: this.parallel && !wacht ? [(() => { const [a2, c2, b2] = this.verschuif(this.start!, c, b, this.parallel); return Wegennet.curve(a2, c2, b2, 32).map((q, i) => ({ x: q.x, y: Math.max(ya + (yb - ya) * i / 32, 0.5), z: q.z })); })()] : undefined,
         };
+      }
+      case 'verkeer': {
+        const net = w.net;
+        if (this.verkeerTool === 'hoofdweg') {
+          const s = net.segmentBij(p, 2);
+          return s ? { soort: 'markeer', segmenten: hoofdwegKeten(net, s.seg.id), kleur: '#ffd43b', tekst: 'Klik: voorrangsweg maken (zijwegen ' + (this.zijBord === 'stop' ? 'stop' : 'voorrang verlenen') + ')' } : { soort: 'geen' };
+        }
+        if (this.verkeerTool === 'snelheid' || this.verkeerTool === 'verbod') {
+          const s = net.segmentBij(p, 1);
+          if (!s) return { soort: 'geen' };
+          const R = net.regels, nu = R.limiet(s.seg.id) ?? WEGTYPEN[s.seg.type].snelheid;
+          const tekst = this.verkeerTool === 'snelheid' ? `${nu} km/u → ${this.snelheidKeuze ?? WEGTYPEN[s.seg.type].snelheid} km/u · slepen = meer wegen · rechts = standaard` : `Verbod ${({ auto: "auto's", vracht: 'vrachtverkeer', bus: 'bussen' } as const)[this.verbodKeuze]} aan/uit · rechts = alles toestaan`;
+          return { soort: 'markeer', segment: s.seg.id, kleur: this.verkeerTool === 'snelheid' ? '#4dabf7' : '#ff6b6b', tekst };
+        }
+        return { soort: 'geen' };
       }
       case 'zone': {
         const kleur = zoneKleur(this.zone), naam = ZONES.find(z => z.id === this.zone)?.naam ?? '';

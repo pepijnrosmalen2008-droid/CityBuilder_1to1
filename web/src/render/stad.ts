@@ -185,6 +185,10 @@ export class StadWeergave {
         case 'gebouw-': this.tegels.wis(`geb:${e.id}`); this.props.wis(`geb:${e.id}`); this.bouwRij.delete(e.id); break;
       }
     }
+    // Verkeersregels die het wegdek veranderen (borden, pijlen, oversteekplaatsen, lichten).
+    const rv = this.w.net.regels.haalVuil();
+    for (const id of rv.segs) this.segRij.add(id);
+    for (const k of rv.knopen) for (const sid of this.w.net.knopen.get(k)?.segs ?? []) this.segRij.add(sid);
     for (const v of this.w.bomen.haalVuileVakken()) this.natuur(v);
     const start = performance.now();
     // Wegen en kruispunten eerst (die zie je meteen na het klikken).
