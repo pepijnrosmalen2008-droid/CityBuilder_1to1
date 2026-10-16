@@ -52,6 +52,9 @@ export interface Lichten {
   fase: number; t: number;
   stand: 'groen' | 'oranje' | 'rood';
   groen: number;
+  /** Eigen fasen (TM:PE): groentijd per fase, vaste cyclus. */
+  tijden?: number[];
+  vast?: boolean;
 }
 
 /** Rangorde van wegtypen voor voorrang en routekeuze. */
@@ -165,7 +168,8 @@ export class Rijstroken {
       const groepen: { uits: Baan[]; afslag: Afslag }[] = [];
       for (const uits of uitgaand) {
         const zelfde = uits[0].seg === inSeg;
-        if (zelfde && !keren) continue;
+        const eigenKeer = ins.some((_, i) => regels.verbindingenVan(inSeg, knoopId, i)?.some(d => d.seg === inSeg));
+        if (zelfde && !keren && !eigenKeer) continue;
         const dout = this.richting(uits[0].pts, false);
         const cr = din.x * dout.z - din.z * dout.x, dt = din.x * dout.x + din.z * dout.z;
         const hoek = Math.atan2(cr, dt); // > 0 = rechtsaf
@@ -192,6 +196,7 @@ export class Rijstroken {
       // Ingestelde pijlen (TM:PE): per strook de toegestane afslagen; stroken zonder instelling = standaard.
       const eigen = regels.heeftPijlen(inSeg, knoopId);
       const perStrook: Afslag[][] = ins.map((_, i) => (eigen ? regels.pijlenVan(inSeg, knoopId, i) : null) ?? stdPerStrook[i]);
+      const actueel: Afslag[][] = ins.map(() => []);
       for (const gr of groepen) {
         const { uits, afslag } = gr;
         const nUit = uits.length;
@@ -215,6 +220,13 @@ export class Rijstroken {
           for (const [i, j] of paren) for (const d of [-1, 1]) { const jj = j + d; if (jj >= 0 && jj < nUit && !paren.some(p => p[0] === i && p[1] === jj)) extra.push([i, jj]); }
           paren.push(...extra);
         }
+        // Rijstrookverbinder (TM:PE): stroken met eigen verbindingen gaan precies daarheen.
+        if (regels.heeftVerbinder(inSeg, knoopId)) {
+          paren = paren.filter(([i]) => !regels.verbindingenVan(inSeg, knoopId, i));
+          for (let i = 0; i < nIn; i++) for (const d of regels.verbindingenVan(inSeg, knoopId, i) ?? []) if (d.seg === uits[0].seg && d.index < nUit) paren.push([i, d.index]);
+          if (afslag === 'keer' && !keren) paren = paren.filter(([i]) => regels.verbindingenVan(inSeg, knoopId, i)?.some(d => d.seg === inSeg));
+        }
+        for (const [i] of paren) if (!actueel[i].includes(afslag)) actueel[i].push(afslag);
         for (const [i, j] of paren) {
           const A = ins[i], B = uits[j];
           const p0 = A.pts[A.pts.length - 1], p1 = B.pts[0];
@@ -241,7 +253,7 @@ export class Rijstroken {
           set.add(B.seg + B.richting);
         }
       }
-      this.afslagen.set(`${inSeg}:${knoopId}`, { seg: inSeg, knoop: knoopId, mogelijk: groepen.map(g => g.afslag), perStrook, standaard: stdPerStrook });
+      this.afslagen.set(`${inSeg}:${knoopId}`, { seg: inSeg, knoop: knoopId, mogelijk: groepen.map(g => g.afslag), perStrook: regels.heeftVerbinder(inSeg, knoopId) ? actueel : perStrook, standaard: stdPerStrook });
     }
     // Conflicten: kruisende verbindingen of samenkomen op dezelfde strook (niet vanaf dezelfde strook).
     for (let i = 0; i < nieuw.length; i++) for (let j = i + 1; j < nieuw.length; j++) {
@@ -278,6 +290,16 @@ export class Rijstroken {
       if (best) { gebruikt.add(best.s.id); fase.push(best.s.id); }
       fases.push(fase);
     }
+    // Eigen fasen (TM:PE): vaste cyclus met een groentijd per fase.
+    const eigen = this.net.regels.knoop.get(knoopId)?.fasen;
+    if (eigen?.length) {
+      const bestaand = new Set(armen.map(a => a.s.id));
+      const f = eigen.map(x => ({ segs: x.segs.filter(s => bestaand.has(s)), tijd: x.tijd })).filter(x => x.segs.length);
+      if (f.length) {
+        this.lichten.set(knoopId, { knoop: knoopId, fases: f.map(x => x.segs), tijden: f.map(x => x.tijd), vast: true, fase: oud && oud.fase < f.length ? oud.fase : 0, t: oud?.t ?? 0, stand: 'groen', groen: f[0].tijd });
+        return;
+      }
+    }
     if (fases.length < 2) return;
     const groen = this.net.regels.groenTijd(knoopId) ?? 14 + max * 3;
     this.lichten.set(knoopId, { knoop: knoopId, fases, fase: oud && oud.fase < fases.length ? oud.fase : 0, t: oud?.t ?? (knoopId * 7.3) % groen, stand: 'groen', groen });
@@ -292,17 +314,19 @@ export class Rijstroken {
     for (const l of this.lichten.values()) {
       l.t += dt;
       const ORANJE = 3, ALLROOD = 1.5, MIN = 6;
-      if (vraag && l.stand === 'groen' && l.t > MIN && l.t < l.groen) {
-        const hier = l.fases[l.fase].reduce((n, s) => n + vraag(l.knoop, s), 0);
+      if (l.tijden) l.groen = l.tijden[l.fase] ?? l.groen;
+      const vr = l.vast ? undefined : vraag;
+      if (vr && l.stand === 'groen' && l.t > MIN && l.t < l.groen) {
+        const hier = l.fases[l.fase].reduce((n, s) => n + vr(l.knoop, s), 0);
         let elders = 0;
-        l.fases.forEach((f, i) => { if (i !== l.fase) elders += f.reduce((n, s) => n + vraag(l.knoop, s), 0); });
+        l.fases.forEach((f, i) => { if (i !== l.fase) elders += f.reduce((n, s) => n + vr(l.knoop, s), 0); });
         if (hier === 0 && elders > 0) l.t = l.groen;
       }
       // Geen vraag voor de volgende fase: die overslaan.
-      if (vraag && l.t >= l.groen + ORANJE + ALLROOD && l.fases.length > 2) {
+      if (vr && l.t >= l.groen + ORANJE + ALLROOD && l.fases.length > 2) {
         for (let k = 1; k < l.fases.length; k++) {
           const f = (l.fase + k) % l.fases.length;
-          if (l.fases[f].some(s => vraag(l.knoop, s) > 0)) { l.fase = (f - 1 + l.fases.length) % l.fases.length; break; }
+          if (l.fases[f].some(s => vr(l.knoop, s) > 0)) { l.fase = (f - 1 + l.fases.length) % l.fases.length; break; }
         }
       }
       if (l.t < l.groen) l.stand = 'groen';

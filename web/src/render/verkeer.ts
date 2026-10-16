@@ -149,7 +149,8 @@ export class VerkeerWeergave {
     this.koppen = [];
     const mb = new MeshBouwer();
     for (const l of st.lichten.values()) {
-      for (const fase of l.fases) for (const seg of fase) {
+      // Een paal voor elke aankomende weg (ook als die in een eigen fasenschema nooit groen krijgt).
+      for (const seg of this.w.net.knopen.get(l.knoop)?.segs ?? []) {
         const s = this.w.net.segmenten.get(seg);
         if (!s) continue;
         const r = s.b === l.knoop ? 'A' : 'B';

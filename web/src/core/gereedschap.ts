@@ -17,7 +17,7 @@ import { PERCEEL_BREEDTE, vrijeDiepte } from './percelen';
 
 export type Modus = 'weg' | 'zone' | 'district' | 'gebied' | 'dienst' | 'opwaarderen' | 'sloop' | 'kijk' | 'verkeer' | 'verplaats';
 /** Onderdelen van het verkeersgereedschap (zoals TM:PE). */
-export type VerkeerTool = 'voorrang' | 'hoofdweg' | 'lichten' | 'pijlen' | 'regels' | 'snelheid' | 'verbod';
+export type VerkeerTool = 'voorrang' | 'hoofdweg' | 'lichten' | 'pijlen' | 'verbinder' | 'regels' | 'snelheid' | 'verbod';
 
 /** Tekenstijl van het wegengereedschap (zoals in Cities: Skylines). */
 export type Stijl = 'recht' | 'bocht' | 'vrij' | 'raster';

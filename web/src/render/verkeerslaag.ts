@@ -50,10 +50,25 @@ export class VerkeersLaag {
   private pool = new Map<string, Item>();
   private v = new THREE.Vector3();
   aan = false;
+  /** Schermvlakken van de UI (werkbalk, HUD, ...): iconen daaronder verbergen. */
+  private bedekt: DOMRect[] = [];
+  /** Lijnen van de rijstrookverbinder. */
+  private svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  /** Gekozen aankomende strook in de rijstrookverbinder. */
+  private kies: { knoop: number; seg: number; index: number } | null = null;
+  /** Kruispunt waarvan de lichtfasen bewerkt worden, en het paneel. */
+  private fasenKnoop: number | null = null;
+  private paneel = document.createElement('div');
 
   constructor(private w: Wereld, private cam: THREE.PerspectiveCamera, private g: Gereedschap, private klaar: () => void = () => {}) {
     this.el.id = 'verkeerslaag';
     document.body.appendChild(this.el);
+    this.svg.setAttribute('class', 'vl-svg');
+    this.el.appendChild(this.svg);
+    this.paneel.id = 'fasenpaneel'; this.paneel.className = 'paneel';
+    this.paneel.style.display = 'none';
+    this.paneel.onpointerdown = e => e.stopPropagation();
+    document.body.appendChild(this.paneel);
   }
 
   private scherm(x: number, y: number, z: number): [number, number] | null {
@@ -72,6 +87,10 @@ export class VerkeersLaag {
       it = { el, sig: '', gezien: true };
       this.pool.set(sleutel, it);
     }
+    it.gezien = true;
+    // Onder de werkbalk, de HUD of een paneel: niet tonen (daar kun je er toch niet op klikken).
+    const m = 16;
+    if (this.bedekt.some(r => xy[0] > r.left - m && xy[0] < r.right + m && xy[1] > r.top - m && xy[1] < r.bottom + m)) { it.el.style.display = 'none'; return; }
     if (it.sig !== sig) { it.sig = sig; it.el.innerHTML = html(); bind(it.el); }
     it.el.style.transform = `translate(${xy[0].toFixed(1)}px, ${xy[1].toFixed(1)}px) translate(-50%, -50%)`;
     it.el.style.display = '';
@@ -87,10 +106,15 @@ export class VerkeersLaag {
   werkBij(doel: THREE.Vector3, afstand: number) {
     const aan = this.aan && this.g.modus === 'verkeer';
     this.el.style.display = aan ? '' : 'none';
+    const tool = this.g.verkeerTool;
+    if (!aan || tool !== 'lichten') this.sluitFasen();
     if (!aan) return;
     for (const it of this.pool.values()) it.gezien = false;
+    this.bedekt = ['werkbalk', 'hud', 'infoknoppen', 'zoomknoppen', 'nieuws', 'fasenpaneel', 'klaarknop'].map(id => document.getElementById(id)).filter((e): e is HTMLElement => !!e && e.offsetParent !== null).map(e => e.getBoundingClientRect()).filter(r => r.width > 0);
     const net = this.w.net, R = net.regels, vk = this.w.verkeer.stroken;
-    const tool = this.g.verkeerTool;
+    if (tool !== 'verbinder') { this.svg.innerHTML = ''; this.kies = null; }
+    else this.tekenVerbinder(doel, afstand);
+    if (tool === 'lichten' && this.fasenKnoop !== null) this.werkFasenBij();
     const straal = Math.max(140, Math.min(520, afstand * 1.2));
     const dichtbij = (x: number, z: number) => Math.hypot(x - doel.x, z - doel.z) < straal;
     const ver = afstand > 330;
@@ -106,15 +130,18 @@ export class VerkeersLaag {
           const xy = this.scherm(k.p.x, k.y + 4, k.p.z);
           if (!xy) continue;
           const keuze = R.lichtKeuze(k.id), groen = vk.lichten.get(k.id)?.groen;
-          const sig = `${lichten}|${keuze}|${groen ?? ''}|${ver}`;
+          const sig = `${lichten}|${keuze}|${groen ?? ''}|${ver}|${vk.lichten.get(k.id)?.vast ?? ''}`;
           this.zet(`l${k.id}`, 'vl-licht', xy, sig, () =>
             `<button class="vl-knop ${lichten ? 'aan' : ''}" title="${lichten ? 'Verkeerslichten uitzetten' : 'Verkeerslichten plaatsen'} (rechts klikken = automatisch)">${lichtSvg(lichten)}</button>` +
             (keuze !== 'auto' ? `<span class="vl-label">${keuze === 'aan' ? 'handmatig' : 'uit'}</span>` : '') +
-            (lichten && groen && !ver ? `<span class="vl-groen"><button data-g="-5">−</button><b>${Math.round(groen)} s</b><button data-g="5">+</button></span>` : ''),
+            (lichten && groen && !ver ? (vk.lichten.get(k.id)?.vast ? `<span class="vl-label">eigen fasen</span>` : `<span class="vl-groen"><button data-g="-5">−</button><b>${Math.round(groen)} s</b><button data-g="5">+</button></span>`) : '') +
+            (lichten && !ver ? `<button class="vl-bewerk" title="Fasen per richting bewerken">✎</button>` : ''),
           el => {
             const knop = el.querySelector<HTMLElement>('.vl-knop')!;
             this.klik(knop, () => R.zetKnoop(k.id, { licht: lichten ? 'uit' : 'aan' }));
             knop.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); R.zetKnoop(k.id, { licht: 'auto', groen: undefined }); this.klaar(); };
+            const bw = el.querySelector<HTMLElement>('.vl-bewerk');
+            if (bw) this.klik(bw, () => this.openFasen(k.id));
             el.querySelectorAll<HTMLElement>('[data-g]').forEach(b => this.klik(b, () => {
               const nu = vk.lichten.get(k.id)?.groen ?? 20;
               R.zetKnoop(k.id, { licht: R.lichtKeuze(k.id) === 'auto' ? 'aan' : R.lichtKeuze(k.id), groen: Math.max(8, Math.min(90, nu + Number(b.dataset.g))) });
@@ -220,6 +247,128 @@ export class VerkeersLaag {
       }
     }
     for (const [k, it] of this.pool) if (!it.gezien) { if (this.pool.size > 600) { it.el.remove(); this.pool.delete(k); } else it.el.style.display = 'none'; }
+  }
+
+  // ─── Rijstrookverbinder ────────────────────────────────────────────────────────
+
+  private static KLEUREN = ['#4dabf7', '#ffa94d', '#69db7c', '#f783ac', '#b197fc', '#ffd43b', '#63e6be', '#ff8787'];
+
+  private tekenVerbinder(doel: THREE.Vector3, afstand: number) {
+    const net = this.w.net, R = net.regels, vk = this.w.verkeer.stroken;
+    const straal = Math.max(90, Math.min(220, afstand * 0.9));
+    const paden: string[] = [];
+    let nKnoop = 0;
+    for (const k of net.knopen.values()) {
+      if (k.segs.length < 2 || Math.hypot(k.p.x - doel.x, k.p.z - doel.z) > straal || nKnoop > 14) continue;
+      nKnoop++;
+      const gekozenHier = this.kies?.knoop === k.id;
+      for (const sid of k.segs) {
+        const seg = net.segmenten.get(sid);
+        if (!seg) continue;
+        const rIn: 'A' | 'B' = seg.b === k.id ? 'A' : 'B', rUit: 'A' | 'B' = seg.a === k.id ? 'A' : 'B';
+        // Aankomende stroken: gekleurde stip met hun verbindingen als lijn.
+        for (const b of vk.stroken(sid, rIn)) {
+          const e = b.pts[b.pts.length - 1];
+          const xy = this.scherm(e.x, e.y + 0.4, e.z);
+          if (!xy) continue;
+          const kleur = VerkeersLaag.KLEUREN[b.index % VerkeersLaag.KLEUREN.length];
+          const gekozen = gekozenHier && this.kies!.seg === sid && this.kies!.index === b.index;
+          const eigen = !!R.verbindingenVan(sid, k.id, b.index);
+          for (const cid of b.uit) {
+            const c = vk.verbinding(cid);
+            if (!c) continue;
+            const pts = c.pts.filter((_, i) => i % 2 === 0 || i === c.pts.length - 1).map(p => this.scherm(p.x, p.y + 0.3, p.z)).filter((p): p is [number, number] => !!p);
+            if (pts.length < 2) continue;
+            const d = 'M' + pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+            paden.push(`<path d="${d}" stroke="${kleur}" stroke-width="${gekozen ? 4 : 2.4}" opacity="${gekozenHier && !gekozen ? 0.25 : 0.9}" fill="none" stroke-linecap="round"/>`);
+          }
+          this.zet(`ci${b.id}`, 'vl-stip', xy, `${kleur}|${gekozen}|${eigen}`, () => `<button class="vl-in ${gekozen ? 'gekozen' : ''} ${eigen ? 'eigen' : ''}" style="--k:${kleur}" title="Aankomende strook ${b.index + 1} · klik = kiezen · rechts = standaard"></button>`, el => {
+            const knop = el.querySelector<HTMLElement>('button')!;
+            this.klik(knop, () => { this.kies = gekozen ? null : { knoop: k.id, seg: sid, index: b.index }; });
+            knop.oncontextmenu = ev => { ev.preventDefault(); ev.stopPropagation(); R.zetVerbinder(sid, k.id, b.index, null); this.klaar(); };
+          });
+        }
+        // Vertrekkende stroken: ring; met een gekozen aankomende strook klik je ze aan of uit.
+        for (const b of vk.stroken(sid, rUit)) {
+          const s0 = b.pts[0];
+          const xy = this.scherm(s0.x, s0.y + 0.4, s0.z);
+          if (!xy) continue;
+          let aanDoel = false;
+          if (gekozenHier) {
+            const bron = vk.stroken(this.kies!.seg, net.segmenten.get(this.kies!.seg)!.b === k.id ? 'A' : 'B').find(x => x.index === this.kies!.index);
+            aanDoel = !!bron?.uit.some(cid => vk.verbinding(cid)?.naar === b.id);
+          }
+          this.zet(`co${b.id}`, 'vl-stip', xy, `${gekozenHier}|${aanDoel}`, () => `<button class="vl-uit ${gekozenHier ? 'actief' : ''} ${aanDoel ? 'aan' : ''}" title="Vertrekkende strook ${b.index + 1}${gekozenHier ? ' · klik = verbinden of losmaken' : ''}"></button>`, el => {
+            this.klik(el.querySelector<HTMLElement>('button')!, () => {
+              const kz = this.kies;
+              if (!kz || kz.knoop !== k.id) { this.g.melding = 'Kies eerst een aankomende strook (gekleurde stip)'; return; }
+              const bronSeg = net.segmenten.get(kz.seg)!;
+              const bron = vk.stroken(kz.seg, bronSeg.b === k.id ? 'A' : 'B').find(x => x.index === kz.index);
+              const nu = (bron?.uit ?? []).map(cid => vk.verbinding(cid)).filter(Boolean).map(c => { const nb = vk.baan(c!.naar)!; return { seg: nb.seg, index: nb.index }; });
+              const heeft = nu.some(d => d.seg === sid && d.index === b.index);
+              const nieuw = heeft ? nu.filter(d => !(d.seg === sid && d.index === b.index)) : [...nu, { seg: sid, index: b.index }];
+              if (!nieuw.length) { this.g.melding = 'Een strook moet ergens heen kunnen'; return; }
+              R.zetVerbinder(kz.seg, k.id, kz.index, nieuw);
+            });
+          });
+        }
+      }
+    }
+    this.svg.innerHTML = paden.join('');
+  }
+
+  // ─── Lichtfasen ───────────────────────────────────────────────────────────────
+
+  private armen(knoop: number) {
+    const net = this.w.net, vk = this.w.verkeer.stroken;
+    return (net.knopen.get(knoop)?.segs ?? []).filter(s => vk.afslagen.has(`${s}:${knoop}`)).map((seg, i) => ({ seg, letter: String.fromCharCode(65 + i), naam: net.segmenten.get(seg)?.naam || 'naamloze weg' }));
+  }
+
+  openFasen(knoop: number) {
+    const R = this.w.net.regels, l = this.w.verkeer.stroken.lichten.get(knoop);
+    if (!R.knoop.get(knoop)?.fasen && l) R.zetKnoop(knoop, { licht: 'aan', fasen: l.fases.map((f, i) => ({ segs: [...f], tijd: Math.round(l.tijden?.[i] ?? l.groen) })) });
+    this.fasenKnoop = knoop;
+    this.tekenFasen();
+  }
+
+  private sluitFasen() { if (this.fasenKnoop !== null) { this.fasenKnoop = null; this.paneel.style.display = 'none'; } }
+
+  private tekenFasen() {
+    const k = this.fasenKnoop;
+    if (k === null) return;
+    const R = this.w.net.regels;
+    const fasen = R.knoop.get(k)?.fasen ?? [];
+    const armen = this.armen(k);
+    const zet = (f: typeof fasen) => { R.zetKnoop(k, { licht: 'aan', fasen: f }); this.tekenFasen(); this.klaar(); };
+    this.paneel.style.display = '';
+    this.paneel.innerHTML = `<div class="fp-kop"><b>Lichtfasen</b><span>${armen.map(a => a.naam).filter((x, i, l) => l.indexOf(x) === i).slice(0, 2).join(' / ')}</span><button class="knop" data-sluit title="Sluiten">×</button></div>`
+      + `<div class="fp-uitleg">Per fase: welke richtingen tegelijk groen hebben en hoe lang. Daarna 3 s oranje en 1,5 s alles rood.</div>`
+      + fasen.map((f, i) => `<div class="fp-fase" data-i="${i}"><span class="fp-nr">${i + 1}</span><div class="fp-armen">${armen.map(a => `<button class="fp-arm ${f.segs.includes(a.seg) ? 'aan' : ''}" data-f="${i}" data-arm="${a.seg}" title="${a.naam}">${a.letter}</button>`).join('')}</div><div class="fp-tijd"><button data-f="${i}" data-t="-5">−</button><b>${f.tijd} s</b><button data-f="${i}" data-t="5">+</button></div><button class="fp-weg" data-f="${i}" data-weg title="Fase weghalen">×</button></div>`).join('')
+      + `<div class="fp-knoppen"><button class="knop" data-plus>+ Fase</button><button class="knop" data-std title="Terug naar de automatische, verkeersafhankelijke regeling">Automatisch</button></div>`
+      + `<div class="fp-legenda">${armen.map(a => `<span><b>${a.letter}</b> ${a.naam}</span>`).join('')}</div>`;
+    const knop = (sel: string, f: (e: HTMLElement) => void) => this.paneel.querySelectorAll<HTMLElement>(sel).forEach(e => (e.onclick = ev => { ev.stopPropagation(); f(e); }));
+    knop('[data-sluit]', () => this.sluitFasen());
+    knop('[data-arm]', e => { const i = Number(e.dataset.f), seg = Number(e.dataset.arm); const f = fasen.map(x => ({ ...x, segs: [...x.segs] })); f[i].segs = f[i].segs.includes(seg) ? f[i].segs.filter(x => x !== seg) : [...f[i].segs, seg]; zet(f); });
+    knop('[data-t]', e => { const i = Number(e.dataset.f); const f = fasen.map(x => ({ ...x })); f[i].tijd = Math.max(5, Math.min(120, f[i].tijd + Number(e.dataset.t))); zet(f); });
+    knop('[data-weg]', e => { const i = Number(e.dataset.f); if (fasen.length <= 1) { this.g.melding = 'Minstens één fase'; return; } zet(fasen.filter((_, j) => j !== i)); });
+    knop('[data-plus]', () => zet([...fasen, { segs: [], tijd: 15 }]));
+    knop('[data-std]', () => { R.zetKnoop(k, { fasen: undefined }); this.sluitFasen(); this.klaar(); });
+  }
+
+  /** Elk beeld: de fase die nu groen is oplichten, en letters bij de armen op de kaart. */
+  private werkFasenBij() {
+    const k = this.fasenKnoop!, l = this.w.verkeer.stroken.lichten.get(k);
+    this.paneel.querySelectorAll<HTMLElement>('.fp-fase').forEach(e => e.classList.toggle('nu', !!l && Number(e.dataset.i) === l.fase && l.stand === 'groen'));
+    const net = this.w.net;
+    for (const a of this.armen(k)) {
+      const seg = net.segmenten.get(a.seg);
+      if (!seg) continue;
+      const q = puntBijEind(net, seg, k, eindAfstand(net, seg, k) + 2);
+      const xy = this.scherm(q.x, q.y + 3, q.z);
+      if (!xy) continue;
+      const groen = l ? l.fases[l.fase]?.includes(a.seg) && l.stand !== 'rood' : false;
+      this.zet(`fa${a.seg}:${k}`, 'vl-letter', xy, `${a.letter}|${groen}`, () => `<span class="${groen ? 'groen' : ''}">${a.letter}</span>`, () => {});
+    }
   }
 }
 

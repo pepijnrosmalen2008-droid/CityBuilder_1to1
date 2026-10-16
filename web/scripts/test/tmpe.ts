@@ -35,6 +35,31 @@ R.zetKnoop(metLicht, { licht: 'uit' }); vk.stap(0.1);
 check('automatische lichten uitgezet', !vk.stroken.lichten.has(metLicht));
 R.zetKnoop(metLicht, { licht: 'auto' }); R.zetKnoop(knoop.id, { licht: 'auto', groen: undefined }); vk.stap(0.1);
 check('automatisch terug', vk.stroken.lichten.has(metLicht) && !R.knoop.size);
+// Rijstrookverbinder: strook 0 van de arm alleen naar één doel.
+{
+  const doelSeg = knoop.segs.find(x => x !== inSeg)!;
+  R.zetVerbinder(inSeg, knoop.id, 0, [{ seg: doelSeg, index: 0 }]);
+  vk.stap(0.1);
+  const r = inSeg === undefined ? 'A' : (net.segmenten.get(inSeg)!.b === knoop.id ? 'A' : 'B');
+  const baan = vk.stroken.stroken(inSeg, r)[0];
+  const uit = baan.uit.map(id => vk.stroken.verbinding(id)!);
+  check('verbinder: precies één verbinding', uit.length === 1 && uit[0].doelSeg === doelSeg, uit.map(c => c.doelSeg).join(','));
+  R.zetVerbinder(inSeg, knoop.id, 0, null); vk.stap(0.1);
+  check('verbinder weg: standaard terug', vk.stroken.stroken(inSeg, r)[0].uit.length > 1);
+}
+// Eigen lichtfasen.
+{
+  const [a, b, ...rest] = knoop.segs;
+  R.zetKnoop(knoop.id, { licht: 'aan', fasen: [{ segs: [a], tijd: 10 }, { segs: [b, ...rest], tijd: 30 }] });
+  vk.stap(0.1);
+  const l = vk.stroken.lichten.get(knoop.id)!;
+  check('fasen ingesteld', !!l && l.vast === true && l.tijden?.join() === '10,30');
+  const f0 = l.fase;
+  for (let i = 0; i < 160; i++) vk.stap(0.1);
+  check('fase wisselt na 10 s + oranje', vk.stroken.lichten.get(knoop.id)!.fase !== f0);
+  R.zetKnoop(knoop.id, { licht: 'auto', fasen: undefined }); vk.stap(0.1);
+  check('fasen weg', !R.knoop.has(knoop.id));
+}
 // Snelheid.
 R.zetLimiet(inSeg, 30); vk.stap(0.1);
 check('maximumsnelheid 30', vk.stroken.stroken(inSeg, 'A').concat(vk.stroken.stroken(inSeg, 'B')).every(b => Math.abs(b.vmax - 30 / 3.6) < 0.01));

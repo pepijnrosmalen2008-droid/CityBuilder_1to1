@@ -34,7 +34,11 @@ export interface EindRegels {
 
 export const EIND_STANDAARD: Required<Omit<EindRegels, 'bord'>> = { keren: false, wisselen: false, blokkeren: false, oversteek: true, rechtsDoorRood: false };
 
-export interface KnoopRegels { licht?: LichtKeuze; groen?: number }
+/** Eigen lichtfase: welke aankomende wegen tegelijk groen hebben, en hoe lang (s). */
+export interface LichtFase { segs: number[]; tijd: number }
+export interface KnoopRegels { licht?: LichtKeuze; groen?: number; fasen?: LichtFase[] }
+/** Doelstrook van een eigen rijstrookverbinding: uitgaande weg en strook (0 = rechts). */
+export interface Doelstrook { seg: number; index: number }
 
 const eindSleutel = (seg: number, knoop: number) => `${seg}:${knoop}`;
 const strookSleutel = (seg: number, knoop: number, index: number) => `${seg}:${knoop}:${index}`;
@@ -46,6 +50,8 @@ export class Verkeersregels {
   eind = new Map<string, EindRegels>();
   knoop = new Map<number, KnoopRegels>();
   pijlen = new Map<string, Afslag[]>();
+  /** Rijstrookverbinder: per aankomende strook (seg:knoop:index) precies deze doelstroken. */
+  verbinder = new Map<string, Doelstrook[]>();
   snelheid = new Map<number, number>();
   verbod = new Map<number, Verbod[]>();
   /** Vastgelopen voertuigen verdwijnen na een tijd (zoals CS); TM:PE kan dat uitzetten. */
@@ -81,6 +87,7 @@ export class Verkeersregels {
     const r = { ...(this.knoop.get(knoop) ?? {}), ...deel };
     if (r.licht === 'auto') delete r.licht;
     if (r.groen === undefined) delete r.groen;
+    if (!r.fasen?.length) delete r.fasen;
     if (Object.keys(r).length) this.knoop.set(knoop, r); else this.knoop.delete(knoop);
     this.gewijzigd(undefined, knoop);
   }
@@ -94,6 +101,20 @@ export class Verkeersregels {
     if (a) this.pijlen.set(k, [...new Set(a)]); else this.pijlen.delete(k);
     this.gewijzigd(seg, knoop);
   }
+  // ─── Rijstrookverbinder ───
+  verbindingenVan(seg: number, knoop: number, index: number): Doelstrook[] | null { return this.verbinder.get(strookSleutel(seg, knoop, index)) ?? null; }
+  heeftVerbinder(seg: number, knoop: number) { for (const k of this.verbinder.keys()) if (k.startsWith(eindSleutel(seg, knoop) + ':')) return true; return false; }
+  zetVerbinder(seg: number, knoop: number, index: number, lijst: Doelstrook[] | null) {
+    const k = strookSleutel(seg, knoop, index);
+    if (lijst) this.verbinder.set(k, lijst.map(x => ({ ...x }))); else this.verbinder.delete(k);
+    this.gewijzigd(seg, knoop);
+  }
+  wisVerbinder(knoop: number) {
+    for (const k of [...this.verbinder.keys()]) if (Number(k.split(':')[1]) === knoop) this.verbinder.delete(k);
+    this.gewijzigd(undefined, knoop);
+  }
+  heeftVerbinderOp(knoop: number) { for (const k of this.verbinder.keys()) if (Number(k.split(':')[1]) === knoop) return true; return false; }
+
   wisPijlen(seg: number, knoop: number) {
     for (const k of [...this.pijlen.keys()]) if (k.startsWith(eindSleutel(seg, knoop) + ':')) this.pijlen.delete(k);
     this.gewijzigd(seg, knoop);
@@ -123,6 +144,7 @@ export class Verkeersregels {
     const weg = (k: string) => { const [s, n] = k.split(':').map(Number); return !bestaatSeg(s) || !bestaatKnoop(n); };
     for (const k of [...this.eind.keys()]) if (weg(k)) this.eind.delete(k);
     for (const k of [...this.pijlen.keys()]) if (weg(k)) this.pijlen.delete(k);
+    for (const k of [...this.verbinder.keys()]) if (weg(k)) this.verbinder.delete(k);
     for (const k of [...this.knoop.keys()]) if (!bestaatKnoop(k)) this.knoop.delete(k);
     for (const k of [...this.snelheid.keys()]) if (!bestaatSeg(k)) this.snelheid.delete(k);
     for (const k of [...this.verbod.keys()]) if (!bestaatSeg(k)) this.verbod.delete(k);
@@ -131,10 +153,10 @@ export class Verkeersregels {
   haalVuil() { const v = this.vuil; this.vuil = { segs: new Set(), knopen: new Set() }; return v; }
 
   naarJson() {
-    return { eind: [...this.eind], knoop: [...this.knoop], pijlen: [...this.pijlen], snelheid: [...this.snelheid], verbod: [...this.verbod], verdwijnen: this.verdwijnen };
+    return { eind: [...this.eind], knoop: [...this.knoop], pijlen: [...this.pijlen], verbinder: [...this.verbinder], snelheid: [...this.snelheid], verbod: [...this.verbod], verdwijnen: this.verdwijnen };
   }
   vanJson(j: Partial<ReturnType<Verkeersregels['naarJson']>> | undefined) {
-    this.eind = new Map(j?.eind ?? []); this.knoop = new Map(j?.knoop ?? []); this.pijlen = new Map(j?.pijlen ?? []);
+    this.eind = new Map(j?.eind ?? []); this.knoop = new Map(j?.knoop ?? []); this.pijlen = new Map(j?.pijlen ?? []); this.verbinder = new Map(j?.verbinder ?? []);
     this.snelheid = new Map(j?.snelheid ?? []); this.verbod = new Map(j?.verbod ?? []); this.verdwijnen = j?.verdwijnen ?? true;
     this.versie++;
   }
