@@ -15,7 +15,7 @@ import { PERCEEL_BREEDTE, vrijeDiepte } from './percelen';
 export type Modus = 'weg' | 'zone' | 'district' | 'gebied' | 'dienst' | 'opwaarderen' | 'sloop' | 'kijk';
 
 /** Tekenstijl van het wegengereedschap (zoals in Cities: Skylines). */
-export type Stijl = 'recht' | 'bocht' | 'vrij';
+export type Stijl = 'recht' | 'bocht' | 'vrij' | 'raster';
 
 /** Hulplijn: oneindige lijn door p met richting d. */
 export interface Hulplijn { p: V2; d: V2; soort: 'verlengde' | 'haaks' | 'blok' | 'hoek' }
@@ -25,7 +25,7 @@ export interface KavelBand { voor: V3[]; achter: V3[]; streepjes: [V3, V3][] }
 
 export type Voorbeeld =
   | { soort: 'geen' }
-  | { soort: 'weg'; as: V3[]; breedte: number; geldig: boolean; tekst: string; punten: V3[]; lijnen: [V3, V3][]; snap: V3 | null; kavels: KavelBand[] }
+  | { soort: 'weg'; as: V3[]; breedte: number; geldig: boolean; tekst: string; punten: V3[]; lijnen: [V3, V3][]; snap: V3 | null; kavels: KavelBand[]; meer?: V3[][] }
   | { soort: 'penseel'; m: V3; r: number; kleur: string }
   | { soort: 'zoneSel'; kavels: number[]; kleur: string; tekst: string; kader: V3[] | null; m: V3 | null; r: number }
   | { soort: 'markeer'; segment?: number; gebouw?: number; gebied?: number; dienst?: number; kleur: string; tekst: string }
@@ -61,6 +61,14 @@ export class Gereedschap {
   private ref: V2 | null = null;
   private muis: V3 | null = null;
   private schilderen = false;
+  /** Slepen met slopen of opwaarderen (zoals in CS): alles onder de muis wordt meegenomen. */
+  private slepen = false;
+  private gesleept = new Set<string>();
+  private sleepPunt: V2 | null = null;
+  /** Raster: tweede punt (richting en lengte). */
+  private rasterB: V2 | null = null;
+  /** Parallel bouwen: afstand van de tweede weg (0 = uit), rechts van de tekenrichting. */
+  parallel = 0;
   private schilderKlok = 0;
   private meldingKlok = 0;
   grondstof: Grondstof = 'landbouw';
@@ -83,7 +91,7 @@ export class Gereedschap {
   }
 
   zetModus(m: Modus) { this.modus = m; this.annuleer(); this.melding = ''; if (m !== 'kijk') this.selectie = null; }
-  annuleer() { this.start = null; this.ctrl = null; this.raak = null; this.ref = null; this.schilderen = false; this.gebiedPunten = []; this.hoofd = null; }
+  annuleer() { this.rasterB = null; this.slepen = false; this.start = null; this.ctrl = null; this.raak = null; this.ref = null; this.schilderen = false; this.gebiedPunten = []; this.hoofd = null; }
 
   /** Begin op p: onthoud de richting van een aansluitende weg (doorlopen en hoeksnappen). */
   private begin(p: V2) {
@@ -286,6 +294,7 @@ export class Gereedschap {
     const w = this.wereld;
     switch (this.modus) {
       case 'weg': {
+        if (this.stijl === 'raster') { this.rasterKlik(this.snap(p)); return; }
         if (!this.start) { this.begin(this.snap(p)); return; }
         const b0 = this.eindpunt(p);
         const { c: c0, wacht } = this.controle(b0);
@@ -296,7 +305,9 @@ export class Gereedschap {
           const kA = w.net.knoopBij(this.start, 0.5), kB = w.net.knoopBij(b, 0.5);
           if ((this.niveau !== 0 || !!kA?.niveau || !!kB?.niveau) && Math.abs(yb - ya) / Math.max(1, L) > 0.12) { this.melding = 'Te steil: maak de weg langer'; return; }
         }
+        const par = this.parallel ? this.verschuif(this.start, c, b, this.parallel) : null;
         const r = w.legWeg(this.start, c, b, this.wegtype, this.niveau, this.afronden && this.stijl === 'recht');
+        if (r.ok && par) w.legWeg(par[0], par[1], par[2], this.wegtype, this.niveau, false);
         if (r.ok) {
           // Verder vanaf het eindpunt; bocht en vrij lopen vloeiend door.
           const raak = norm2(sub2(b, c));
@@ -329,8 +340,8 @@ export class Gereedschap {
         return;
       }
       case 'opwaarderen': {
-        const s = w.net.segmentBij(p, 1);
-        if (s && !w.wijzigWeg(s.seg.id, this.wegtype)) this.melding = 'Opwaarderen lukt niet (geld?)';
+        this.slepen = true; this.gesleept.clear(); this.sleepPunt = null;
+        this.sleepStap(p);
         return;
       }
       case 'dienst': {
@@ -344,6 +355,28 @@ export class Gereedschap {
         this.selectie = vz ? { soort: 'dienst', id: vz.id } : g ? { soort: 'gebouw', id: g.id } : null;
         return;
       }
+      case 'sloop': {
+        this.slepen = true; this.gesleept.clear(); this.sleepPunt = null;
+        this.sleepStap(p);
+        return;
+      }
+    }
+  }
+
+  /** Eén stap van slepend slopen/opwaarderen: neem wat onder de muis ligt, één keer per sleep. */
+  private sleepStap(p: V2) {
+    const w = this.wereld;
+    if (this.modus === 'opwaarderen') {
+      const s = w.net.segmentBij(p, 1);
+      if (!s || this.gesleept.has('s' + s.seg.id)) return;
+      this.gesleept.add('s' + s.seg.id);
+      if (s.seg.type !== this.wegtype && !w.wijzigWeg(s.seg.id, this.wegtype)) this.melding = 'Opwaarderen lukt niet (geld?)';
+      return;
+    }
+    // Slopen: pas verder als de muis echt beweegt (anders sloopt één klik ook wat eronder ligt).
+    if (this.sleepPunt && dist2(this.sleepPunt, p) < 4) return;
+    this.sleepPunt = p;
+    switch (this.modus) {
       case 'sloop': {
         const vz = w.voorzieningen.dienstOp(p);
         if (vz) { w.voorzieningen.sloop(vz.id); return; }
@@ -360,6 +393,7 @@ export class Gereedschap {
 
   los() {
     this.schilderen = false;
+    this.slepen = false;
     // Selectie loslaten: alle kavels in de rechthoek zoneren.
     if (this.modus === 'zone' && this.selStart && this.muis) {
       const h = this.selectieHoeken(this.selStart, { x: this.muis.x, z: this.muis.z });
@@ -368,13 +402,61 @@ export class Gereedschap {
     this.selStart = null;
   }
 
-  /** Rechts klikken (zonder slepen): in Zones weghalen met hetzelfde gereedschap, zoals in CS. Geeft true als dat gebeurde. */
+  /** Rechts klikken (zonder slepen): in Zones weghalen met hetzelfde gereedschap, zoals in CS; bij Opwaarderen de rijrichting omdraaien. Geeft true als dat gebeurde. */
   rechts(grond: V3 | null): boolean {
+    if (this.modus === 'opwaarderen' && grond) {
+      const s = this.wereld.net.segmentBij({ x: grond.x, z: grond.z }, 1);
+      if (s) { this.wereld.keerWegOm(s.seg.id); return true; }
+      return false;
+    }
     if (this.modus !== 'zone' || !grond) return false;
     const p = { x: grond.x, z: grond.z }, w = this.wereld;
     if (this.zoneTool === 'penseel') w.zoneer(p, this.penseel, 'geen');
     else { const k = w.kavelOp(p); if (k && k.zone !== 'geen') w.zoneerKavels(w.blokVan(k), 'geen'); }
     return true;
+  }
+
+  /** Bézier a-c-b evenwijdig verschoven over d meter naar rechts (parallel bouwen). */
+  private verschuif(a: V2, c: V2, b: V2, d: number): [V2, V2, V2] {
+    const ta = norm2(sub2(c, a)), tb = norm2(sub2(b, c));
+    const na = { x: -ta.z, z: ta.x }, nb = { x: -tb.z, z: tb.x };
+    const a2 = { x: a.x + na.x * d, z: a.z + na.z * d }, b2 = { x: b.x + nb.x * d, z: b.z + nb.z * d };
+    const den = ta.x * tb.z - ta.z * tb.x;
+    let c2 = lerp2(a2, b2, 0.5);
+    if (Math.abs(den) > 1e-3) { const t = ((b2.x - a2.x) * tb.z - (b2.z - a2.z) * tb.x) / den; c2 = { x: a2.x + ta.x * t, z: a2.z + ta.z * t }; }
+    return [a2, c2, b2];
+  }
+
+  /** Raster zoals in CS2: klik 1 = hoek, klik 2 = richting en lengte, klik 3 = diepte. */
+  private rasterLijnen(a: V2, b: V2, c: V2): [V2, V2][] {
+    const W = halveBreedte(this.wegtype) * 2;
+    const L = dist2(a, b);
+    if (L < 20) return [];
+    const u = norm2(sub2(b, a));
+    let n = { x: -u.z, z: u.x };
+    let D = (c.x - a.x) * n.x + (c.z - a.z) * n.z;
+    if (D < 0) { n = { x: -n.x, z: -n.z }; D = -D; }
+    // Bouwblokken: 2 × 30 m diep tussen evenwijdige straten, 2 × 45 m langs de straat.
+    const dr = 60 + W, dk = 90 + W;
+    const nr = Math.max(1, Math.round(D / dr)), nk = Math.max(1, Math.round(L / dk));
+    const Lr = nk * dk, Ld = nr * dr;
+    const r: [V2, V2][] = [];
+    const op = (x: number, y: number) => ({ x: a.x + u.x * x + n.x * y, z: a.z + u.z * x + n.z * y });
+    for (let i = 0; i <= nr; i++) r.push([op(0, i * dr), op(Lr, i * dr)]);
+    for (let j = 0; j <= nk; j++) r.push([op(j * dk, 0), op(j * dk, Ld)]);
+    return r;
+  }
+
+  private rasterKlik(p: V2) {
+    if (!this.start) { this.begin(p); return; }
+    if (!this.rasterB) { if (dist2(this.start, p) >= 20) this.rasterB = p; return; }
+    const lijnen = this.rasterLijnen(this.start, this.rasterB, p);
+    const kosten = lijnen.reduce((s, [a, b]) => s + Wereld.wegKosten(this.wegtype, dist2(a, b), this.niveau), 0);
+    if (kosten > this.wereld.geld) { this.melding = 'Niet genoeg geld'; return; }
+    let fout = '';
+    for (const [a, b] of lijnen) { const r = this.wereld.legWeg(a, lerp2(a, b, 0.5), b, this.wegtype, this.niveau); if (!r.ok) fout = r.fout ?? ''; }
+    if (fout) this.melding = fout;
+    this.annuleer();
   }
 
   /** Rechthoek van a naar b, gedraaid langs de weg bij a (zoals het zoneraster in CS). */
@@ -402,6 +484,7 @@ export class Gereedschap {
 
   stap(dt: number) {
     if (this.melding) { this.meldingKlok += dt; if (this.meldingKlok > 2.5) { this.melding = ''; this.meldingKlok = 0; } } else this.meldingKlok = 0;
+    if (this.slepen && this.muis && (this.modus === 'sloop' || this.modus === 'opwaarderen')) this.sleepStap({ x: this.muis.x, z: this.muis.z });
     if ((this.modus === 'zone' || this.modus === 'district') && this.schilderen && this.muis) {
       this.schilderKlok += dt;
       if (this.schilderKlok > 0.05) { this.schilderKlok = 0; this.schilder({ x: this.muis.x, z: this.muis.z }); }
@@ -435,6 +518,17 @@ export class Gereedschap {
           const y = this.hoogteVan(s);
           return { soort: 'weg', as: [], breedte: halveBreedte(this.wegtype) * 2, geldig: true, tekst: naam + hoogteTekst, punten: [{ x: s.x, y, z: s.z }], lijnen: lijnenV3(s), snap: this.laatsteSnap ? { x: s.x, y, z: s.z } : null, kavels: [] };
         }
+        if (this.stijl === 'raster') {
+          const q = this.snap(p);
+          const naarV3 = (x: V2) => ({ x: x.x, y: Math.max(t.hoogte(x.x, x.z), 0) + 0.3, z: x.z });
+          const lijnen: [V2, V2][] = this.rasterB ? this.rasterLijnen(this.start, this.rasterB, q) : [[this.start, q]];
+          const meer = lijnen.map(([a, b]) => Array.from({ length: 9 }, (_, i) => naarV3(lerp2(a, b, i / 8))));
+          const lengte = lijnen.reduce((s, [a, b]) => s + dist2(a, b), 0);
+          const kosten = lijnen.reduce((s, [a, b]) => s + Wereld.wegKosten(this.wegtype, dist2(a, b), this.niveau), 0);
+          const blokken = this.rasterB ? `${lijnen.length} straten · ` : '';
+          const tekst = !this.rasterB ? `Raster: klik de richting en lengte · ${Math.round(dist2(this.start, q))} m` : `${blokken}${Math.round(lengte)} m · € ${Math.round(kosten).toLocaleString('nl-NL')} · klik om te bouwen`;
+          return { soort: 'weg', as: [], breedte: halveBreedte(this.wegtype) * 2, geldig: kosten <= w.geld, tekst, punten: [this.start, ...(this.rasterB ? [this.rasterB] : []), q].map(naarV3), lijnen: [], snap: null, kavels: [], meer };
+        }
         const e = this.eindpunt(p);
         const snapNu = this.laatsteSnap;
         const { c: c0, wacht } = this.controle(e);
@@ -465,6 +559,7 @@ export class Gereedschap {
           soort: 'weg', as, breedte: halveBreedte(this.wegtype) * 2, geldig: !fout && geld && !wacht && !(hellingTelt && helling > 12), tekst: hellingTelt && helling > 12 && !fout ? 'Te steil: maak de weg langer' : tekst,
           punten: [this.start, ...(this.ctrl ? [this.ctrl] : []), b].map(q => ({ x: q.x, y: this.hoogteVan(q), z: q.z })),
           lijnen: lijnenV3(b), snap: snapNu ? { x: b.x, y: yb, z: b.z } : null, kavels,
+          meer: this.parallel && !wacht ? [(() => { const [a2, c2, b2] = this.verschuif(this.start!, c, b, this.parallel); return Wegennet.curve(a2, c2, b2, 32).map((q, i) => ({ x: q.x, y: Math.max(ya + (yb - ya) * i / 32, 0.5), z: q.z })); })()] : undefined,
         };
       }
       case 'zone': {

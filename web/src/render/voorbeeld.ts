@@ -44,14 +44,33 @@ export class VoorbeeldLaag {
     this.lint.geometry.dispose(); this.lint.geometry = g;
   }
 
+  /** Meerdere spooklinten in één mesh (raster, parallel). */
+  private lintenLangs(lijnen: V3[][], breedte: number, dy: number) {
+    const pos: number[] = [], idx: number[] = [];
+    for (const as of lijnen) {
+      const o0 = pos.length / 3;
+      for (let i = 0; i < as.length; i++) {
+        const a = as[Math.max(0, i - 1)], b = as[Math.min(as.length - 1, i + 1)];
+        let dx = b.x - a.x, dz = b.z - a.z; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+        const rx = -dz * breedte / 2, rz = dx * breedte / 2;
+        pos.push(as[i].x - rx, as[i].y + dy, as[i].z - rz, as[i].x + rx, as[i].y + dy, as[i].z + rz);
+        if (i) { const o = o0 + (i - 1) * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    this.lint.geometry.dispose(); this.lint.geometry = g;
+  }
+
   toon(v: Voorbeeld) {
     this.lint.visible = this.ring.visible = this.stippen.visible = this.kader.visible = false;
     this.gids.visible = this.snapRing.visible = this.kavelVlak.visible = this.kavelLijn.visible = false;
     const t = this.w.terrein;
     switch (v.soort) {
       case 'weg': {
-        if (v.as.length > 1) {
-          this.lintLangs(v.as, v.breedte, 0.6);
+        const lijnen = [...(v.as.length > 1 ? [v.as] : []), ...(v.meer ?? [])];
+        if (lijnen.length) {
+          this.lintenLangs(lijnen, v.breedte, 0.6);
           this.lintMat.color.set(v.geldig ? 0x40c057 : 0xfa5252);
           this.lint.visible = true;
         }

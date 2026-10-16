@@ -216,6 +216,13 @@ export class Wereld {
     return true;
   }
 
+  /** Rijrichting van een weg omdraaien (eenrichtingswegen, zoals rechts klikken bij opwaarderen in CS). */
+  keerWegOm(id: number) {
+    if (!this.net.keerOm(id)) return false;
+    this.verwerkNet();
+    return true;
+  }
+
   /** Netwerk-events doorgeven en de gevelstroken in de buurt opnieuw berekenen. */
   private verwerkNet() {
     const ev = this.net.haalEvents();

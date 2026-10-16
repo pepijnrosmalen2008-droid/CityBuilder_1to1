@@ -160,6 +160,7 @@ async function start() {
       if (tik && tik.id === e.pointerId && performance.now() - tik.t < 400 && !zoneSleept()) {
         muis = { x: tik.x, y: tik.y };
         gereedschap.klik(grondOnder());
+        gereedschap.los();
       }
       tik = null;
       return;
