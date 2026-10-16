@@ -6,11 +6,11 @@ import { MeshBouwer, MeshData } from './mesh';
 
 interface BoomVorm { stam: number; stamR: number; kroonY: number; kroonR: number; kroonH: number; trossen: number; kaart: number; naald: boolean; berk: boolean }
 const VORM: Record<string, BoomVorm> = {
-  eik: { stam: 5.5, stamR: 0.38, kroonY: 9.5, kroonR: 5.2, kroonH: 5.2, trossen: 34, kaart: 3.6, naald: false, berk: false },
-  linde: { stam: 5, stamR: 0.32, kroonY: 10, kroonR: 4.2, kroonH: 6.2, trossen: 32, kaart: 3.3, naald: false, berk: false },
+  eik: { stam: 5.5, stamR: 0.3, kroonY: 9.5, kroonR: 5.2, kroonH: 5.2, trossen: 34, kaart: 3.6, naald: false, berk: false },
+  linde: { stam: 5.6, stamR: 0.25, kroonY: 10, kroonR: 4.2, kroonH: 6.2, trossen: 32, kaart: 3.3, naald: false, berk: false },
   berk: { stam: 6, stamR: 0.2, kroonY: 10, kroonR: 2.9, kroonH: 5.5, trossen: 24, kaart: 2.6, naald: false, berk: true },
   den: { stam: 7, stamR: 0.3, kroonY: 11, kroonR: 3.2, kroonH: 7.5, trossen: 0, kaart: 0, naald: true, berk: false },
-  plataan: { stam: 5.5, stamR: 0.42, kroonY: 11, kroonR: 5.8, kroonH: 5.8, trossen: 36, kaart: 3.8, naald: false, berk: false },
+  plataan: { stam: 6, stamR: 0.3, kroonY: 11, kroonR: 5.8, kroonH: 5.8, trossen: 36, kaart: 3.8, naald: false, berk: false },
 };
 
 export function cilinder(mb: MeshBouwer, mat: string, a: V3, b: V3, ra: number, rb: number, zijden = 7) {
@@ -188,7 +188,87 @@ export function jaknikkerMesh(): MeshData {
   return mb.bouw();
 }
 
+// ─── Straatmeubilair (oorsprong op de stoep, +z = naar de rijbaan) ─────────────────
+
+const blk = (mb: MeshBouwer, mat: string, x: number, z: number, b: number, d: number, y0: number, y1: number) =>
+  mb.blok(mat, mat, { x, y: 0, z }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, b, d, y0, y1, true);
+
+/** Parkbank: betonnen poten, houten zitting en rugleuning. */
+function bankMesh(): MeshData {
+  const mb = new MeshBouwer();
+  for (const x of [-0.75, 0.75]) blk(mb, 'beton', x, 0, 0.12, 0.5, 0, 0.42);
+  for (const z of [-0.18, -0.04, 0.1]) blk(mb, 'hout', 0, z, 1.8, 0.11, 0.42, 0.47);
+  for (const y of [0.6, 0.75]) blk(mb, 'hout', 0, -0.26, 1.8, 0.04, y, y + 0.1);
+  for (const x of [-0.75, 0.75]) blk(mb, 'trimDonker', x, -0.24, 0.05, 0.05, 0.42, 0.88);
+  return mb.bouw();
+}
+/** Afvalbak: groene ronde bak op een paal (zoals in Nederlandse straten). */
+function afvalbakMesh(): MeshData {
+  const mb = new MeshBouwer();
+  cilinder(mb, 'paal', { x: 0, y: 0, z: -0.25 }, { x: 0, y: 1.0, z: -0.25 }, 0.04, 0.04, 6);
+  cilinder(mb, 'verkeerslichtGroen', { x: 0, y: 0.45, z: 0 }, { x: 0, y: 1.0, z: 0 }, 0.24, 0.26, 12);
+  cilinder(mb, 'trimDonker', { x: 0, y: 1.0, z: 0 }, { x: 0, y: 1.05, z: 0 }, 0.27, 0.27, 12);
+  return mb.bouw();
+}
+/** Fietsenrek met een paar geparkeerde fietsen. */
+function fietsbeugelMesh(variant: number): MeshData {
+  const mb = new MeshBouwer();
+  const n = 3 + (variant % 3);
+  for (let i = 0; i < n; i++) {
+    const x = (i - (n - 1) / 2) * 0.75;
+    cilinder(mb, 'metaal', { x, y: 0, z: -0.3 }, { x, y: 0.75, z: -0.3 }, 0.025, 0.025, 4);
+    cilinder(mb, 'metaal', { x, y: 0.75, z: -0.3 }, { x, y: 0.75, z: 0.3 }, 0.025, 0.025, 4);
+    cilinder(mb, 'metaal', { x, y: 0.75, z: 0.3 }, { x, y: 0, z: 0.3 }, 0.025, 0.025, 4);
+    if ((i + variant) % 4 === 3) continue;
+    const xf = x + 0.3, kl = ['politieblauw', 'trimDonker', 'remklauw', 'trim'][(i + variant) % 4];
+    for (const z of [-0.5, 0.5]) cilinder(mb, 'rubber', { x: xf - 0.02, y: 0.34, z }, { x: xf + 0.02, y: 0.34, z }, 0.34, 0.34, 10);
+    cilinder(mb, kl, { x: xf, y: 0.36, z: -0.5 }, { x: xf, y: 0.72, z: 0.1 }, 0.025, 0.025, 4);
+    cilinder(mb, kl, { x: xf, y: 0.72, z: 0.1 }, { x: xf, y: 0.36, z: 0.5 }, 0.025, 0.025, 4);
+    cilinder(mb, kl, { x: xf, y: 0.36, z: -0.5 }, { x: xf, y: 0.36, z: 0.5 }, 0.022, 0.022, 4);
+    cilinder(mb, 'trimDonker', { x: xf, y: 0.85, z: 0.3 }, { x: xf, y: 0.85, z: 0.0 }, 0.02, 0.02, 4);
+  }
+  return mb.bouw();
+}
+/** Paaltje (Amsterdammertje-achtig), donkerrood met witte band. */
+function paaltjeMesh(): MeshData {
+  const mb = new MeshBouwer();
+  cilinder(mb, 'remklauw', { x: 0, y: 0, z: 0 }, { x: 0, y: 0.85, z: 0 }, 0.07, 0.06, 8);
+  cilinder(mb, 'trim', { x: 0, y: 0.7, z: 0 }, { x: 0, y: 0.76, z: 0 }, 0.065, 0.065, 8);
+  cilinder(mb, 'remklauw', { x: 0, y: 0.85, z: 0 }, { x: 0, y: 0.95, z: 0 }, 0.06, 0.01, 8);
+  return mb.bouw();
+}
+/** Bushokje: glazen wanden, dak, bankje en een reclamevitrine. */
+function bushokjeMesh(): MeshData {
+  const mb = new MeshBouwer();
+  blk(mb, 'trimDonker', 0, -0.2, 4.2, 1.7, 2.45, 2.6);
+  mb.quad('glas', { x: -2, y: 0.1, z: -1 }, { x: 2, y: 0.1, z: -1 }, { x: 2, y: 2.45, z: -1 }, { x: -2, y: 2.45, z: -1 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: -1 });
+  mb.quad('glas', { x: -2, y: 0.1, z: -1 }, { x: -2, y: 0.1, z: 0.4 }, { x: -2, y: 2.45, z: 0.4 }, { x: -2, y: 2.45, z: -1 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: -1, y: 0, z: 0 });
+  blk(mb, 'lamp', 2, -0.3, 0.12, 1.3, 0.3, 2.3);
+  for (const x of [-2, 2]) for (const z of [-1, 0.4]) blk(mb, 'paal', x, z, 0.06, 0.06, 0, 2.45);
+  blk(mb, 'metaal', 0, -0.75, 2.5, 0.35, 0.45, 0.5);
+  cilinder(mb, 'paal', { x: 2.6, y: 0, z: 0.5 }, { x: 2.6, y: 2.8, z: 0.5 }, 0.04, 0.04, 6);
+  blk(mb, 'politieblauw', 2.6, 0.5, 0.5, 0.04, 2.3, 2.8);
+  return mb.bouw();
+}
+/** Verkeersbord (parkeren/blauw) op een paal. */
+function bordMesh(variant: number): MeshData {
+  const mb = new MeshBouwer();
+  cilinder(mb, 'paal', { x: 0, y: 0, z: 0 }, { x: 0, y: 2.6, z: 0 }, 0.035, 0.035, 6);
+  const mat = ['politieblauw', 'remklauw', 'politieblauw'][variant % 3];
+  blk(mb, mat, 0, 0.05, 0.6, 0.03, 2.0, 2.6);
+  blk(mb, 'trim', 0, 0.07, 0.25, 0.01, 2.15, 2.45);
+  return mb.bouw();
+}
+
+export const KLEIN_MEUBILAIR = new Set(['bank', 'afvalbak', 'fietsbeugel', 'paaltje', 'bord']);
+
 export function propMesh(soort: string, variant: number, niveau = 0): MeshData {
+  if (soort === 'bank') return bankMesh();
+  if (soort === 'afvalbak') return afvalbakMesh();
+  if (soort === 'fietsbeugel') return fietsbeugelMesh(variant);
+  if (soort === 'paaltje') return paaltjeMesh();
+  if (soort === 'bushokje') return bushokjeMesh();
+  if (soort === 'bord') return bordMesh(variant);
   if (soort === 'lantaarn') return lantaarnMesh(false);
   if (soort === 'lantaarnDubbel') return lantaarnMesh(true);
   if (soort === 'jaknikker') return jaknikkerMesh();

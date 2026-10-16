@@ -271,6 +271,33 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
     props.push({ soort: 'lantaarn', x: p.x, y: p.y, z: p.z, rot: kant < 0 ? rot : rot + Math.PI, schaal: 1, variant: 0 });
     kant = -kant as 1 | -1;
   }
+  // Straatmeubilair op brede stoepen, tussen de lantaarns: bankjes, afvalbakken, fietsenrekken.
+  for (const st of [g[0], g[g.length - 1]]) {
+    if (!st || st.s.soort !== 'stoep' || st.s.breedte < 2) continue;
+    const links = st.a < 0;
+    const o = links ? st.b - 0.6 : st.a + 0.6;
+    for (let d = L0 + 26; d < L1 - 14; d += 32) {
+      if (asPunt(pad, d).brug || asPunt(pad, d).tunnel) continue;
+      const h = Math.abs(Math.sin(seg.id * 12.9898 + d * 0.733) * 43758.5453) % 1;
+      if (h < 0.3) continue;
+      const soort = h < 0.55 ? 'bank' : h < 0.75 ? 'afvalbak' : h < 0.92 ? 'fietsbeugel' : 'bord';
+      const p = plek(d, soort === 'bank' ? (links ? st.a + 0.8 : st.b - 0.8) : o, verhoogd(st.s));
+      const r = rotVan(d) + (soort === 'bank' ? (links ? Math.PI : 0) : (links ? 0 : Math.PI));
+      props.push({ soort, x: p.x, y: p.y, z: p.z, rot: r, schaal: 1, variant: Math.floor(h * 97) % 6 });
+    }
+    // Paaltjes bij de kruispunten (tegen parkeren op de stoephoek).
+    if (W >= 9) for (const d of [L0 + 2, L0 + 3.5, L1 - 2, L1 - 3.5]) {
+      if (d < L0 || d > L1) continue;
+      const p = plek(d, o, verhoogd(st.s));
+      props.push({ soort: 'paaltje', x: p.x, y: p.y, z: p.z, rot: 0, schaal: 1, variant: 0 });
+    }
+    // Bushokje langs een weg met busbaan.
+    if (g.some(x => x.s.soort === 'bus') && (L1 - L0) > 70) {
+      const d = (L0 + L1) / 2 + (links ? -20 : 20);
+      const p = plek(d, links ? st.a + 1.3 : st.b - 1.3, verhoogd(st.s));
+      props.push({ soort: 'bushokje', x: p.x, y: p.y, z: p.z, rot: rotVan(d) + (links ? Math.PI : 0), schaal: 1, variant: 0 });
+    }
+  }
   return { mesh: mb.bouw(), props };
 }
 

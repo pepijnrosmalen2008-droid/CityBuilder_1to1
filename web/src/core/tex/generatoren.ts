@@ -64,14 +64,14 @@ export function zand(): TexData {
 export function asfalt(soort: 'grijs' | 'rood' | 'bus'): TexData {
   const d = new Doek(512, 512);
   const rood = soort !== 'grijs';
-  const basis = soort === 'rood' ? K(0.43, 0.16, 0.13) : soort === 'bus' ? K(0.36, 0.17, 0.14) : K(0.20, 0.20, 0.21);
-  const steen = rood ? K(0.56, 0.34, 0.29) : K(0.43, 0.42, 0.41);
+  const basis = soort === 'rood' ? K(0.43, 0.16, 0.13) : soort === 'bus' ? K(0.36, 0.17, 0.14) : K(0.27, 0.265, 0.26);
+  const steen = rood ? K(0.56, 0.34, 0.29) : K(0.5, 0.49, 0.47);
   const s = soort === 'rood' ? 60 : soort === 'bus' ? 70 : 50;
   loop(d, (x, y, u, v) => {
     const h = hash01(x, y, s + 1), h2 = hash01(x >> 1, y >> 1, s + 2);
     const vlek = fbm(u, v, 4, 4, s + 3), slijt = fbm(u, v, 16, 3, s + 4), teer = glad01(0.64, 0.74, fbm(u, v, 6, 3, s + 5));
-    let k = mul(basis, 0.86 + 0.28 * vlek);
-    if (h2 > 0.82) k = mix(k, steen, 0.6); else if (h2 < 0.12) k = mul(k, 0.72);
+    let k = mul(basis, (rood ? 0.86 : 0.92) + (rood ? 0.28 : 0.14) * vlek);
+    if (h2 > 0.82) k = mix(k, steen, rood ? 0.6 : 0.3); else if (h2 < 0.12) k = mul(k, rood ? 0.72 : 0.85);
     k = mul(k, 0.92 + 0.12 * h);
     if (!rood) k = mix(k, mul(k, 0.72), teer * 0.6);
     let hoogte = h2 * 0.6 + h * 0.4;

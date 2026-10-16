@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Prop } from '../core/geom/mesh';
-import { propMesh, isBoom } from '../core/geom/props';
+import { propMesh, isBoom, KLEIN_MEUBILAIR } from '../core/geom/props';
 import { Materialen } from './materialen';
 import { naarMesh } from './meshes';
 import { hash01 } from '../core/rng';
@@ -67,8 +67,9 @@ export class PropLaag {
       const d = Math.hypot(p.x - cam.x, p.y - cam.y, p.z - cam.z);
       const boom = isBoom(p.soort);
       if (!boom && d > 900) continue; // lantaarnpalen zie je ver weg niet
+      if (KLEIN_MEUBILAIR.has(p.soort) && d > 260) continue; // bankjes en paaltjes alleen dichtbij
       const niveau = boom ? niveauVoor(d) : 0;
-      const k = `${p.soort}|${niveau === 0 ? p.variant : 0}|${niveau}`;
+      const k = `${p.soort}|${niveau === 0 || !boom ? p.variant : 0}|${niveau}`;
       let l = perModel.get(k); if (!l) perModel.set(k, l = []); l.push(p);
     }
     const lijst: THREE.InstancedMesh[] = [];
