@@ -271,3 +271,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; fon
 .vl-paneel { display: flex; align-items: flex-end; gap: 2px; background: rgba(15,20,28,.86); border-radius: 9px; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,.4); pointer-events: auto; }
 .vl-kolom { display: flex; flex-direction: column; gap: 1px; padding: 1px; border-radius: 6px; }
 .vl-kolom + .vl-kolom { border-left: 1px dashed rgba(255,255,255,.18); padding-left: 3px; }
+.item.uit { opacity: .35; cursor: default; }
+.item.uit:hover { background: rgba(255,255,255,.04); transform: none; }
+.knop[disabled] { opacity: .4; cursor: default; }

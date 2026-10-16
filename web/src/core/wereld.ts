@@ -635,12 +635,69 @@ export class Wereld {
   verwijderGebouw(id: number) {
     const g = this.gebouwen.get(id);
     if (!g) return;
+    if (this.opname && !this.opname.has(id)) this.opname.set(id, structuredClone(g));
     this.gebouwen.delete(id);
     for (const kid of g.kavels) {
       const k = this.kavels.get(kid);
       if (k && k.gebouw === id) { k.gebouw = 0; this.events.push({ soort: 'kavel~', id: k.id }); }
     }
     this.events.push({ soort: 'gebouw-', id });
+  }
+
+  // ─── Move It ────────────────────────────────────────────────────────────────
+
+  /** Tijdens een Move It-bewerking: gebouwen die verdwijnen (om ze bij ongedaan maken terug te zetten). */
+  opname: Map<number, Gebouw> | null = null;
+
+  /** Wegwijzigingen doorrekenen (gevelstroken, kavels) na een bewerking van buitenaf. */
+  werkNetBij() { this.verwerkNet(); }
+
+  /** Gebouw verplaatsen of draaien: f voor punten, drot voor richtingen, dy omhoog. */
+  transformeerGebouw(id: number, f: (p: V2) => V2, drot: number, dy = 0) {
+    const g = this.gebouwen.get(id);
+    if (!g) return;
+    const c = Math.cos(drot), sn = Math.sin(drot);
+    const r = (v: V2): V2 => ({ x: v.x * c - v.z * sn, z: v.x * sn + v.z * c });
+    const a = (x: Anker): Anker => ({ ...x, p: f(x.p), n: r(x.n), t: r(x.t) });
+    const oudGrond = this.terrein.hoogte(g.centrum.x, g.centrum.z);
+    g.voet = g.voet.map(f); g.voorLijn = g.voorLijn.map(f); g.perceel = g.perceel.map(f);
+    if (g.dak) g.dak = { voor: g.dak.voor.map(f), achter: g.dak.achter.map(f) };
+    g.ankers = g.ankers.map(a); g.grenzen = g.grenzen.map(a);
+    if (g.zijden) g.zijden = g.zijden.map(a);
+    if (g.pandGrenzen) g.pandGrenzen = g.pandGrenzen.map(a);
+    if (g.zijStraat) g.zijStraat = g.zijStraat.map(z => ({ o: f(z.o), n: r(z.n) }));
+    g.centrum = f(g.centrum); g.voor = f(g.voor);
+    const dGrond = this.terrein.hoogte(g.centrum.x, g.centrum.z) - oudGrond;
+    g.y += dGrond + dy; g.yGrond += dGrond;
+    this.bomen.wisInPolygoon(g.voet, 1);
+    this.events.push({ soort: 'gebouw~', id });
+  }
+
+  /** Een gebouw terugzetten zoals het was (ongedaan maken), met hetzelfde id; zo nodig op een vrije kavel op die plek. */
+  zetGebouw(bron: Gebouw) {
+    const g = structuredClone(bron);
+    const nieuw = !this.gebouwen.has(g.id);
+    this.gebouwen.set(g.id, g);
+    this.volgende = Math.max(this.volgende, g.id + 1);
+    const k = this.kavels.get(g.kavel);
+    if (!k || (k.gebouw && k.gebouw !== g.id)) {
+      const vrij = this.kavelOp(g.centrum);
+      if (vrij && (!vrij.gebouw || vrij.gebouw === g.id)) { g.kavel = vrij.id; g.kavels = [vrij.id]; }
+      else g.kavels = [];
+    }
+    for (const kid of g.kavels) { const x = this.kavels.get(kid); if (x && !x.gebouw) { x.gebouw = g.id; this.events.push({ soort: 'kavel~', id: kid }); } }
+    this.events.push({ soort: nieuw ? 'gebouw+' : 'gebouw~', id: g.id });
+  }
+
+  /** Kopie van een gebouw op een nieuwe plek (Move It: plakken). Neemt geen kavel in. */
+  plakGebouw(bron: Gebouw, f: (p: V2) => V2, drot: number): number {
+    const g = structuredClone(bron);
+    g.id = this.volgende++;
+    g.kavels = [];
+    this.gebouwen.set(g.id, g);
+    this.events.push({ soort: 'gebouw+', id: g.id });
+    this.transformeerGebouw(g.id, f, drot);
+    return g.id;
   }
 
   gebouwOp(p: V2): Gebouw | null {
@@ -867,7 +924,7 @@ export class Wereld {
       versie: 4, seed: this.seed, naam: this.naam, dagen: this.dagen, geld: this.geld, volgende: this.volgende,
       tarieven: this.tarieven, mijlpaal: this.mijlpaal, maandKlok: this.maandKlok, vorigeMaand: this.vorigeMaand,
       gemeld: [...this.gemeld], nieuws: this.nieuws.slice(0, 20), nieuwsId: this.nieuwsId,
-      terrein: this.terrein.wijzigingen(), bomen: this.bomen.gekapt(), namen: this.namen.naarJson(),
+      terrein: this.terrein.wijzigingen(), bomen: this.bomen.gekapt(), bomenVerplaatst: this.bomen.naarJsonVerplaatst(), namen: this.namen.naarJson(),
       net: this.net.naarJson(),
       kavels: [...this.kavels.values()],
       gebouwen: [...this.gebouwen.values()],
@@ -885,6 +942,7 @@ export class Wereld {
     this.gemeld = new Set(j.gemeld); this.nieuws = j.nieuws ?? []; this.nieuwsId = j.nieuwsId ?? 1;
     this.terrein.laadWijzigingen(j.terrein);
     this.bomen.laadGekapt(j.bomen);
+    this.bomen.laadVerplaatst(j.bomenVerplaatst);
     this.namen.laadJson(j.namen);
     this.net.vanJson(j.net);
     // Eerst de kavels en gebouwen terug; daarna de gevelstroken opnieuw berekenen en de kavels

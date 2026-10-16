@@ -6,6 +6,7 @@ import { Wegennet } from './wegen/netwerk';
 import { Zone, zoneKleur, ZONES } from './zones';
 import type { Bord, Verbod } from './verkeer/regels';
 import { wegeindeBij, kruispuntBij, maakHoofdweg, hoofdwegKeten } from './verkeer/tmpe';
+import { Verplaatser } from './verplaats';
 import { Grondstof, GRONDSTOFFEN, HoofdPlek } from './economie';
 import { DienstSoort, DIENSTEN, NUT_EENHEID } from './voorzieningen';
 import { getekendOppervlak, afstandTotLijn } from './poly';
@@ -34,6 +35,7 @@ export type Voorbeeld =
   | { soort: 'zoneSel'; kavels: number[]; kleur: string; tekst: string; kader: V3[] | null; m: V3 | null; r: number }
   | { soort: 'markeer'; segmenten?: number[]; segment?: number; gebouw?: number; gebied?: number; dienst?: number; kleur: string; tekst: string }
   | { soort: 'dienst'; voet: V3[]; geldig: boolean; tekst: string }
+  | { soort: 'verplaats'; sel: [V3, V3][]; geest: [V3, V3][]; segmenten: number[]; greep: V3 | null; veld: V3[] | null; tekst: string }
   | { soort: 'gebied'; punten: V3[]; kleur: string; tekst: string; dicht: boolean; hoofd: { p: V3; rot: number; geldig: boolean } | null };
 
 export class Gereedschap {
@@ -90,7 +92,26 @@ export class Gereedschap {
   zijBord: Bord = 'geef';
   private hoofd: HoofdPlek | null = null;
 
-  constructor(private wereld: Wereld) {}
+  /** Verplaatsen (Move It). */
+  verplaatser: Verplaatser;
+  /** Shift ingedrukt bij de laatste klik (gezet door de invoerlaag). */
+  shift = false;
+  /** Knop 'Meerdere' (voor aanraakschermen): elke klik voegt toe of haalt weg. */
+  shiftVast = false;
+  /** Rechthoek op de grond tijdens het selecteren (gezet door de invoerlaag, uit schermhoeken). */
+  veld: V2[] | null = null;
+  /** Plakken: het klembord hangt aan de muis tot je klikt. */
+  plakModus = false;
+  plakHoek = 0;
+  /** Kijkrichting van de camera op de grond (voor de pijltjestoetsen). */
+  kijk: V2 = { x: 0, z: -1 };
+  private mSleep: { van: V2; soort: 'schuif' | 'buig' | 'veld'; seg?: number } | null = null;
+  private selCache: { sleutel: string; lijnen: [V3, V3][] } | null = null;
+
+  constructor(private wereld: Wereld) { this.verplaatser = new Verplaatser(wereld); }
+
+  /** Is er een rechthoekselectie bezig? (dan geeft de invoerlaag de schermhoeken door) */
+  get selecteertVeld() { return this.modus === 'verplaats' && this.mSleep?.soort === 'veld'; }
 
   /** Wordt er een weg getekend (startpunt gezet)? */
   get tekent() { return (this.modus === 'weg' && !!this.start) || (this.modus === 'gebied' && this.gebiedPunten.length > 0); }
@@ -102,7 +123,7 @@ export class Gereedschap {
     if (fout) this.melding = fout; else { this.gebiedPunten = []; this.hoofd = null; }
   }
 
-  zetModus(m: Modus) { this.modus = m; this.annuleer(); this.melding = ''; if (m !== 'kijk') this.selectie = null; }
+  zetModus(m: Modus) { this.modus = m; this.annuleer(); this.plakModus = false; this.mSleep = null; this.veld = null; this.melding = ''; if (m !== 'kijk') this.selectie = null; }
   annuleer() { this.rasterB = null; this.slepen = false; this.start = null; this.ctrl = null; this.raak = null; this.ref = null; this.schilderen = false; this.gebiedPunten = []; this.hoofd = null; }
 
   /** Begin op p: onthoud de richting van een aansluitende weg (doorlopen en hoeksnappen). */
@@ -357,6 +378,7 @@ export class Gereedschap {
         return;
       }
       case 'verkeer': this.verkeerKlik(p); return;
+      case 'verplaats': this.verplaatsKlik(p); return;
       case 'dienst': {
         const fout = w.voorzieningen.bouw(this.dienst, p);
         if (fout) this.melding = fout;
@@ -374,6 +396,122 @@ export class Gereedschap {
         return;
       }
     }
+  }
+
+  private verplaatsKlik(p: V2) {
+    const m = this.verplaatser;
+    if (this.plakModus) { const f = m.plak(p, this.plakHoek); this.plakModus = false; if (f) this.melding = f; return; }
+    const gr = m.greep();
+    if (gr && dist2(p, gr.p) < 4.5) { this.mSleep = { van: p, soort: 'buig', seg: gr.seg }; return; }
+    const d = m.raak(p);
+    if (d) {
+      if (this.shift) { m.wissel(d); return; }
+      if (!m.heeft(d)) m.kies(d);
+      this.mSleep = { van: p, soort: 'schuif' };
+      return;
+    }
+    this.mSleep = { van: p, soort: 'veld' };
+  }
+
+  private verplaatsLos() {
+    const s = this.mSleep, m = this.verplaatser, q = this.muis ? { x: this.muis.x, z: this.muis.z } : null;
+    this.mSleep = null;
+    if (!s || !q) { this.veld = null; return; }
+    const d = { x: q.x - s.van.x, z: q.z - s.van.z }, ver = Math.hypot(d.x, d.z) > 0.3;
+    if (s.soort === 'schuif' && ver) { if (!m.verschuif(d)) this.melding = 'Zo wordt een weg te kort'; }
+    else if (s.soort === 'buig' && ver && s.seg !== undefined) m.buig(s.seg, q);
+    else if (s.soort === 'veld') {
+      if (this.veld && ver) m.inVeld(this.veld, this.shift);
+      else if (!this.shift) m.leegmaken();
+    }
+    this.veld = null;
+  }
+
+  /** Sneltoetsen van het verplaatsgereedschap. Geeft true als de toets gebruikt is. */
+  verplaatsToets(k: string, shift: boolean, ctrl: boolean): boolean {
+    if (this.modus !== 'verplaats') return false;
+    const m = this.verplaatser;
+    const meld = (n: string | null, t: string) => { this.melding = n ? `${t}: ${n.toLowerCase()}` : `Niets om ${t.toLowerCase()}`; };
+    if (ctrl) {
+      if (k === 'z' && !shift) { meld(m.terug(), 'Ongedaan'); return true; }
+      if (k === 'y' || (k === 'z' && shift)) { meld(m.opnieuw(), 'Opnieuw'); return true; }
+      if (k === 'c') { if (m.kopieer()) this.melding = 'Gekopieerd · Ctrl+V om te plakken'; return true; }
+      if (k === 'v') { if (m.heeftKlembord) { this.plakModus = true; this.plakHoek = 0; } else this.melding = 'Kopieer eerst iets (Ctrl+C)'; return true; }
+      if (k === 'a') return false;
+      return false;
+    }
+    if (k === 'delete' || k === 'backspace') { m.verwijder(); return true; }
+    const stap = shift ? 8 : 1, hoek = (shift ? 1 : 15) * Math.PI / 180;
+    if (this.plakModus && (k === 'q' || k === 'e')) { this.plakHoek += k === 'q' ? -hoek : hoek; return true; }
+    if (m.leeg) return false;
+    if (k === 'q' || k === 'e') { m.draai(k === 'q' ? -hoek : hoek); return true; }
+    if (k === 'pageup' || k === 'pagedown') { m.hoogte(k === 'pageup' ? (shift ? 4 : 1) : (shift ? -4 : -1)); return true; }
+    const f = this.kijk, r = { x: -f.z, z: f.x };
+    const pijl: Record<string, V2> = { arrowup: f, arrowdown: { x: -f.x, z: -f.z }, arrowright: r, arrowleft: { x: -r.x, z: -r.z } };
+    if (pijl[k]) { m.verschuif({ x: pijl[k].x * stap, z: pijl[k].z * stap }); return true; }
+    return false;
+  }
+
+  /** Lijnen rond de selectie (gecachet tot de selectie of de wereld verandert). */
+  private selectieLijnen(): [V3, V3][] {
+    const w = this.wereld, m = this.verplaatser, t = w.terrein;
+    const sleutel = `${m.versie}|${w.net.versie}|${w.gebouwen.size}`;
+    if (this.selCache?.sleutel === sleutel) return this.selCache.lijnen;
+    const l: [V3, V3][] = [];
+    const y = (p: V2) => Math.max(t.hoogte(p.x, p.z), 0) + 0.7;
+    const ring = (pts: V2[], hoog = 0) => { for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; l.push([{ x: a.x, y: y(a) + hoog, z: a.z }, { x: b.x, y: y(b) + hoog, z: b.z }]); } };
+    const cirkel = (c: V2, r: number, yy?: number) => { const pts = Array.from({ length: 16 }, (_, k) => ({ x: c.x + Math.cos(k / 16 * Math.PI * 2) * r, z: c.z + Math.sin(k / 16 * Math.PI * 2) * r })); for (let i = 0; i < 16; i++) { const a = pts[i], b = pts[(i + 1) % 16]; l.push([{ x: a.x, y: yy ?? y(a), z: a.z }, { x: b.x, y: yy ?? y(b), z: b.z }]); } };
+    for (const id of m.sel.knoop) { const k = w.net.knopen.get(id); if (k) cirkel(k.p, 4, Math.max(k.y, 0) + 0.9); }
+    for (const id of m.sel.gebouw) { const g = w.gebouwen.get(id); if (g) { ring(g.voet); const h = g.lagen.reduce((s, x) => s + x.hoogte, 0); ring(g.voet, h + (g.y - y(g.centrum))); } }
+    for (const id of m.sel.dienst) { const d = w.voorzieningen.diensten.get(id); if (d) ring(d.voet); }
+    for (const i of [...m.sel.boom].slice(0, 400)) cirkel({ x: w.bomen.x[i], z: w.bomen.z[i] }, 2.2);
+    this.selCache = { sleutel, lijnen: l };
+    return l;
+  }
+
+  private verplaatsVoorbeeld(p: V2): Voorbeeld {
+    const w = this.wereld, m = this.verplaatser, t = w.terrein;
+    const y = (q: V2) => Math.max(t.hoogte(q.x, q.z), 0);
+    const veld = this.veld ? this.veld.map(q => ({ x: q.x, y: y(q) + 0.8, z: q.z })) : null;
+    if (this.plakModus) {
+      return { soort: 'verplaats', sel: [], geest: this.plakGeest(p), segmenten: [], greep: null, veld: null, tekst: 'Klik om te plakken · Q/E draaien · rechts = annuleren' };
+    }
+    const s = this.mSleep, sel = this.selectieLijnen();
+    const gr = m.greep();
+    let geest: [V3, V3][] = [], tekst = '';
+    const n = m.sel, delen: string[] = [];
+    if (n.seg.size) delen.push(`${n.seg.size} weg${n.seg.size > 1 ? 'en' : ''}`);
+    if (n.knoop.size) delen.push(`${n.knoop.size} knoop${n.knoop.size > 1 ? 'pen' : ''}`);
+    if (n.gebouw.size) delen.push(`${n.gebouw.size} gebouw${n.gebouw.size > 1 ? 'en' : ''}`);
+    if (n.dienst.size) delen.push(`${n.dienst.size} voorziening${n.dienst.size > 1 ? 'en' : ''}`);
+    if (n.boom.size) delen.push(`${n.boom.size} bom${n.boom.size > 1 ? 'en' : ''}`);
+    if (s?.soort === 'schuif') {
+      const d = { x: p.x - s.van.x, z: p.z - s.van.z };
+      geest = m.geest(Verplaatser.schuif(d), y);
+      tekst = `${Math.hypot(d.x, d.z).toFixed(1)} m`;
+    } else if (s?.soort === 'buig' && s.seg !== undefined) {
+      const sg = w.net.segmenten.get(s.seg);
+      if (sg) {
+        const A = w.net.knopen.get(sg.a)!.p, B = w.net.knopen.get(sg.b)!.p;
+        const c = { x: 2 * p.x - (A.x + B.x) / 2, z: 2 * p.z - (A.z + B.z) / 2 };
+        const pts = Wegennet.curve(A, c, B, 24);
+        for (let i = 1; i < pts.length; i++) geest.push([{ x: pts[i - 1].x, y: y(pts[i - 1]) + 0.8, z: pts[i - 1].z }, { x: pts[i].x, y: y(pts[i]) + 0.8, z: pts[i].z }]);
+        tekst = 'Weg buigen';
+      }
+    } else if (s?.soort === 'veld') tekst = 'Selecteren' + (this.shift ? ' (erbij)' : '');
+    else if (delen.length) tekst = delen.join(', ') + ' · slepen · Q/E draaien · PgUp/PgDn';
+    else {
+      const d = m.raak(p);
+      tekst = d ? 'Klik om te kiezen · Shift = erbij · slepen op de grond = rechthoek' : 'Klik op een weg, knoop, gebouw, voorziening of boom';
+    }
+    return { soort: 'verplaats', sel, geest, segmenten: [...n.seg], greep: gr ? { x: gr.p.x, y: y(gr.p) + 0.8, z: gr.p.z } : null, veld, tekst };
+  }
+
+  /** Spooklijnen van het klembord op de muis. */
+  private plakGeest(p: V2): [V3, V3][] {
+    const t = this.wereld.terrein, m = this.verplaatser;
+    const y = (q: V2) => Math.max(t.hoogte(q.x, q.z), 0);
+    return m.geestKlembord(p, this.plakHoek, y);
   }
 
   /** Volgende bord in de reeks: geen → voorrangsweg → voorrang verlenen → stop → geen. */
@@ -451,6 +589,7 @@ export class Gereedschap {
   los() {
     this.schilderen = false;
     this.slepen = false;
+    if (this.modus === 'verplaats') { this.verplaatsLos(); return; }
     // Selectie loslaten: alle kavels in de rechthoek zoneren.
     if (this.modus === 'zone' && this.selStart && this.muis) {
       const h = this.selectieHoeken(this.selStart, { x: this.muis.x, z: this.muis.z });
@@ -465,6 +604,11 @@ export class Gereedschap {
       const s = this.wereld.net.segmentBij({ x: grond.x, z: grond.z }, 1);
       if (s) { this.wereld.keerWegOm(s.seg.id); return true; }
       return false;
+    }
+    if (this.modus === 'verplaats') {
+      if (this.plakModus) this.plakModus = false;
+      else this.verplaatser.leegmaken();
+      return true;
     }
     if (this.modus === 'verkeer' && grond) {
       const p = { x: grond.x, z: grond.z }, net = this.wereld.net, R = net.regels;
@@ -537,6 +681,11 @@ export class Gereedschap {
 
   /** Rechtermuisknop / Escape: eerst de lopende actie stoppen. Geeft true als er iets te stoppen was. */
   terug(): boolean {
+    if (this.modus === 'verplaats') {
+      if (this.plakModus) { this.plakModus = false; return true; }
+      if (!this.verplaatser.leeg) { this.verplaatser.leegmaken(); return true; }
+      return false;
+    }
     if (this.modus === 'gebied' && this.gebiedPunten.length) { this.gebiedPunten.pop(); return true; }
     if (this.start || this.ctrl) { this.annuleer(); return true; }
     return false;
@@ -627,6 +776,7 @@ export class Gereedschap {
           meer: this.parallel && !wacht ? [(() => { const [a2, c2, b2] = this.verschuif(this.start!, c, b, this.parallel); return Wegennet.curve(a2, c2, b2, 32).map((q, i) => ({ x: q.x, y: Math.max(ya + (yb - ya) * i / 32, 0.5), z: q.z })); })()] : undefined,
         };
       }
+      case 'verplaats': return this.verplaatsVoorbeeld(p);
       case 'verkeer': {
         const net = w.net;
         if (this.verkeerTool === 'hoofdweg') {

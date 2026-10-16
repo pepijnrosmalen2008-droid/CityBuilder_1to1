@@ -102,6 +102,9 @@ export class Werkbalk {
     addEventListener('keydown', e => {
       if (e.target instanceof HTMLInputElement) return;
       const k = e.key.toLowerCase();
+      // Verplaatsen (Move It) gaat voor: pijltjes, Q/E, PgUp/PgDn, Delete, Ctrl+C/V/Z/Y.
+      if (this.g.verplaatsToets(k, e.shiftKey, e.ctrlKey || e.metaKey)) { e.preventDefault(); this.teken(); return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (k === 'escape') { if (!this.g.terug()) this.kies('kijk'); }
       if (k === 'z') this.kies('zone');
       if (k === 'k') this.kies('district');
@@ -170,9 +173,50 @@ export class Werkbalk {
     return { items, opties };
   }
 
-  /** Tabblad Verplaatsen (Move It): ingevuld door main.ts. */
-  verplaatsTab: () => { items: string; opties: string } = () => ({ items: '', opties: '' });
-  verplaatsKnoppen: () => void = () => {};
+  /** Tabblad Verplaatsen (zoals Move It): bewerkingen, filters, ongedaan maken. */
+  private verplaatsTab(): { items: string; opties: string } {
+    const g = this.g, m = g.verplaatser, leeg = m.leeg;
+    const ic = (d: string) => `<svg viewBox="0 0 86 46"><g fill="none" stroke="#e9ecef" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${d}</g></svg>`;
+    const acties: { id: string; naam: string; sub: string; svg: string; uit?: boolean }[] = [
+      { id: 'draaiL', naam: 'Draai links', sub: 'Q · Shift = 1°', svg: ic('<path d="M34 12a13 13 0 1 1-6 16"/><path d="M36 4l-3 8 8 2"/>'), uit: leeg },
+      { id: 'draaiR', naam: 'Draai rechts', sub: 'E · Shift = 1°', svg: ic('<path d="M52 12a13 13 0 1 0 6 16"/><path d="M50 4l3 8-8 2"/>'), uit: leeg },
+      { id: 'hoger', naam: 'Hoger', sub: 'PgUp · 1 m', svg: ic('<path d="M43 36V10M33 20l10-10 10 10"/><path d="M28 40h30"/>'), uit: leeg },
+      { id: 'lager', naam: 'Lager', sub: 'PgDn · 1 m', svg: ic('<path d="M43 8v26M33 24l10 10 10-10"/><path d="M28 40h30"/>'), uit: leeg },
+      { id: 'uitlijnen', naam: 'Hoogte gelijk', sub: 'zelfde hoogte', svg: ic('<path d="M16 22h54"/><circle cx="24" cy="22" r="4"/><circle cx="43" cy="22" r="4"/><circle cx="62" cy="22" r="4"/>'), uit: leeg },
+      { id: 'recht', naam: 'Rechttrekken', sub: 'wegen recht', svg: ic('<path d="M14 34C30 6 56 6 72 34" stroke-dasharray="4 4" stroke="#868e96"/><path d="M14 34h58"/>'), uit: leeg },
+      { id: 'kopieer', naam: 'Kopiëren', sub: 'Ctrl+C', svg: ic('<rect x="26" y="12" width="22" height="26" rx="3"/><path d="M36 8h20a3 3 0 0 1 3 3v21"/>'), uit: leeg },
+      { id: 'plak', naam: 'Plakken', sub: 'Ctrl+V', svg: ic('<rect x="28" y="10" width="30" height="30" rx="3"/><path d="M36 10V6h14v4M35 22h16M35 30h12"/>'), uit: !m.heeftKlembord },
+      { id: 'weg', naam: 'Verwijderen', sub: 'Delete', svg: ic('<path d="M30 14h26M38 14v-4h10v4M32 14l2 24h18l2-24"/>').replace('#e9ecef', '#ff8787'), uit: leeg },
+    ];
+    const items = acties.map(a => `<div class="item ${a.uit ? 'uit' : ''} ${a.id === 'plak' && g.plakModus ? 'aan' : ''}" data-mv="${a.id}">${a.svg}<div class="item-naam">${a.naam}</div><div class="item-sub">${a.sub}</div></div>`).join('');
+    const f = m.filter;
+    const fk = (k: keyof typeof f, naam: string) => `<button class="knop schakel ${f[k] ? 'aan' : ''}" data-mf="${k}">${naam}</button>`;
+    const n = m.aantal;
+    const opties = `<div class="groep"><span>Kiezen</span>${fk('seg', 'Wegen')}${fk('knoop', 'Knopen')}${fk('gebouw', 'Gebouwen')}${fk('dienst', 'Voorzieningen')}${fk('boom', 'Bomen')}</div>`
+      + `<div class="groep"><button class="knop schakel ${g.shiftVast ? 'aan' : ''}" data-mshift title="Elke klik voegt toe of haalt weg (zoals Shift)">Meerdere</button>`
+      + `<button class="knop" data-mleeg ${n ? '' : 'disabled'}>${n ? `${n} gekozen · wissen` : 'Niets gekozen'}</button></div>`
+      + `<div class="groep"><button class="knop" data-mterug ${m.kanTerug ? '' : 'disabled'} title="Ctrl+Z${m.kanTerug ? ': ' + m.naamTerug() : ''}">↶ Ongedaan</button><button class="knop" data-mopnieuw ${m.kanOpnieuw ? '' : 'disabled'} title="Ctrl+Y${m.kanOpnieuw ? ': ' + m.naamOpnieuw() : ''}">↷ Opnieuw</button></div>`;
+    return { items, opties };
+  }
+
+  private verplaatsKnoppen() {
+    const g = this.g, m = g.verplaatser;
+    const graad = Math.PI / 180;
+    const doe: Record<string, () => void> = {
+      draaiL: () => m.draai(-15 * graad), draaiR: () => m.draai(15 * graad), hoger: () => m.hoogte(1), lager: () => m.hoogte(-1),
+      uitlijnen: () => { if (!m.hoogteUitlijnen()) g.melding = 'Kies minstens twee knopen of wegen'; },
+      recht: () => { if (!m.rechttrekken()) g.melding = 'Kies een weg (of twee knopen ertussen)'; },
+      kopieer: () => { if (m.kopieer()) g.melding = 'Gekopieerd · klik op Plakken of Ctrl+V'; },
+      plak: () => { if (m.heeftKlembord) { g.plakModus = !g.plakModus; g.plakHoek = 0; } },
+      weg: () => m.verwijder(),
+    };
+    this.el.querySelectorAll<HTMLElement>('[data-mv]').forEach(e => (e.onclick = () => { if (e.classList.contains('uit')) return; doe[e.dataset.mv!]?.(); this.teken(); }));
+    this.el.querySelectorAll<HTMLElement>('[data-mf]').forEach(e => (e.onclick = () => { const k = e.dataset.mf as keyof typeof m.filter; m.filter[k] = !m.filter[k]; this.teken(); }));
+    this.el.querySelector<HTMLElement>('[data-mshift]')?.addEventListener('click', () => { g.shiftVast = !g.shiftVast; this.teken(); });
+    this.el.querySelector<HTMLElement>('[data-mleeg]')?.addEventListener('click', () => { m.leegmaken(); this.teken(); });
+    this.el.querySelector<HTMLElement>('[data-mterug]')?.addEventListener('click', () => { const n = m.terug(); if (n) g.melding = `Ongedaan: ${n.toLowerCase()}`; this.teken(); });
+    this.el.querySelector<HTMLElement>('[data-mopnieuw]')?.addEventListener('click', () => { const n = m.opnieuw(); if (n) g.melding = `Opnieuw: ${n.toLowerCase()}`; this.teken(); });
+  }
 
   /** Districten van de wereld (gezet door main.ts). */
   districten: Districten | null = null;

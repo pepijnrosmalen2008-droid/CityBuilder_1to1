@@ -76,6 +76,52 @@ export class Bomen {
     this.wis(x0 - marge, z0 - marge, x1 + marge, z1 + marge, (x, z) => puntInPolygoon({ x, z }, groot));
   }
 
+  // ─── Move It: selecteren, verplaatsen, kappen en terugzetten ───
+  /** Verplaatste bomen (index → plek), om op te slaan. */
+  verplaatst = new Map<number, { x: number; z: number; rot: number }>();
+
+  /** Levende bomen binnen een polygoon. */
+  inPolygoon(poly: V2[]): number[] {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of poly) { x0 = Math.min(x0, p.x); z0 = Math.min(z0, p.z); x1 = Math.max(x1, p.x); z1 = Math.max(z1, p.z); }
+    const r: number[] = [];
+    for (let cx = Math.floor(x0 / 16); cx <= Math.floor(x1 / 16); cx++)
+      for (let cz = Math.floor(z0 / 16); cz <= Math.floor(z1 / 16); cz++)
+        for (const i of this.raster.get((cx + 1000) * 4096 + (cz + 1000)) ?? []) if (this.levend[i] && puntInPolygoon({ x: this.x[i], z: this.z[i] }, poly)) r.push(i);
+    return r;
+  }
+  /** Dichtstbijzijnde levende boom binnen `max` m. */
+  boomBij(p: V2, max = 3): number | null {
+    let best: number | null = null, bd = max;
+    for (let cx = Math.floor((p.x - max) / 16); cx <= Math.floor((p.x + max) / 16); cx++)
+      for (let cz = Math.floor((p.z - max) / 16); cz <= Math.floor((p.z + max) / 16); cz++)
+        for (const i of this.raster.get((cx + 1000) * 4096 + (cz + 1000)) ?? []) {
+          if (!this.levend[i]) continue;
+          const d = Math.hypot(this.x[i] - p.x, this.z[i] - p.z);
+          if (d < bd) { bd = d; best = i; }
+        }
+    return best;
+  }
+  zetLevend(ids: number[], aan: boolean) { for (const i of ids) if (i < this.n) { this.levend[i] = aan ? 1 : 0; this.vuileVakken.add(this.vak(this.x[i], this.z[i])); } }
+  verplaats(i: number, x: number, z: number, rot = this.rot[i]) {
+    if (i >= this.n) return;
+    const oud = this.cel(this.x[i], this.z[i]), nieuw = this.cel(x, z);
+    this.vuileVakken.add(this.vak(this.x[i], this.z[i]));
+    if (oud !== nieuw) {
+      const l = this.raster.get(oud); if (l) { const j = l.indexOf(i); if (j >= 0) l.splice(j, 1); }
+      let m = this.raster.get(nieuw); if (!m) this.raster.set(nieuw, m = []); m.push(i);
+    }
+    this.x[i] = x; this.z[i] = z; this.rot[i] = rot;
+    this.verplaatst.set(i, { x, z, rot });
+    this.vuileVakken.add(this.vak(x, z));
+  }
+  stand(ids: number[]) { return ids.map(i => ({ i, x: this.x[i], z: this.z[i], rot: this.rot[i], levend: !!this.levend[i] })); }
+  zetStand(lijst: { i: number; x: number; z: number; rot: number; levend: boolean }[]) {
+    for (const b of lijst) { if (this.x[b.i] !== b.x || this.z[b.i] !== b.z || this.rot[b.i] !== b.rot) this.verplaats(b.i, b.x, b.z, b.rot); this.zetLevend([b.i], b.levend); }
+  }
+  naarJsonVerplaatst() { return [...this.verplaatst]; }
+  laadVerplaatst(l: [number, { x: number; z: number; rot: number }][] | undefined) { for (const [i, p] of l ?? []) this.verplaats(i, p.x, p.z, p.rot); }
+
   haalVuileVakken() { const v = [...this.vuileVakken]; this.vuileVakken.clear(); return v; }
   alleVakken() { const s = new Set<number>(); for (let i = 0; i < this.n; i++) s.add(this.vak(this.x[i], this.z[i])); return [...s]; }
 

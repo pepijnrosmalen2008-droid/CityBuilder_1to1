@@ -494,6 +494,109 @@ export class Wegennet {
     return true;
   }
 
+  // ─── Move It ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Knopen verplaatsen of draaien met f (en dy meter omhoog). Aansluitende segmenten passen hun
+   * bochtpunt aan: tussen twee verplaatste knopen gaat het mee, aan één kant blijft een rechte weg
+   * recht en buigt een bocht half mee. `segsMee`: segmenten waarvan het bochtpunt ook f volgt.
+   * Geeft false (en verandert niets) als een segment daardoor te kort wordt.
+   */
+  transformeer(knoopIds: number[], f: (p: V2) => V2, dy = 0, segsMee: number[] = []): boolean {
+    const zet = new Set(knoopIds.filter(id => this.knopen.has(id)));
+    const segs = new Set<number>(segsMee.filter(id => this.segmenten.has(id)));
+    for (const id of zet) for (const s of this.knopen.get(id)!.segs) segs.add(s);
+    const oud = new Map<number, V2>();
+    for (const id of zet) oud.set(id, { ...this.knopen.get(id)!.p });
+    const nieuwP = (id: number) => zet.has(id) ? f(oud.get(id)!) : this.knopen.get(id)!.p;
+    const nieuwC = new Map<number, V2>();
+    for (const sid of segs) {
+      const seg = this.segmenten.get(sid)!;
+      const aM = zet.has(seg.a), bM = zet.has(seg.b);
+      const A0 = oud.get(seg.a) ?? this.knopen.get(seg.a)!.p, B0 = oud.get(seg.b) ?? this.knopen.get(seg.b)!.p;
+      const A1 = nieuwP(seg.a), B1 = nieuwP(seg.b);
+      if (dist2(A1, B1) < MIN_SEGMENT) return false;
+      let c: V2;
+      if ((aM && bM) || segsMee.includes(sid)) c = f(seg.c);
+      else {
+        const recht = dist2(seg.c, lerp2(A0, B0, 0.5)) < 0.6;
+        if (recht) c = lerp2(A1, B1, 0.5);
+        else { const d = aM ? sub2(A1, A0) : sub2(B1, B0); c = { x: seg.c.x + d.x / 2, z: seg.c.z + d.z / 2 }; }
+      }
+      nieuwC.set(sid, c);
+    }
+    for (const id of zet) {
+      const k = this.knopen.get(id)!;
+      k.p = nieuwP(id);
+      k.niveau = Math.round((k.niveau + dy) * 10) / 10;
+      k.y = this.knoopHoogte(k.p) + k.niveau;
+    }
+    for (const [sid, c] of nieuwC) {
+      const seg = this.segmenten.get(sid)!;
+      seg.c = c;
+      this.berekenPad(seg); this.egaliseer(seg);
+      this.events.push({ soort: 'seg+', id: sid });
+    }
+    for (const sid of segs) { const seg = this.segmenten.get(sid)!; this.meldKnoop(seg.a); this.meldKnoop(seg.b); }
+    for (const id of zet) this.meldKnoop(id);
+    this.versie++;
+    return true;
+  }
+
+  /** Bochtpunt van een segment verzetten (Move It: een weg buigen of rechttrekken). */
+  buig(id: number, c: V2) {
+    const seg = this.segmenten.get(id);
+    if (!seg) return false;
+    seg.c = { ...c };
+    this.berekenPad(seg); this.egaliseer(seg);
+    this.events.push({ soort: 'seg+', id }); this.versie++;
+    this.meldKnoop(seg.a); this.meldKnoop(seg.b);
+    return true;
+  }
+
+  /**
+   * Het wegennet terugzetten naar een eerdere stand (ongedaan maken/opnieuw): alleen wat verschilt
+   * wordt aangepast; segmenten en knopen houden hun id.
+   */
+  zetStand(j: ReturnType<Wegennet['naarJson']>) {
+    const doelK = new Map(j.knopen.map(k => [k.id, k]));
+    const doelS = new Map(j.segmenten.map(s => [s.id, s]));
+    const zelfde = (s: Segment, d: (typeof j.segmenten)[number]) => s.a === d.a && s.b === d.b && s.type === d.type && Math.abs(s.c.x - d.cx) < 1e-6 && Math.abs(s.c.z - d.cz) < 1e-6 && !!s.om === !!d.om;
+    // Weg met segmenten die niet in de stand voorkomen of andere knopen/type hebben; alleen een ander bochtpunt: terugbuigen.
+    const gebogen = new Set<number>();
+    for (const s of [...this.segmenten.values()]) {
+      const d = doelS.get(s.id);
+      if (d && s.a === d.a && s.b === d.b && s.type === d.type && !!s.om === !!d.om) { if (!zelfde(s, d)) { s.c = { x: d.cx, z: d.cz }; gebogen.add(s.id); } continue; }
+      this.verwijderSegment(s.id);
+    }
+    // Knopen: aanmaken of verplaatsen.
+    const bewogen = new Set<number>();
+    for (const d of j.knopen) {
+      const k = this.knopen.get(d.id);
+      if (!k) { this.knopen.set(d.id, { id: d.id, p: { x: d.x, z: d.z }, y: d.y, niveau: d.niveau ?? 0, segs: [] }); continue; }
+      if (k.p.x !== d.x || k.p.z !== d.z || k.y !== d.y) { k.p = { x: d.x, z: d.z }; k.y = d.y; k.niveau = d.niveau ?? 0; bewogen.add(k.id); }
+    }
+    for (const id of bewogen) for (const sid of this.knopen.get(id)!.segs) gebogen.add(sid);
+    for (const sid of gebogen) { const seg = this.segmenten.get(sid); if (!seg) continue; this.berekenPad(seg); this.egaliseer(seg); this.events.push({ soort: 'seg+', id: sid }); this.meldKnoop(seg.a); this.meldKnoop(seg.b); }
+    // Ontbrekende segmenten terug met hun eigen id.
+    for (const d of j.segmenten) {
+      if (this.segmenten.has(d.id)) continue;
+      const A = this.knopen.get(d.a), B = this.knopen.get(d.b);
+      if (!A || !B) continue;
+      const seg: Segment = { id: d.id, a: d.a, b: d.b, c: { x: d.cx, z: d.cz }, type: d.type, naam: d.naam ?? '', lengte: 0, pad: [], om: !!d.om };
+      this.segmenten.set(seg.id, seg);
+      A.segs.push(seg.id); B.segs.push(seg.id);
+      this.berekenPad(seg); this.egaliseer(seg);
+      this.events.push({ soort: 'seg+', id: seg.id });
+      this.meldKnoop(A.id); this.meldKnoop(B.id);
+    }
+    // Losse knopen die er in de stand niet zijn, opruimen.
+    for (const k of [...this.knopen.values()]) if (!doelK.has(k.id) && !k.segs.length) { this.knopen.delete(k.id); this.events.push({ soort: 'knoop~', id: k.id }); }
+    for (const id of bewogen) this.meldKnoop(id);
+    this.volgende = Math.max(this.volgende, j.volgende);
+    this.versie++;
+  }
+
   /** Rijrichting omdraaien (eenrichtingswegen; bij tweerichtingswegen spiegelt het profiel). */
   keerOm(id: number) {
     const seg = this.segmenten.get(id);

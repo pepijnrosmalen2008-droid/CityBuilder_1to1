@@ -68,6 +68,8 @@ export class VoorbeeldLaag {
     const t = this.w.terrein;
     switch (v.soort) {
       case 'weg': {
+        (this.gids.material as THREE.LineBasicMaterial).color.set(0x66d9ff);
+        (this.snapRing.material as THREE.MeshBasicMaterial).color.set(0x66d9ff);
         const lijnen = [...(v.as.length > 1 ? [v.as] : []), ...(v.meer ?? [])];
         if (lijnen.length) {
           this.lintenLangs(lijnen, v.breedte, 0.6);
@@ -124,6 +126,25 @@ export class VoorbeeldLaag {
         this.ring.geometry.dispose(); this.ring.geometry = g;
         this.ringMat.color.set(v.kleur);
         this.ring.visible = true;
+        break;
+      }
+      case 'verplaats': {
+        const lijnGeo = (l: [V3, V3][]) => { const pos: number[] = []; for (const [p, q] of l) pos.push(p.x, p.y, p.z, q.x, q.y, q.z); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); return g; };
+        const sel = [...v.sel];
+        if (v.veld) for (let i = 0; i < v.veld.length; i++) sel.push([v.veld[i], v.veld[(i + 1) % v.veld.length]]);
+        if (sel.length) { this.kader.geometry.dispose(); this.kader.geometry = lijnGeo(sel); (this.kader.material as THREE.LineBasicMaterial).color.set(0x4dabf7); this.kader.visible = true; }
+        if (v.geest.length) { this.gids.geometry.dispose(); this.gids.geometry = lijnGeo(v.geest); (this.gids.material as THREE.LineBasicMaterial).color.set(0xffffff); this.gids.visible = true; }
+        if (v.segmenten.length) {
+          const lijnen = v.segmenten.map(id => this.w.net.segmenten.get(id)).filter(Boolean).map(seg => seg!.pad.map(p => ({ x: p.x, y: p.y, z: p.z })));
+          if (lijnen.length) { this.lintenLangs(lijnen, 3, 0.5); this.lintMat.color.set(0x4dabf7); this.lint.visible = true; }
+        }
+        if (v.greep) { this.snapRing.position.set(v.greep.x, v.greep.y + 0.2, v.greep.z); (this.snapRing.material as THREE.MeshBasicMaterial).color.set(0xffd43b); this.snapRing.visible = true; }
+        if (v.veld) {
+          const pos = v.veld.flatMap(p => [p.x, p.y, p.z]);
+          const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex([0, 1, 2, 0, 2, 3]);
+          this.kavelVlak.geometry.dispose(); this.kavelVlak.geometry = g;
+          const vm = this.kavelVlak.material as THREE.MeshBasicMaterial; vm.color.set(0x4dabf7); vm.opacity = 0.14; this.kavelVlak.visible = true;
+        }
         break;
       }
       case 'zoneSel': {

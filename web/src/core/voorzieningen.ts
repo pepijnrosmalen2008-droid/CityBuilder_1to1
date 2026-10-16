@@ -131,6 +131,37 @@ export class Voorzieningen {
     this.klok = 99;
   }
 
+  /** Move It: voorziening verplaatsen/draaien met f (en de draaihoek drot). */
+  transformeer(id: number, f: (p: V2) => V2, drot: number) {
+    const d = this.diensten.get(id);
+    if (!d) return;
+    d.p = f(d.p); d.voet = d.voet.map(f); d.rot += drot;
+    const s = this.w.net.segmentBij(d.p, 60);
+    if (s) d.seg = s.seg.id;
+    this.w.bomen.wisInPolygoon(d.voet, 2);
+    this.events.push({ soort: 'dienst~', id }); this.klok = 99;
+  }
+  /** Een voorziening terugzetten zoals hij was (ongedaan maken), met hetzelfde id. */
+  zet(d: Dienst) {
+    const nieuw = !this.diensten.has(d.id);
+    this.diensten.set(d.id, structuredClone(d));
+    this.volgende = Math.max(this.volgende, d.id + 1);
+    this.events.push({ soort: nieuw ? 'dienst+' : 'dienst~', id: d.id }); this.klok = 99;
+  }
+  /** Weghalen zonder terugbetaling (Move It). */
+  haalWeg(id: number) { if (this.diensten.delete(id)) { this.events.push({ soort: 'dienst-', id }); this.klok = 99; } }
+  /** Kopie op een nieuwe plek (Move It: plakken), zonder kosten voor de bouw zelf. */
+  plak(d: Dienst, f: (p: V2) => V2, drot: number): number {
+    const id = this.volgende++;
+    const k: Dienst = { ...structuredClone(d), id, p: f(d.p), voet: d.voet.map(f), rot: d.rot + drot, voortgang: 0, klaar: false };
+    const s = this.w.net.segmentBij(k.p, 60); if (s) k.seg = s.seg.id;
+    this.diensten.set(id, k);
+    this.w.geld -= DIENSTEN[d.soort].kosten;
+    this.w.bomen.wisInPolygoon(k.voet, 2);
+    this.events.push({ soort: 'dienst+', id }); this.klok = 99;
+    return id;
+  }
+
   dienstOp(p: V2): Dienst | null {
     for (const d of this.diensten.values()) if (puntInPolygoon(p, d.voet)) return d;
     return null;

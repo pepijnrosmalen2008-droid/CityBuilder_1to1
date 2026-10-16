@@ -146,12 +146,34 @@ async function start() {
   // Muis: links = gereedschap, rechts klikken = stoppen. Aanraken: tikken = klikken, slepen = schuiven
   // (in de zonemodus: schilderen), twee vingers = camera.
   const zoneSleept = () => gereedschap.modus === 'zone' && gereedschap.zoneTool !== 'vullen';
-  camera.eenVingerPannen = () => !zoneSleept();
+  // Verplaatsen (Move It): met één vinger een gekozen ding slepen; elders schuift de kaart.
+  let toolSleept = false;
+  camera.eenVingerPannen = () => !zoneSleept() && !toolSleept;
+  const mv = gereedschap.verplaatser;
+  camera.negeer = k => gereedschap.modus === 'verplaats' && (!mv.leeg || gereedschap.plakModus) && ['q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'pageup', 'pagedown'].includes(k);
+  // Rechthoekselectie: schermhoeken naar de grond (vlak op de hoogte van het kijkpunt als je de lucht raakt).
+  const vlak = new THREE.Plane();
+  const grondOp = (x: number, y: number) => {
+    ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, sfeer.camera);
+    const o = ray.ray.origin, d = ray.ray.direction;
+    const h = wereld.terrein.straal({ x: o.x, y: o.y, z: o.z }, { x: d.x, y: d.y, z: d.z });
+    if (h) return { x: h.x, z: h.z };
+    vlak.set(new THREE.Vector3(0, 1, 0), -camera.doel.y);
+    const q = ray.ray.intersectPlane(vlak, new THREE.Vector3());
+    return q ? { x: q.x, z: q.z } : null;
+  };
+  let veldStart: { x: number; y: number } | null = null;
   let tik: { x: number; y: number; t: number; id: number } | null = null;
   doek.addEventListener('pointermove', e => {
     if (e.pointerType === 'touch' && camera.aantalVingers > 1) return;
     muis = { x: e.clientX, y: e.clientY };
     if (tik && Math.hypot(e.clientX - tik.x, e.clientY - tik.y) > 12) tik = null;
+    if (veldStart && gereedschap.selecteertVeld) {
+      const a = veldStart, b = muis;
+      const h = [grondOp(a.x, a.y), grondOp(b.x, a.y), grondOp(b.x, b.y), grondOp(a.x, b.y)];
+      gereedschap.veld = h.every(Boolean) && Math.hypot(b.x - a.x, b.y - a.y) > 6 ? h as { x: number; z: number }[] : null;
+    }
   });
   doek.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') muis = { x: -1, y: -1 }; });
   doek.addEventListener('pointerdown', e => {
@@ -160,23 +182,33 @@ async function start() {
       if (camera.aantalVingers > 1) { tik = null; gereedschap.los(); return; }
       tik = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
       if (zoneSleept()) gereedschap.klik(grondOnder());
+      // Move It op een aanraakscherm: begin je op iets dat gekozen is (of op de buiggreep), dan sleep je het.
+      if (gereedschap.modus === 'verplaats' && !gereedschap.plakModus) {
+        const g0 = grondOnder();
+        const p0 = g0 ? { x: g0.x, z: g0.z } : null;
+        const d0 = p0 ? mv.raak(p0) : null, gr = mv.greep();
+        if (p0 && ((d0 && mv.heeft(d0)) || (gr && Math.hypot(gr.p.x - p0.x, gr.p.z - p0.z) < 6))) { toolSleept = true; tik = null; gereedschap.shift = gereedschap.shiftVast; gereedschap.klik(g0); }
+      }
       return;
     }
-    if (e.button === 0) gereedschap.klik(grondOnder());
+    gereedschap.shift = e.shiftKey || gereedschap.shiftVast;
+    if (e.button === 0) { veldStart = { x: e.clientX, y: e.clientY }; gereedschap.klik(grondOnder()); }
     if (e.button === 2) rechtsStart = { x: e.clientX, y: e.clientY };
   });
   addEventListener('pointerup', e => {
     if (e.pointerType === 'touch') {
+      toolSleept = false;
       gereedschap.los();
       if (tik && tik.id === e.pointerId && performance.now() - tik.t < 400 && !zoneSleept()) {
         muis = { x: tik.x, y: tik.y };
+        gereedschap.shift = gereedschap.shiftVast;
         gereedschap.klik(grondOnder());
         gereedschap.los();
       }
       tik = null;
       return;
     }
-    if (e.button === 0) gereedschap.los();
+    if (e.button === 0) { gereedschap.los(); veldStart = null; }
     if (e.button === 2 && rechtsStart && Math.hypot(e.clientX - rechtsStart.x, e.clientY - rechtsStart.y) < 5 && !gereedschap.rechts(grondOnder())) gereedschap.terug();
     rechtsStart = null;
   });
@@ -327,7 +359,7 @@ async function start() {
   setInterval(() => { if (!document.hidden) void opslaan(); }, 120_000);
   addEventListener('visibilitychange', () => { if (document.hidden) void opslaan(); });
 
-  let vorige = performance.now(), hudKlok = 0, tijd = 0;
+  let vorige = performance.now(), hudKlok = 0, tijd = 0, mvVersie = -1;
   const lus = (nu: number) => {
     const dt = Math.min(0.1, (nu - vorige) / 1000);
     vorige = nu; tijd += dt;
@@ -339,6 +371,8 @@ async function start() {
     verkeersLaag.werkBij(camera.doel, camera.afstand);
     if (diensten.werkBij(dt, sfeer.camera, wereld.snelheid)) sfeer.schaduwVuil();
     const grond = grondOnder();
+    gereedschap.kijk = { x: -Math.sin(camera.yaw), z: -Math.cos(camera.yaw) };
+    if (gereedschap.modus === 'verplaats' && mv.versie !== mvVersie) { mvVersie = mv.versie; werkbalk.teken(); }
     gereedschap.beweeg(grond);
     gereedschap.stap(dt);
     const voor = stad.bezig;
@@ -358,7 +392,7 @@ async function start() {
     const selSleutel = sel ? `${sel.soort}${sel.id}` : '';
     if (selSleutel !== selectieNu) { selectieNu = selSleutel; infoPaneel.toon(sel); }
     infoLaag.werkBij(dt);
-    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' || vb.soort === 'dienst' || vb.soort === 'zoneSel' ? vb.tekst : '';
+    const tekst = vb.soort === 'weg' ? (vb.as.length ? vb.tekst : '') : vb.soort === 'markeer' || vb.soort === 'gebied' || vb.soort === 'dienst' || vb.soort === 'zoneSel' || vb.soort === 'verplaats' ? vb.tekst : '';
     tip.style.display = tekst && grond ? 'block' : 'none';
     tip.textContent = tekst;
     tip.className = (vb.soort === 'weg' || vb.soort === 'dienst') && !vb.geldig ? 'fout' : '';

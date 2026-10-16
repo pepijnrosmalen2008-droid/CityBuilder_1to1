@@ -15,12 +15,14 @@ export class StadCamera {
   minAfstand = 10; maxAfstand = 2200;
   /** Mag één vinger de kaart schuiven? (niet tijdens zones schilderen) */
   eenVingerPannen: () => boolean = () => true;
+  /** Toetsen die het gereedschap nu zelf gebruikt (Move It: pijltjes, Q/E). */
+  negeer: (toets: string) => boolean = () => false;
   private vingers = new Map<number, { x: number; y: number }>();
   /** Aantal vingers op het scherm (voor het gereedschap). */
   get aantalVingers() { return this.vingers.size; }
 
   constructor(private cam: THREE.PerspectiveCamera, dom: HTMLElement, private t: Terrein) {
-    addEventListener('keydown', e => { if (!(e.target instanceof HTMLInputElement)) this.toetsen.add(e.key.toLowerCase()); });
+    addEventListener('keydown', e => { const k = e.key.toLowerCase(); if (!(e.target instanceof HTMLInputElement) && !e.ctrlKey && !e.metaKey && !this.negeer(k)) this.toetsen.add(k); });
     addEventListener('keyup', e => this.toetsen.delete(e.key.toLowerCase()));
     addEventListener('blur', () => this.toetsen.clear());
     dom.addEventListener('pointerdown', e => {

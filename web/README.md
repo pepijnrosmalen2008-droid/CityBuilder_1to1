@@ -36,6 +36,31 @@ hierheen).
 - **Kruispunten** (`core/geom/wegmesh.ts`): fietspaden en bermen lopen in rood asfalt om de hoek, rode fietsoversteken met blokmarkering, zebrapaden, stopstrepen bij verkeerslichten, haaientanden voor de weg die voorrang moet geven, voorsorteerpijlen bij twee of meer stroken, pijlen op eenrichtingsstraten.
 - **Zoneren**: vullen (een heel bouwblok in één klik), selectie (een rechthoek die met de weg meedraait) en penseel klein/groot. Rechts klikken haalt de zone weg met hetzelfde gereedschap. De kavels die veranderen, lichten op in de kleur van de zone.
 
+## Verkeersgereedschap (ingebouwde TM:PE)
+
+`core/verkeer/regels.ts` (data), `core/verkeer/tmpe.ts` (hulpfuncties), `render/verkeerslaag.ts` (klikbare iconen). Toets **T**.
+
+- **Voorrangsborden** per wegeinde: geen → voorrangsweg → voorrang verlenen → stop (rechts klikken = weg). Voertuigen houden zich eraan; bij een stopbord staat iedereen eerst stil. Haaientanden en stopstrepen op het wegdek volgen de borden.
+- **Voorrangsweg**: klik op een weg en de hele doorgaande weg krijgt voorrang, zijwegen voorrang verlenen of stop; lichten op die kruispunten gaan uit.
+- **Verkeerslichten** per kruispunt aan of uit (rechts klikken = automatisch), groentijd met − en +.
+- **Rijstrookpijlen** per strook (links, rechtdoor, rechts, keren), ↺ = standaard. De rijstrookgraaf en de pijlen op het wegdek passen zich aan, en de routeplanner rijdt alleen nog toegestane bewegingen.
+- **Kruispuntregels** per wegeinde: keren, van strook wisselen op het kruispunt, het kruispunt op rijden als het vol staat, oversteekplaats voor voetgangers (zonder: geen zebrapad), rechtsaf door rood.
+- **Maximumsnelheid** en **verboden** (auto's, vrachtverkeer, bussen) per weg, klikken of slepen. Routes houden rekening met beide.
+- **Verkeer wissen** en **Vastgelopen verdwijnen** aan/uit.
+- Regels worden opgeslagen met de stad en gaan mee als een weg wordt gesplitst. Test: `scripts/test/tmpe.ts`.
+
+## Verplaatsen (ingebouwde Move It)
+
+`core/verplaats.ts`, toets **M**. Werkt op knopen, wegen, gebouwen, voorzieningen en bomen (filters in de werkbalk).
+
+- Kiezen: klikken, Shift = erbij/eraf (of de knop *Meerdere*), slepen over de grond = rechthoek. Rechts klikken of Esc = selectie leeg.
+- Slepen = verplaatsen (met spooklijnen en afstand), pijltjes = 1 m (Shift 8 m) ten opzichte van de camera, Q/E = draaien 15° (Shift 1°), PgUp/PgDn = 1 m hoger/lager (Shift 4 m).
+- Eén weg gekozen: sleep de gele greep halverwege om hem te buigen. *Rechttrekken*, *Hoogte gelijk* (alle knopen op dezelfde hoogte).
+- Ctrl+C / Ctrl+V: kopiëren en plakken (het klembord hangt aan de muis, Q/E draait het), Delete = verwijderen.
+- Ctrl+Z / Ctrl+Y: ongedaan maken en opnieuw (60 stappen). Ook gebouwen die verdwenen omdat je een weg verlegde, komen terug.
+- Op een aanraakscherm: tik om te kiezen, sleep een gekozen ding om het te verplaatsen; elders schuift de kaart.
+- Test: `scripts/test/verplaats.ts`.
+
 ## Leven op straat
 
 `core/straatleven.ts` + `render/straatleven.ts`: voetgangers op de stoepen en fietsers op de fietspaden, alleen ingezoomd en rond het kijkpunt (110/200/320 per kwaliteitsniveau, 's nachts minder). Ze lopen om de hoek naar de volgende straat zonder te verspringen. Puur beeld, vier draw calls, ongeveer 0,1 ms per beeld.
@@ -75,6 +100,7 @@ hierheen).
 
 | Toets / muis | Functie |
 |---|---|
+| T / M | Verkeersgereedschap (TM:PE) / Verplaatsen (Move It) |
 | X / Z / K / G / N / U / B / Esc | Wegen / Zones / Districten / Economie (gebieden: eerst naast een weg klikken voor het hoofdgebouw, dan de hoekpunten) / Voorzieningen (stroom, water, afval, hulpdiensten) / Opwaarderen / Slopen / Kijken |
 | 1–9 | Wegtype of zonetype |
 | C | Tekenstijl wisselen: recht, bocht, vrij (vrij = altijd vloeiend doorlopend), raster |
