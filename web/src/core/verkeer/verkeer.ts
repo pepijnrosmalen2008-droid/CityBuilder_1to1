@@ -4,6 +4,7 @@ import { WEGTYPEN, WegTypeId, halveBreedte } from '../wegen/typen';
 import { Rijstroken, Baan, Verbinding, Spoor, RANG } from './rijstroken';
 export type { Spoor };
 import type { Wereld } from '../wereld';
+import type { Verbod } from './regels';
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // VERKEER
@@ -51,6 +52,8 @@ export interface Voertuig {
   leeftijd: number;
   /** Hulpdienst met zwaailicht en sirene (rijdt door rood, mag harder). */
   sirene?: boolean;
+  /** Knoop waar het voertuig al stilstond (voor een stopbord en rechtsaf door rood). */
+  gestopt?: number;
   /** Wordt aangeroepen bij aankomst op de bestemming. */
   opAankomst?: (v: Voertuig) => void;
 }
@@ -59,6 +62,11 @@ export interface Voertuig {
 export interface Plek { seg: number; zijde: 1 | -1; p: V2; gewicht: number }
 
 const S0 = 2.2; // minimale afstand tot de voorligger (m)
+
+/** Categorie voor verboden (TM:PE): personenauto's, vrachtverkeer, bussen. */
+export function verbodSoort(soort: VoertuigSoort): Verbod {
+  return soort === 'vrachtwagen' || soort === 'brandweer' ? 'vracht' : soort === 'bus' ? 'bus' : 'auto';
+}
 
 export class Verkeer {
   stroken: Rijstroken;
@@ -70,6 +78,7 @@ export class Verkeer {
   ritten = 0;
   private volgende = 1;
   private versie = -1;
+  private regelVersie = -1;
   private bouwKlok = 0;
   private plekKlok = 99;
   private spawnKlok = 0;
@@ -175,14 +184,16 @@ export class Verkeer {
     return r;
   }
 
-  private kosten(type: WegTypeId, lengte: number) {
-    const f: Record<string, number> = { woonstraat: 1.7, straat: 1.15, straatBus: 1.15, tramstraat: 1.2, laan: 1, gow: 0.85, snelweg: 0.75 };
-    return lengte / (WEGTYPEN[type].snelheid / 3.6) * (f[type] ?? 1.3);
+  private kosten(type: WegTypeId, lengte: number, seg?: number) {
+    const f: Record<string, number> = { woonstraat: 1.7, straat: 1.15, eenrichting: 1.2, straatBus: 1.15, tramstraat: 1.2, laan: 1, gow: 0.85, snelweg: 0.75 };
+    const kmu = (seg !== undefined ? this.w.net.regels.limiet(seg) : undefined) ?? WEGTYPEN[type].snelheid;
+    return lengte / (kmu / 3.6) * (f[type] ?? 1.3);
   }
 
   /** A* over gerichte wegstukken van (seg, r) naar een van de doelen. */
-  private route(start: { seg: number; r: 'A' | 'B'; s: number }, doelen: { seg: number; r: 'A' | 'B'; s: number; extra: number }[]): { seg: number; r: 'A' | 'B' }[] | null {
+  private route(start: { seg: number; r: 'A' | 'B'; s: number }, doelen: { seg: number; r: 'A' | 'B'; s: number; extra: number }[], verbod: Verbod | null = null): { seg: number; r: 'A' | 'B' }[] | null {
     const net = this.w.net;
+    const regels = net.regels;
     const sleutel = (seg: number, r: string) => `${seg}${r}`;
     // Direct op hetzelfde wegstuk vooruit.
     for (const d of doelen) if (d.seg === start.seg && d.r === start.r && d.s > start.s + 8) return [{ seg: start.seg, r: start.r }];
@@ -205,20 +216,24 @@ export class Verkeer {
       const kn = eindKnoop(cur.seg, cur.r);
       const knoop = net.knopen.get(kn);
       if (!knoop) continue;
-      const licht = this.stroken.lichten.has(kn) ? 6 : knoop.segs.length > 2 ? 2.5 : 0;
+      const bordHier = regels.bord(cur.seg, kn);
+      const licht = this.stroken.lichten.has(kn) ? 6 : bordHier === 'stop' ? 5 : knoop.segs.length > 2 ? (bordHier === 'voorrang' ? 1 : bordHier === 'geef' ? 3.5 : 2.5) : 0;
       for (const sid of knoop.segs) {
         if (sid === cur.seg && knoop.segs.length > 1) continue;
         const s = net.segmenten.get(sid)!;
         const r: 'A' | 'B' = s.a === kn ? 'A' : 'B';
         if (!this.stroken.stroken(sid, r).length) continue;
         const k = sleutel(sid, r);
+        // Alleen echte verbindingen (rijstrookpijlen, keren) en geen verboden wegen.
+        if (!this.stroken.volgt.get(cur.k)?.has(k)) continue;
+        if (verbod && !regels.magRijden(sid, verbod)) continue;
         const d = doelMap.get(k);
         const kost = gc + licht;
         if (d) {
-          const c = kost + this.kosten(s.type, d.s) + d.extra;
+          const c = kost + this.kosten(s.type, d.s, sid) + d.extra;
           if (!beste || c < beste.c) { beste = { k, c }; if (!g.has(k) || kost < g.get(k)!) { g.set(k, kost); terug.set(k, cur.k); } }
         }
-        const ng = kost + this.kosten(s.type, s.lengte);
+        const ng = kost + this.kosten(s.type, s.lengte, sid);
         if (g.has(k) && g.get(k)! <= ng) continue;
         g.set(k, ng); terug.set(k, cur.k);
         open.push({ k, f: ng + h(r === 'A' ? s.b : s.a), seg: sid, r });
@@ -280,7 +295,7 @@ export class Verkeer {
     }
     if (!doelen.length) return false;
     if (van && naar && van.seg === naar.seg && Math.hypot(van.p.x - naar.p.x, van.p.z - naar.p.z) < 60) return false;
-    const route = this.route({ seg: start.baan.seg, r: start.baan.richting, s: start.s }, doelen);
+    const route = this.route({ seg: start.baan.seg, r: start.baan.richting, s: start.s }, doelen, verbodSoort(soort));
     if (!route) return false;
     const laatste = route[route.length - 1];
     const doel = doelen.find(d => d.seg === laatste.seg && d.r === laatste.r)!;
@@ -317,7 +332,7 @@ export class Verkeer {
     if (!start) return null;
     const doelen = this.doelOpties(naar).map(d => ({ ...d, extra: sirene ? 0 : d.extra }));
     if (!doelen.length) return null;
-    const route = this.route({ seg: start.baan.seg, r: start.baan.richting, s: start.s }, doelen);
+    const route = this.route({ seg: start.baan.seg, r: start.baan.richting, s: start.s }, doelen, sirene ? null : verbodSoort(soort));
     if (!route) return null;
     const laatste = route[route.length - 1];
     const doel = doelen.find(d => d.seg === laatste.seg && d.r === laatste.r)!;
@@ -386,14 +401,21 @@ export class Verkeer {
   /** Mag v de verbinding c op? (licht, kruisend verkeer, voorrang, ruimte erachter) */
   private mag(v: Voertuig, c: Verbinding, rest: number): boolean {
     if (v.res === c.id) return true;
+    const regels = this.w.net.regels;
     const licht = this.stroken.lichtVoor(c.knoop, c.bron);
+    const bord = licht === null ? regels.bord(c.bron, c.knoop) : undefined;
+    // Stopbord: eerst echt stilstaan bij de streep.
+    if (bord === 'stop' && !v.sirene && v.gestopt !== c.knoop) return false;
+    // Rechtsaf door rood (TM:PE): na stoppen, als niemand anders eraan komt.
+    let doorRood = false;
+    if (licht === 'rood' && !v.sirene && c.afslag === 'rechts' && regels.regel(c.bron, c.knoop, 'rechtsDoorRood') && v.gestopt === c.knoop) doorRood = true;
     // Met zwaailicht en sirene mag je door rood (wel opletten voor kruisend verkeer).
-    if (licht === 'rood' && !v.sirene) return false;
+    if (licht === 'rood' && !v.sirene && !doorRood) return false;
     if (licht === 'oranje' && !v.sirene && rest > (v.v * v.v) / (2 * 3.5) + 1.5) return false;
     // Ruimte op de doelstrook (niet het kruispunt blokkeren).
     const doel = this.stroken.baan(c.naar);
     // Niet het kruispunt op als er achter het kruispunt geen plek is voor iedereen die al die kant op gaat.
-    if (doel) {
+    if (doel && !regels.regel(c.bron, c.knoop, 'blokkeren')) {
       const eerste = doel.op.map(id => this.voertuigen.get(id)).find(Boolean);
       const ruimte = eerste ? eerste.s - eerste.lengte - 1 : Math.min(60, doel.lengte);
       let nodig = v.lengte + S0;
@@ -406,7 +428,7 @@ export class Verkeer {
       const cx = this.stroken.verbinding(x);
       if (cx && cx.bezet > 0) return false;
     }
-    if (v.wacht > 7) return vrij;
+    if (v.wacht > 7 && !doorRood) return vrij;
     // Voorrang van naderend verkeer op conflicterende verbindingen.
     const mijnEta = rest / Math.max(1.5, v.v);
     const bronMij = this.w.net.segmenten.get(c.bron), mijnIn = this.stroken.baan(c.van)!;
@@ -417,8 +439,8 @@ export class Verkeer {
       const anderLicht = this.stroken.lichtVoor(cx.knoop, cx.bron);
       if (anderLicht === 'rood') continue;
       for (const a of lijst) {
-        if (a.id === v.id || a.eta > mijnEta + 3.5) continue;
-        if (this.voorrang(cx, c, licht !== null, bronMij?.type, mijnIn)) { vrij = false; break; }
+        if (a.id === v.id || a.eta > mijnEta + (doorRood ? 6 : 3.5)) continue;
+        if (doorRood || this.voorrang(cx, c, licht !== null, bronMij?.type, mijnIn)) { vrij = false; break; }
       }
       if (!vrij) break;
     }
@@ -428,6 +450,13 @@ export class Verkeer {
   /** Heeft verbinding a voorrang op b? */
   private voorrang(a: Verbinding, b: Verbinding, lichten: boolean, typeB: WegTypeId | undefined, bIn: Baan): boolean {
     const rangA = RANG[this.w.net.segmenten.get(a.bron)?.type ?? 'straat'], rangB = typeB ? RANG[typeB] : 2;
+    // Borden (TM:PE) gaan voor de rang van de weg: voorrangsweg > geen bord > voorrang verlenen/stop.
+    if (!lichten) {
+      const regels = this.w.net.regels;
+      const p = (c: Verbinding) => { const b = regels.bord(c.bron, c.knoop); return b === 'voorrang' ? 2 : b ? 0 : 1; };
+      const pa = p(a), pb = p(b);
+      if (pa !== pb) return pa > pb;
+    }
     const rechtdoorA = a.afslag !== 'links' && a.afslag !== 'keer', rechtdoorB = b.afslag !== 'links' && b.afslag !== 'keer';
     if (!lichten && rangA !== rangB) return rangA > rangB;
     if (rechtdoorA !== rechtdoorB) return rechtdoorA;
@@ -486,9 +515,10 @@ export class Verkeer {
   stap(dtEcht: number) {
     const dt = Math.min(0.25, dtEcht) * this.w.snelheid;
     // Rijstrookgraaf bijwerken na wegwerk (even wachten tot het tekenen klaar is).
+    if (this.w.net.regels.versie !== this.regelVersie) { this.regelVersie = this.w.net.regels.versie; this.versie = -2; this.bouwKlok = 1; }
     if (this.w.net.versie !== this.versie) {
       this.bouwKlok += dtEcht;
-      if (this.bouwKlok > 0.25 || this.versie < 0) { this.versie = this.w.net.versie; this.bouwKlok = 0; this.herbouw(); this.plekKlok = 99; }
+      if (this.bouwKlok > 0.25 || this.versie === -1) { this.versie = this.w.net.versie; this.bouwKlok = 0; this.herbouw(); this.plekKlok = 99; }
     }
     if (dt <= 0) return;
     this.plekKlok += dtEcht;
@@ -563,6 +593,7 @@ export class Verkeer {
             // Bochtsnelheid: op tijd afremmen voor de verbinding.
             v0 = Math.min(v0, Math.sqrt(volgende.vmax * volgende.vmax + 2 * 1.8 * Math.max(0, rest)));
             if (rest < 45) { let l = aangemeld.get(volgende.id); if (!l) aangemeld.set(volgende.id, l = []); l.push({ id: v.id, eta: rest / Math.max(1.5, v.v) }); }
+            if (v.v < 0.4 && rest < 9) v.gestopt = volgende.knoop;
             const remweg = (v.v * v.v) / (2 * v.bc) + 4;
             if (v.res !== volgende.id && rest < Math.max(remweg + 2, 6)) {
               if (this.mag(v, volgende, rest)) { volgende.bezet++; v.res = volgende.id; v.wacht = 0; }
@@ -593,11 +624,11 @@ export class Verkeer {
           else { v.s = cur.lengte; v.v = 0; break; }
         } else {
           v.s -= cur.lengte; v.vorige = [cur.id, ...(v.vorige ?? [])].slice(0, 3); v.spoor = cur.naar; v.ri++;
-          cur.bezet = Math.max(0, cur.bezet - 1); v.res = 0;
+          cur.bezet = Math.max(0, cur.bezet - 1); v.res = 0; v.gestopt = undefined;
         }
       }
       if (v.v < 0.2) v.vast += dt; else v.vast = Math.max(0, v.vast - dt * 2);
-      if (v.vast > 75 && this.voertuigen.has(v.id)) this.verwijder(v); // hopeloos vast: verdwijnt (zoals in CS)
+      if (v.vast > 75 && this.voertuigen.has(v.id) && this.w.net.regels.verdwijnen) this.verwijder(v); // hopeloos vast: verdwijnt (zoals in CS; uit te zetten in TM:PE)
     }
     this.aangemeld = aangemeld;
     this.doorstroming += ((somV0 > 0 ? Math.min(1, somV / somV0 * 1.25) : 1) - this.doorstroming) * Math.min(1, dt * 0.2);
@@ -629,6 +660,13 @@ export class Verkeer {
       return { ...e, x: e.x + e.dx * d, z: e.z + e.dz * d };
     }
     return Rijstroken.op(sp, s);
+  }
+
+  /** Alle gewone voertuigen van de weg halen (TM:PE: verkeer wissen). Hulpdiensten op weg blijven rijden. */
+  wis(): number {
+    let n = 0;
+    for (const v of [...this.voertuigen.values()]) if (!v.opAankomst) { this.verwijder(v); n++; }
+    return n;
   }
 
   /** Halve breedte van de weg onder een voertuig (voor de render-laag niet nodig, wel voor testen). */

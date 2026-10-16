@@ -1,6 +1,6 @@
 import { V2, V3, lerp, norm2, snijLijnstukken, dist2 } from '../math';
 import { Wegennet, Segment } from '../wegen/netwerk';
-import { WEGTYPEN, strookGrenzen, totaleBreedte, RANG, heeftLichten, profiel } from '../wegen/typen';
+import { WEGTYPEN, strookGrenzen, totaleBreedte, RANG, profiel } from '../wegen/typen';
 import { asPunt } from '../geom/wegmesh';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -64,6 +64,13 @@ export class Rijstroken {
   /** Stroken per segment en richting, van rechts naar links. */
   perSeg = new Map<string, number[]>();
   lichten = new Map<number, Lichten>();
+  /**
+   * Per wegeinde (seg:knoop) met aankomend verkeer: welke afslagen er kunnen (mogelijk) en welke
+   * elke strook nu heeft (van rechts naar links), voor de rijstrookpijlen in het verkeersgereedschap.
+   */
+  afslagen = new Map<string, { seg: number; knoop: number; mogelijk: Afslag[]; perStrook: Afslag[][]; standaard: Afslag[][] }>();
+  /** Bereikbaarheid tussen gerichte wegstukken (`seg`+`A|B` → volgende), voor de routeplanner. */
+  volgt = new Map<string, Set<string>>();
   /** Telt het aantal keren opbouwen (voor de render-laag). */
   teller = 0;
   private volgende = 1;
@@ -77,7 +84,7 @@ export class Rijstroken {
 
   /** Alles opnieuw opbouwen (na een wijziging in het wegennet). */
   bouw() {
-    this.sporen.clear(); this.perSeg.clear(); this.teller++;
+    this.sporen.clear(); this.perSeg.clear(); this.afslagen.clear(); this.volgt.clear(); this.teller++;
     const oudeLichten = this.lichten;
     this.lichten = new Map();
     for (const seg of this.net.segmenten.values()) this.stroken_(seg);
@@ -100,7 +107,7 @@ export class Rijstroken {
     const W = totaleBreedte(type.stroken);
     const ka = this.net.eindKnip(seg, 'a'), kb = this.net.eindKnip(seg, 'b');
     const L = seg.lengte;
-    const vmax = type.snelheid / 3.6;
+    const vmax = (this.net.regels.limiet(seg.id) ?? type.snelheid) / 3.6;
     for (const r of ['A', 'B'] as const) {
       const lijst = g.filter(x => isAuto(x.s.soort) && x.s.richting === r).map(x => (x.a + x.b) / 2);
       // Van rechts naar links: rechts van de rijrichting = positieve offset voor A, negatief voor B.
@@ -148,21 +155,28 @@ export class Rijstroken {
     }
     const nieuw: Verbinding[] = [];
     const doodlopend = k.segs.length === 1;
+    const regels = this.net.regels;
     for (const ins of inkomend) {
       const din = this.richting(ins[0].pts, true);
+      const inSeg = ins[0].seg, nIn = ins.length;
+      const keren = doodlopend || regels.regel(inSeg, knoopId, 'keren');
+      const wisselen = regels.regel(inSeg, knoopId, 'wisselen');
+      // Uitgaande groepen met hun afslag.
+      const groepen: { uits: Baan[]; afslag: Afslag }[] = [];
       for (const uits of uitgaand) {
-        const zelfde = uits[0].seg === ins[0].seg;
-        if (zelfde && !doodlopend) continue;
+        const zelfde = uits[0].seg === inSeg;
+        if (zelfde && !keren) continue;
         const dout = this.richting(uits[0].pts, false);
         const cr = din.x * dout.z - din.z * dout.x, dt = din.x * dout.x + din.z * dout.z;
         const hoek = Math.atan2(cr, dt); // > 0 = rechtsaf
         const afslag: Afslag = zelfde ? 'keer' : k.segs.length === 2 || Math.abs(hoek) < 0.6 ? 'rechtdoor' : hoek > 0 ? 'rechts' : 'links';
-        const nIn = ins.length, nUit = uits.length;
+        groepen.push({ uits, afslag });
+      }
+      // Standaard (zoals CS): rechts rechtsaf, links linksaf, rechtdoor over alle stroken.
+      const standaard = (afslag: Afslag, nUit: number): [number, number][] => {
         const paren: [number, number][] = [];
         if (afslag === 'rechtdoor') {
-          // Elke strook rechtdoor; meer stroken in dan uit: de linkse voegen in.
           for (let i = 0; i < nIn; i++) paren.push([i, Math.min(i, nUit - 1)]);
-          // Meer stroken uit dan in: de rechtse strook mag ook naar de extra stroken.
           for (let j = nIn; j < nUit; j++) paren.push([nIn - 1, j]);
         } else if (afslag === 'rechts') {
           paren.push([0, 0]);
@@ -170,8 +184,36 @@ export class Rijstroken {
         } else if (afslag === 'links') {
           paren.push([nIn - 1, nUit - 1]);
           if (nIn >= 3 && nUit >= 2) paren.push([nIn - 2, nUit - 2]);
-        } else {
-          paren.push([nIn - 1, nUit - 1]);
+        } else paren.push([nIn - 1, nUit - 1]);
+        return paren;
+      };
+      const stdPerStrook: Afslag[][] = ins.map(() => []);
+      for (const gr of groepen) for (const [i] of standaard(gr.afslag, gr.uits.length)) if (!stdPerStrook[i].includes(gr.afslag)) stdPerStrook[i].push(gr.afslag);
+      // Ingestelde pijlen (TM:PE): per strook de toegestane afslagen; stroken zonder instelling = standaard.
+      const eigen = regels.heeftPijlen(inSeg, knoopId);
+      const perStrook: Afslag[][] = ins.map((_, i) => (eigen ? regels.pijlenVan(inSeg, knoopId, i) : null) ?? stdPerStrook[i]);
+      for (const gr of groepen) {
+        const { uits, afslag } = gr;
+        const nUit = uits.length;
+        let paren: [number, number][];
+        if (!eigen) paren = standaard(afslag, nUit);
+        else {
+          // Stroken met deze afslag, van rechts naar links; verdeeld over de doelstroken.
+          const L = perStrook.map((a, i) => a.includes(afslag) ? i : -1).filter(i => i >= 0);
+          paren = [];
+          const m = L.length;
+          if (afslag === 'rechts') L.forEach((i, q) => paren.push([i, Math.min(q, nUit - 1)]));
+          else if (afslag === 'links' || afslag === 'keer') L.forEach((i, q) => paren.push([i, Math.max(0, nUit - m + q)]));
+          else {
+            L.forEach((i, q) => paren.push([i, Math.min(q, nUit - 1)]));
+            if (m) for (let j = m; j < nUit; j++) paren.push([L[m - 1], j]);
+          }
+        }
+        // Van strook wisselen op het kruispunt (rechtdoor): ook naar de buurstroken.
+        if (wisselen && afslag === 'rechtdoor') {
+          const extra: [number, number][] = [];
+          for (const [i, j] of paren) for (const d of [-1, 1]) { const jj = j + d; if (jj >= 0 && jj < nUit && !paren.some(p => p[0] === i && p[1] === jj)) extra.push([i, jj]); }
+          paren.push(...extra);
         }
         for (const [i, j] of paren) {
           const A = ins[i], B = uits[j];
@@ -195,8 +237,11 @@ export class Rijstroken {
           const v = this.nieuw<Verbinding>({ soort: 'verbinding', knoop: knoopId, van: A.id, naar: B.id, bron: A.seg, doelSeg: B.seg, afslag, conflict: [], bezet: 0, pts, vmax: Math.max(3, vmax) });
           A.uit.push(v.id);
           nieuw.push(v);
+          let set = this.volgt.get(A.seg + A.richting); if (!set) this.volgt.set(A.seg + A.richting, set = new Set());
+          set.add(B.seg + B.richting);
         }
       }
+      this.afslagen.set(`${inSeg}:${knoopId}`, { seg: inSeg, knoop: knoopId, mogelijk: groepen.map(g => g.afslag), perStrook, standaard: stdPerStrook });
     }
     // Conflicten: kruisende verbindingen of samenkomen op dezelfde strook (niet vanaf dezelfde strook).
     for (let i = 0; i < nieuw.length; i++) for (let j = i + 1; j < nieuw.length; j++) {
@@ -214,7 +259,7 @@ export class Rijstroken {
     if (k.segs.length < 3) return;
     const segs = k.segs.map(id => this.net.segmenten.get(id)!).filter(Boolean);
     const max = Math.max(...segs.map(s => RANG[s.type]));
-    if (!heeftLichten(segs.map(s => s.type))) return;
+    if (!this.net.heeftLichten(knoopId)) return;
     // Armen met inkomend verkeer, gegroepeerd per as.
     const armen = segs.filter(s => this.stroken(s.id, s.b === knoopId ? 'A' : 'B').length).map(s => ({ s, h: Math.atan2(this.net.wegVan(s, knoopId).z, this.net.wegVan(s, knoopId).x) }));
     const fases: number[][] = [];
@@ -234,7 +279,7 @@ export class Rijstroken {
       fases.push(fase);
     }
     if (fases.length < 2) return;
-    const groen = 14 + max * 3;
+    const groen = this.net.regels.groenTijd(knoopId) ?? 14 + max * 3;
     this.lichten.set(knoopId, { knoop: knoopId, fases, fase: oud && oud.fase < fases.length ? oud.fase : 0, t: oud?.t ?? (knoopId * 7.3) % groen, stand: 'groen', groen });
   }
 

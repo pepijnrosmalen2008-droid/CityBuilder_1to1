@@ -1,6 +1,7 @@
 import { V2, bezier2, dist2, lerp2, norm2, sub2, snijLijnstukken, puntTotLijnstuk , lerp } from '../math';
 import { Terrein, ZEENIVEAU } from '../terrain';
-import { WegTypeId, halveBreedte, randen, WEGTYPEN, HOEKSTRAAL, totaleBreedte } from './typen';
+import { WegTypeId, halveBreedte, randen, WEGTYPEN, HOEKSTRAAL, totaleBreedte, heeftLichten } from './typen';
+import { Verkeersregels } from '../verkeer/regels';
 
 /** Knoop; `niveau` = hoogte boven (of onder, negatief) het maaiveld in meters. */
 export interface Knoop { id: number; p: V2; y: number; niveau: number; segs: number[] }
@@ -27,6 +28,8 @@ export const MIN_SEGMENT = 6;
 export type NetEvent = { soort: 'seg+' | 'seg-'; id: number } | { soort: 'knoop~'; id: number };
 
 export class Wegennet {
+  /** Verkeersregels van de speler (TM:PE): borden, lichten, pijlen, snelheden, verboden. */
+  regels = new Verkeersregels();
   knopen = new Map<number, Knoop>();
   segmenten = new Map<number, Segment>();
   private volgende = 1;
@@ -311,6 +314,7 @@ export class Wegennet {
     const d1 = this.nieuwSegment(A, q0, M, type, naam);
     const d2 = this.nieuwSegment(M, q1, B, type, naam);
     if (seg.om) d1.om = d2.om = true;
+    this.regels.kopieerWeg(segId, d1.id); this.regels.kopieerWeg(segId, d2.id);
     return { knoop: M, delen: [d1, d2] };
   }
 
@@ -500,6 +504,15 @@ export class Wegennet {
     return true;
   }
 
+  /** Krijgt dit kruispunt verkeerslichten? (instelling van de speler, anders de vaste regel) */
+  heeftLichten(knoopId: number): boolean {
+    const k = this.knopen.get(knoopId);
+    if (!k || k.segs.length < 3) return false;
+    const keuze = this.regels.lichtKeuze(knoopId);
+    if (keuze !== 'auto') return keuze === 'aan';
+    return heeftLichten(k.segs.map(id => this.segmenten.get(id)?.type).filter((t): t is WegTypeId => !!t));
+  }
+
   haalEvents() { const e = this.events; this.events = []; return e; }
 
   // ─── Opslaan ──────────────────────────────────────────────────────────────────
@@ -508,6 +521,7 @@ export class Wegennet {
       knopen: [...this.knopen.values()].map(k => ({ id: k.id, x: k.p.x, z: k.p.z, y: k.y, niveau: k.niveau })),
       segmenten: [...this.segmenten.values()].map(s => ({ id: s.id, a: s.a, b: s.b, cx: s.c.x, cz: s.c.z, type: s.type, naam: s.naam, om: s.om ? 1 : 0 })),
       volgende: this.volgende,
+      regels: this.regels.naarJson(),
     };
   }
   vanJson(j: ReturnType<Wegennet['naarJson']>) {
@@ -522,5 +536,6 @@ export class Wegennet {
     }
     for (const k of this.knopen.values()) this.events.push({ soort: 'knoop~', id: k.id });
     this.volgende = j.volgende;
+    this.regels.vanJson((j as { regels?: ReturnType<Verkeersregels['naarJson']> }).regels);
   }
 }

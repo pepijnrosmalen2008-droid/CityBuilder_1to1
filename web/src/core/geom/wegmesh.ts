@@ -1,6 +1,6 @@
 import { V3, V2, lerp, norm2, bezier2, dist2 } from '../math';
 import { Wegennet, Segment, PadPunt } from '../wegen/netwerk';
-import { WEGTYPEN, Strook, strookGrenzen, totaleBreedte, randen, profiel, RANG, heeftLichten } from '../wegen/typen';
+import { WEGTYPEN, Strook, strookGrenzen, totaleBreedte, randen, profiel, RANG } from '../wegen/typen';
 import { MeshBouwer, MeshData, Prop } from './mesh';
 import { ZEENIVEAU } from '../terrain';
 import { driehoeken } from '../poly';
@@ -256,9 +256,9 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
       for (let o = rd.binnenL + 0.1; o + 0.5 <= rd.binnenR; o += 1.0) for (const ss of [s0(o), s1(o) - richting * 0.5]) vak('markering', o, o + 0.5, Math.min(ss, ss + richting * 0.5), Math.max(ss, ss + richting * 0.5));
       af += fietsW + 0.6;
     }
-    // Zebrapad.
+    // Zebrapad (tenzij de oversteekplaats is weggehaald in het verkeersgereedschap).
     const zebraL = 3.5;
-    if (rd.stoep) {
+    if (rd.stoep && net.regels.regel(seg.id, k, 'oversteek')) {
       for (let o = rd.binnenL + 0.5; o + 0.5 <= rd.binnenR - 0.3; o += 1.0) {
         const sa = sb(o + 0.25) + richting * af, se = sa + richting * zebraL;
         lijnStuk(o, o + 0.5, Math.min(sa, se), Math.max(sa, se));
@@ -267,27 +267,33 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
     } else af += 1.2;
     // Stopstreep (verkeerslichten) of haaientanden (voorrang verlenen); gelijkwaardig: niets.
     const naar = eind === 'a' ? 'B' : 'A';
-    const lichten = heeftLichten(typen);
-    const ondergeschikt = !lichten && RANG[seg.type] < Math.max(...typen.map(t => RANG[t]));
+    const lichten = net.heeftLichten(k);
+    const bord = net.regels.bord(seg.id, k);
+    const ondergeschikt = !lichten && (bord ? bord !== 'voorrang' : RANG[seg.type] < Math.max(...typen.map(t => RANG[t])));
+    const stopBord = !lichten && bord === 'stop';
     const inkomend = g.filter(x => (x.s.soort === 'auto' || x.s.soort === 'bus') && x.s.richting === naar);
     for (const x of inkomend) {
       const sa = sb((x.a + x.b) / 2) + richting * af;
-      if (lichten) lijnStuk(x.a + 0.1, x.b - 0.1, Math.min(sa, sa + richting * 0.4), Math.max(sa, sa + richting * 0.4));
-      else if (ondergeschikt) for (let o = x.a + 0.2; o + 0.55 <= x.b - 0.1; o += 0.95) drie('markering', [[o, sa], [o + 0.55, sa], [o + 0.275, sa + richting * 0.65]]);
+      if (lichten || stopBord) { const d = stopBord ? 0.6 : 0.4; lijnStuk(x.a + 0.1, x.b - 0.1, Math.min(sa, sa + richting * d), Math.max(sa, sa + richting * d)); }
+      else if (ondergeschikt && !stopBord) for (let o = x.a + 0.2; o + 0.55 <= x.b - 0.1; o += 0.95) drie('markering', [[o, sa], [o + 0.55, sa], [o + 0.275, sa + richting * 0.65]]);
     }
-    if (ondergeschikt && !inkomend.length) {
+    if (ondergeschikt && !stopBord && !inkomend.length) {
       // Woonstraat (gedeelde rijbaan): haaientanden over de rechterhelft.
       for (const x of g.filter(q => q.s.soort === 'gedeeld' && q.s.richting === naar)) {
         const sa = sb((x.a + x.b) / 2) + richting * af;
         for (let o = x.a + 0.2; o + 0.55 <= x.b - 0.1; o += 0.95) drie('markering', [[o, sa], [o + 0.55, sa], [o + 0.275, sa + richting * 0.65]]);
       }
     }
-    // Voorsorteerpijlen bij twee of meer stroken: links = linksaf, rechts = rechtdoor + rechtsaf.
+    // Voorsorteerpijlen bij twee of meer stroken (of ingestelde pijlen): zoals de rijstroken echt lopen.
     const auto = inkomend.filter(x => x.s.soort === 'auto').sort((p, q) => (p.a - q.a) * -richting);
     const lengte = Math.abs(sOp(laatste, 0) - sOp(eerste, 0));
-    if (auto.length >= 2 && lengte > af + 14) auto.forEach((x, i) => {
+    const eigen = net.regels.heeftPijlen(seg.id, k);
+    if ((auto.length >= 2 || eigen) && lengte > af + 14) auto.forEach((x, i) => {
       const o = (x.a + x.b) / 2, s0 = sb(o) + richting * (af + 7.5);
-      pijl(o, s0, -richting, { rd: i > 0 || auto.length === 1, l: i === 0, re: i === auto.length - 1 });
+      // i = 0 is de linkse strook; de regels tellen van rechts (0 = rechts).
+      const vast = eigen ? net.regels.pijlenVan(seg.id, k, auto.length - 1 - i) : null;
+      const soort = vast ? { rd: vast.includes('rechtdoor'), l: vast.includes('links') || vast.includes('keer'), re: vast.includes('rechts') } : { rd: i > 0 || auto.length === 1, l: i === 0, re: i === auto.length - 1 };
+      if (soort.rd || soort.l || soort.re) pijl(o, s0, -richting, soort);
     });
   }
   // Eenrichtingsweg: om de 40 m een pijl in de rijrichting.
