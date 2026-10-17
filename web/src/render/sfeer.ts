@@ -12,7 +12,7 @@ export type Niveau = 'laag' | 'midden' | 'hoog';
 export interface Kwaliteit { schaduw: number; zacht: boolean; ao: boolean; bloom: boolean; msaa: number; schaal: number }
 export const NIVEAUS: Record<Niveau, Kwaliteit> = {
   laag: { schaduw: 2048, zacht: false, ao: false, bloom: false, msaa: 0, schaal: 1 },
-  midden: { schaduw: 2048, zacht: true, ao: false, bloom: true, msaa: 2, schaal: 1.5 },
+  midden: { schaduw: 3072, zacht: true, ao: true, bloom: true, msaa: 2, schaal: 1.5 },
   hoog: { schaduw: 4096, zacht: true, ao: true, bloom: true, msaa: 4, schaal: 2 },
 };
 
@@ -133,12 +133,13 @@ export class Sfeer {
     if (k.ao) {
       this.ao = new GTAOPass(this.scene, this.camera, innerWidth, innerHeight);
       this.ao.output = GTAOPass.OUTPUT.Default;
-      this.ao.blendIntensity = 0.6;
+      this.ao.blendIntensity = 0.85;
       const ao = this.ao as unknown as { overrideVisibility: () => void };
       const orig = ao.overrideVisibility.bind(ao);
       ao.overrideVisibility = () => { orig(); this.scene.traverse(o => { if (o.userData.geenAO) o.visible = false; }); };
-      this.ao.updateGtaoMaterial({ radius: 2.5, distanceExponent: 1.5, thickness: 2, scale: 1, samples: 12 });
-      this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+      const n = niveau === 'hoog' ? 16 : 8;
+      this.ao.updateGtaoMaterial({ radius: 2.5, distanceExponent: 1.5, thickness: 2, scale: 1.2, samples: n });
+      this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: n });
       this.composer.addPass(this.ao);
     }
     this.bloom = undefined;
@@ -195,7 +196,7 @@ export class Sfeer {
     if (this.ao) {
       const ao = 1 - THREE.MathUtils.smoothstep(afstand, 380, 800);
       this.ao.enabled = ao > 0.02;
-      this.ao.blendIntensity = 0.6 * ao;
+      this.ao.blendIntensity = 0.85 * ao;
       this.ao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(afstand * 0.012, 1.5, 8) });
     }
   }

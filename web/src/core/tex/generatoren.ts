@@ -1,6 +1,6 @@
 import { fbm, worley } from '../noise';
 import { hash01 } from '../rng';
-import { C, Doek, K, TexData, frac, glad01, hsv, mix, mul, wikkel } from './doek';
+import { C, Doek, K, TexData, frac, glad01, mix, mul, wikkel } from './doek';
 
 // Alle texturen procedureel (geen externe assets). In commentaar: hoeveel meter één herhaling is;
 // dezelfde maat staat in materialen.ts zodat de meshes er hun UV's (in meters) op afstemmen.
@@ -165,13 +165,19 @@ function gevelP(stijl: string): GevelP {
     case 'nieuwRood': Object.assign(p, { muur: K(0.44, 0.23, 0.16), voeg: K(0.40, 0.36, 0.33), kozijn: K(0.10, 0.10, 0.11), dorpel: K(0.12, 0.12, 0.13), rb: 1.5, rh: 2.35, borst: 0.3, kd: 0.05, variatie: 0.06, baksteen: true }); break;
     case 'houtGevel': Object.assign(p, { muur: K(0.50, 0.37, 0.24), kozijn: K(0.11, 0.11, 0.12), dorpel: K(0.12, 0.12, 0.13), rb: 1.8, rh: 2.35, borst: 0.3, kd: 0.05, hout: true }); break;
     // Stadshart: Parijse natuursteen (Haussmann), rode baksteen met witte omlijsting (Gründerzeit), grijze kalksteen.
-    case 'haussmann': Object.assign(p, { muur: K(0.84, 0.78, 0.66), voeg: K(0.70, 0.65, 0.55), kozijn: K(0.93, 0.92, 0.88), dorpel: K(0.80, 0.75, 0.64), rb: 1.2, rh: 2.3, borst: 0.2, kd: 0.06, variatie: 0.04, steen: true, omlijsting: K(0.90, 0.85, 0.74), ow: 0.14, kap: true, hekje: true, roede: true, vuil: true }); break;
-    case 'haussmannWit': Object.assign(p, { muur: K(0.90, 0.88, 0.83), voeg: K(0.76, 0.74, 0.69), kozijn: K(0.95, 0.95, 0.93), dorpel: K(0.85, 0.83, 0.78), rb: 1.2, rh: 2.3, borst: 0.2, kd: 0.06, variatie: 0.03, steen: true, omlijsting: K(0.95, 0.94, 0.90), ow: 0.13, kap: true, hekje: true, roede: true, luiken: K(0.42, 0.47, 0.52) }); break;
-    case 'gruender': Object.assign(p, { muur: K(0.55, 0.21, 0.14), voeg: K(0.78, 0.76, 0.72), kozijn: K(0.94, 0.94, 0.92), dorpel: K(0.90, 0.89, 0.85), rb: 1.25, rh: 2.15, borst: 0.55, kd: 0.07, variatie: 0.08, baksteen: true, omlijsting: K(0.93, 0.92, 0.88), ow: 0.2, sluitsteen: true, band: K(0.92, 0.91, 0.87), roede: true, bovenlicht: true }); break;
-    case 'kalksteen': Object.assign(p, { muur: K(0.76, 0.75, 0.72), voeg: K(0.62, 0.61, 0.59), kozijn: K(0.18, 0.19, 0.20), dorpel: K(0.70, 0.69, 0.66), rb: 1.7, rh: 2.1, borst: 0.5, kd: 0.05, variatie: 0.03, steen: true, omlijsting: K(0.80, 0.79, 0.76), ow: 0.1, band: K(0.82, 0.81, 0.78) }); break;
+    case 'haussmann': Object.assign(p, { muur: K(0.74, 0.68, 0.57), voeg: K(0.60, 0.56, 0.47), kozijn: K(0.86, 0.85, 0.81), dorpel: K(0.72, 0.67, 0.57), rb: 1.2, rh: 2.3, borst: 0.2, kd: 0.06, variatie: 0.04, steen: true, omlijsting: K(0.80, 0.75, 0.64), ow: 0.14, kap: true, hekje: true, roede: true, vuil: true }); break;
+    case 'haussmannWit': Object.assign(p, { muur: K(0.80, 0.78, 0.73), voeg: K(0.66, 0.64, 0.60), kozijn: K(0.88, 0.88, 0.86), dorpel: K(0.76, 0.74, 0.69), rb: 1.2, rh: 2.3, borst: 0.2, kd: 0.06, variatie: 0.03, steen: true, omlijsting: K(0.85, 0.84, 0.80), ow: 0.13, kap: true, hekje: true, roede: true, luiken: K(0.42, 0.47, 0.52) }); break;
+    case 'gruender': Object.assign(p, { muur: K(0.55, 0.21, 0.14), voeg: K(0.78, 0.76, 0.72), kozijn: K(0.88, 0.88, 0.86), dorpel: K(0.82, 0.81, 0.77), rb: 1.25, rh: 2.15, borst: 0.55, kd: 0.07, variatie: 0.08, baksteen: true, omlijsting: K(0.84, 0.83, 0.79), ow: 0.2, sluitsteen: true, band: K(0.83, 0.82, 0.78), roede: true, bovenlicht: true }); break;
+    case 'kalksteen': Object.assign(p, { muur: K(0.68, 0.67, 0.64), voeg: K(0.62, 0.61, 0.59), kozijn: K(0.18, 0.19, 0.20), dorpel: K(0.70, 0.69, 0.66), rb: 1.7, rh: 2.1, borst: 0.5, kd: 0.05, variatie: 0.03, steen: true, omlijsting: K(0.72, 0.71, 0.68), ow: 0.1, band: K(0.74, 0.73, 0.70) }); break;
     case 'plint': Object.assign(p, { muur: K(0.22, 0.16, 0.13), voeg: K(0.40, 0.38, 0.35), baksteen: true }); break;
   }
   return p;
+}
+
+/** Maten van de ramen in een geveltextuur (per travee van 3 m en verdieping van 3 m): voor 3D-reliëf dat precies op de textuur valt. */
+export function gevelMaat(stijl: string): { rb: number; rh: number; borst: number; ow: number; kap: boolean; sluitsteen: boolean } {
+  const p = gevelP(stijl);
+  return { rb: p.rb, rh: p.rh, borst: p.borst, ow: p.omlijsting ? p.ow ?? 0.14 : 0, kap: !!p.kap, sluitsteen: !!p.sluitsteen };
 }
 
 function baksteen(muur: C, voeg: C, variatie: number, x: number, y: number, mx: number, my: number, s: number): [C, number, number] {
@@ -306,10 +312,15 @@ export function zink(): TexData {
   const d = new Doek(256, 256);
   loop(d, (x, y, u, v) => {
     const mx = u * 2, f = frac(mx / 0.45) * 0.45;
-    let k = mul(K(0.50, 0.53, 0.57), 0.9 + 0.12 * fbm(u, v, 4, 3, 301) + 0.04 * hash01(Math.floor(mx / 0.45), 0, 302));
+    // Verweerd blauwgrijs zink: banen met staande naden, per baan iets anders, regenstrepen omlaag.
+    const baan = Math.floor(mx / 0.45);
+    let k = mul(K(0.33, 0.37, 0.43), 0.9 + 0.1 * fbm(u, v, 4, 3, 301) + 0.07 * (hash01(baan, 0, 302) - 0.5));
+    const streep = fbm(u * 6, v * 0.5, 8, 3, 303);
+    k = mul(k, 1 - 0.14 * glad01(0.55, 0.75, streep));
+    if (hash01(baan, 1, 304) > 0.88) k = mix(k, K(0.46, 0.49, 0.53), 0.5);
     let h = 0.5;
-    if (f < 0.03) { k = mul(k, 1.18); h = 1; } else if (f < 0.05) { k = mul(k, 0.72); h = 0.3; }
-    d.zet(x, y, k, h, 0.45, 0.55);
+    if (f < 0.03) { k = mul(k, 1.3); h = 1; } else if (f < 0.055) { k = mul(k, 0.62); h = 0.3; }
+    d.zet(x, y, k, h, 0.32 + 0.1 * hash01(baan, 2, 305), 0.3);
   });
   return d.naarTex(2);
 }
@@ -357,42 +368,135 @@ export function roldeur(): TexData {
 }
 
 /** Winkelpui: plint, etalage met schappen, deur, reclamebord, lijst. 6 × 4,5 m, uv direct. */
+/** Bitmapletters (5×7) voor de gevelborden van winkels. */
+const LETTERS: Record<string, string[]> = {
+  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'], B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  C: ['01111', '10000', '10000', '10000', '10000', '10000', '01111'], D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
+  E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'], F: ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+  I: ['01110', '00100', '00100', '00100', '00100', '00100', '01110'], J: ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+  K: ['10001', '10010', '10100', '11000', '10100', '10010', '10001'], L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  M: ['10001', '11011', '10101', '10101', '10001', '10001', '10001'], N: ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+  O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'], R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'], U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+  W: ['10001', '10001', '10001', '10101', '10101', '11011', '10001'], G: ['01111', '10000', '10000', '10011', '10001', '10001', '01111'],
+  ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+};
+/** Ligt (x, y) (meters, oorsprong linksonder) op een letter van `tekst`, gecentreerd rond cx, met letterhoogte h? */
+function opTekst(tekst: string, x: number, y: number, cx: number, y0: number, h: number): boolean {
+  const px = h / 7, breed = tekst.length * 6 * px - px, x0 = cx - breed / 2;
+  const i = Math.floor((x - x0) / (6 * px));
+  if (i < 0 || i >= tekst.length || y < y0 || y >= y0 + h) return false;
+  const kx = Math.floor((x - x0 - i * 6 * px) / px), ky = 6 - Math.floor((y - y0) / px);
+  return kx < 5 && (LETTERS[tekst[i]]?.[ky]?.[kx] === '1');
+}
+
+const WINKELS: { naam: string; bord: C; letter: C; kozijn: C }[] = [
+  { naam: 'BAKKERIJ', bord: K(0.36, 0.20, 0.10), letter: K(0.92, 0.80, 0.52), kozijn: K(0.20, 0.13, 0.08) },
+  { naam: 'MODE', bord: K(0.06, 0.06, 0.07), letter: K(0.92, 0.91, 0.88), kozijn: K(0.06, 0.06, 0.07) },
+  { naam: 'CAFE', bord: K(0.10, 0.24, 0.16), letter: K(0.90, 0.80, 0.50), kozijn: K(0.08, 0.18, 0.12) },
+  { naam: 'BOEKEN', bord: K(0.38, 0.08, 0.10), letter: K(0.94, 0.90, 0.80), kozijn: K(0.25, 0.06, 0.07) },
+  { naam: 'BLOEMEN', bord: K(0.84, 0.82, 0.76), letter: K(0.16, 0.30, 0.20), kozijn: K(0.16, 0.20, 0.18) },
+  { naam: 'JUWELIER', bord: K(0.08, 0.10, 0.20), letter: K(0.86, 0.70, 0.36), kozijn: K(0.10, 0.10, 0.12) },
+];
+
+/** Interieur achter het glas (meters in de travee: bx 0-3, my vanaf de vloer). */
+function interieur(soort: number, bx: number, my: number, mx: number, s: number): C {
+  // Achterwand: donker, warm aangelicht onder het plafond.
+  let k = mix(K(0.07, 0.06, 0.055), K(0.30, 0.24, 0.17), glad01(1.4, 2.5, my));
+  const h = (a: number, b: number) => hash01(Math.floor(a), Math.floor(b), s + soort * 31);
+  switch (soort) {
+    case 0: { // bakker: toonbank met brood, schappen erachter
+      if (my < 1.0) k = my > 0.92 ? K(0.55, 0.50, 0.44) : mul(K(0.30, 0.19, 0.10), 0.9 + 0.1 * h(mx / 0.4, 0));
+      else if (my > 1.25 && my < 2.2) {
+        const rij = Math.floor((my - 1.25) / 0.32), fy = frac((my - 1.25) / 0.32);
+        if (fy < 0.1) k = K(0.25, 0.17, 0.10);
+        else { const c = frac(mx / 0.22), r = Math.hypot(c - 0.5, (fy - 0.45) * 1.6); if (r < 0.38 && h(mx / 0.22, rij) > 0.15) k = mul(K(0.66, 0.43, 0.19), 0.75 + 0.35 * (0.5 - r)); }
+      }
+      break;
+    }
+    case 1: { // mode: rekken met kleding, paspop
+      if (my > 2.05 && my < 2.09) k = K(0.5, 0.5, 0.5);
+      else if (my > 0.9 && my < 2.05) {
+        const plek = Math.floor(mx / 0.13), on = h(plek, 3) > 0.25, lang = 0.9 + 0.35 * h(plek, 4);
+        const pal = [K(0.70, 0.64, 0.54), K(0.12, 0.15, 0.25), K(0.08, 0.08, 0.08), K(0.82, 0.81, 0.78), K(0.36, 0.38, 0.24), K(0.55, 0.20, 0.18)];
+        if (on && my > 2.05 - lang && frac(mx / 0.13) > 0.08) k = mul(pal[Math.floor(h(plek, 5) * pal.length)], 0.7 + 0.3 * (my - 0.9) / 1.2);
+      }
+      if (my < 0.3) k = K(0.42, 0.38, 0.33);
+      break;
+    }
+    case 2: { // café: tafeltjes, stoelen, hanglampen
+      if (my < 0.78 && my > 0.72 && frac(mx / 1.1) < 0.45) k = K(0.16, 0.10, 0.06);
+      else if (my < 0.72 && Math.abs(frac(mx / 1.1) - 0.22) < 0.025) k = K(0.12, 0.08, 0.05);
+      else if (my < 0.95 && my > 0.45 && Math.abs(frac(mx / 1.1) - 0.62) < 0.07) k = K(0.18, 0.12, 0.08);
+      else if (my > 2.2) { const r = Math.hypot(frac(mx / 1.1) - 0.22, (my - 2.3) * 4); if (r < 0.06) k = K(1.0, 0.82, 0.55); }
+      if (my > 1.3 && my < 1.9 && frac(mx / 2.2) > 0.6 && frac(mx / 2.2) < 0.95) k = mix(k, K(0.22, 0.14, 0.08), 0.6); // schilderij
+      break;
+    }
+    case 3: { // boekhandel: kasten vol ruggen
+      if (my > 0.3 && my < 2.3) {
+        const plank = frac((my - 0.3) / 0.4);
+        if (plank < 0.07) k = K(0.28, 0.18, 0.10);
+        else if (plank < 0.88) { const rug = Math.floor(mx / 0.045); const pal = [K(0.45, 0.12, 0.10), K(0.12, 0.20, 0.35), K(0.62, 0.55, 0.40), K(0.15, 0.30, 0.18), K(0.75, 0.72, 0.65), K(0.20, 0.18, 0.16)]; if (h(rug, Math.floor((my - 0.3) / 0.4)) > 0.08) k = mul(pal[Math.floor(h(rug, 9) * pal.length)], 0.6 + 0.3 * plank); }
+      }
+      if (my < 0.85 && frac(mx / 1.5) > 0.2 && frac(mx / 1.5) < 0.8) k = my > 0.8 ? K(0.6, 0.55, 0.45) : K(0.24, 0.15, 0.09); // tafel met stapels
+      break;
+    }
+    case 4: { // bloemen: emmers met bossen op trappen
+      if (my < 1.6) {
+        const tr = Math.floor(my / 0.45), fy = frac(my / 0.45);
+        if (fy < 0.15) k = K(0.30, 0.30, 0.30);
+        else { const c = Math.floor(mx / 0.25), r = Math.hypot(frac(mx / 0.25) - 0.5, fy - 0.6); const pal = [K(0.85, 0.25, 0.30), K(0.95, 0.80, 0.25), K(0.90, 0.88, 0.85), K(0.65, 0.30, 0.65), K(0.95, 0.50, 0.20)]; if (r < 0.4) k = r < 0.3 && h(c, tr * 7 + Math.floor(fy * 6)) > 0.35 ? pal[Math.floor(h(c, tr) * pal.length)] : K(0.18, 0.38, 0.16); }
+      }
+      break;
+    }
+    default: { // juwelier: verlichte vitrines
+      if (my > 0.75 && my < 1.35) {
+        k = mix(K(0.85, 0.82, 0.74), K(0.30, 0.28, 0.25), frac((my - 0.75) / 0.6));
+        if (frac(mx / 0.3) < 0.15 && h(mx / 0.3, 1) > 0.3) k = K(0.95, 0.85, 0.5);
+      } else if (my < 0.75) k = K(0.08, 0.08, 0.10);
+      break;
+    }
+  }
+  return k;
+}
+
+/** Winkelpui van 6 × 4,5 m (twee traveeën): stalen kozijnen met bovenlicht, interieur achter spiegelend glas, gevelbord met naam. */
 export function winkelpui(variant: number): TexData {
-  const W = 512, H = 384, d = new Doek(W, H);
-  const kleuren: C[] = [K(0.55, 0.10, 0.10), K(0.08, 0.25, 0.15), K(0.08, 0.12, 0.30), K(0.10, 0.10, 0.10), K(0.75, 0.40, 0.10), K(0.86, 0.86, 0.83)];
+  const W = 768, H = 576, d = new Doek(W, H);
+  const w = WINKELS[wikkel(variant, WINKELS.length)], soort = wikkel(variant, WINKELS.length);
   const s = 300 + variant * 10;
-  const huis = kleuren[wikkel(variant, kleuren.length)];
-  const letter = variant === 5 ? K(0.1, 0.1, 0.1) : K(0.95, 0.93, 0.85);
   const deurT = variant & 1;
   loop(d, (x, y, u, v) => {
     const mx = u * 6, my = v * 4.5, travee = mx < 3 ? 0 : 1, bx = mx - travee * 3;
-    if (my < 0.35) { d.zet(x, y, mul(K(0.16, 0.16, 0.17), 0.92 + 0.12 * hash01(x, y, s)), 0.9, 0.4); return; }
+    // Natuurstenen plint.
+    if (my < 0.4) { const k = mul(K(0.36, 0.35, 0.33), 0.9 + 0.12 * fbm(u, v, 20, 3, s)); d.zet(x, y, my > 0.36 ? mul(k, 1.25) : k, my > 0.36 ? 1 : 0.92, 0.3); return; }
     if (my < 3.05) {
-      let kader = bx < 0.08 || bx > 2.92 || my < 0.43 || my > 2.97;
-      const deur = travee === deurT && bx > 1.0 && bx < 2.0 && my < 2.6;
-      if (deur) kader = kader || bx < 1.06 || bx > 1.94 || my > 2.54 || (Math.abs(bx - 1.85) < 0.02 && Math.abs(my - 1.3) < 0.25);
-      if (kader) { d.zet(x, y, K(0.12, 0.12, 0.13), 0.8, 0.5, 0.4); return; }
-      let binnen = K(0.62, 0.55, 0.45);
-      if (!deur && my > 0.6 && my < 2.6) {
-        const plank = frac((my - 0.6) / 0.4);
-        if (plank < 0.08) binnen = K(0.5, 0.5, 0.5);
-        else binnen = mul(hsv(hash01(Math.floor(mx / 0.12), Math.floor((my - 0.6) / 0.4), s + 1), 0.45, 0.75), 0.7 + 0.3 * plank);
-      }
-      const refl = mix(K(0.12, 0.15, 0.19), K(0.42, 0.50, 0.58), Math.min(1, Math.max(0, (my - 0.4) / 2.6)));
-      d.zet(x, y, mix(binnen, refl, 0.4), 0.2, 0.92); return;
+      const deur = travee === deurT && bx > 1.05 && bx < 1.95 && my < 2.45;
+      // Kozijnen: buitenkader, middenstijl, kalf met bovenlichten.
+      let kader = bx < 0.1 || bx > 2.9 || my < 0.48 || my > 2.97 || Math.abs(my - 2.45) < 0.045;
+      if (my > 2.45 && Math.abs(frac(bx / 0.75) - 0.5) > 0.47) kader = true;
+      if (deur) kader = kader || Math.abs(bx - 1.05) < 0.06 || Math.abs(bx - 1.95) < 0.06 || Math.abs(my - 1.0) < 0.04 || (Math.abs(bx - 1.82) < 0.02 && Math.abs(my - 1.3) < 0.22);
+      else if (!deur && travee === deurT) kader = kader || Math.abs(bx - 1.0) < 0.05 || Math.abs(bx - 2.0) < 0.05;
+      if (kader) { const k = mul(w.kozijn, 0.95 + 0.1 * fbm(u, v, 30, 2, s + 5)); const rand = Math.abs(my - 2.45) < 0.045 && my > 2.45 + 0.02; d.zet(x, y, rand ? mul(k, 1.3) : k, 0.85, 0.55, 0.3); return; }
+      // Glas: interieur, met de lucht en de straat erin gespiegeld (bovenaan meer, schuine strepen).
+      const binnen = deur ? mix(K(0.06, 0.05, 0.05), K(0.26, 0.21, 0.15), glad01(1.2, 2.4, my)) : my > 2.45 ? K(0.20, 0.17, 0.13) : interieur(soort, bx, my, mx, s);
+      const lucht = mix(K(0.16, 0.19, 0.23), K(0.52, 0.60, 0.68), glad01(0.6, 2.9, my));
+      const streep = glad01(0.55, 0.75, frac((mx + my * 0.6) / 1.7)) * glad01(0.95, 0.75, frac((mx + my * 0.6) / 1.7));
+      const r = 0.22 + 0.22 * glad01(0.8, 2.9, my) + 0.18 * streep;
+      d.zet(x, y, mix(binnen, lucht, r), 0.15, 0.95, 0.1); return;
     }
+    // Gevelbord met naam en een sierlijst.
     if (my < 3.75) {
-      let k = mul(huis, 0.93 + 0.08 * fbm(u, v, 12, 2, s + 2)); let h = 0.85;
-      const vak = bx > 0.6 && bx < 2.4 && my > 3.25 && my < 3.55;
-      if (vak && hash01(Math.floor(mx / 0.12), travee, s + 3) > 0.3 && frac(mx / 0.12) < 0.72) { k = letter; h = 0.95; }
-      if (my < 3.09 || my > 3.71) { k = mul(k, 0.6); h = 0.7; }
-      d.zet(x, y, k, h, 0.45); return;
+      let k = mul(w.bord, 0.94 + 0.07 * fbm(u, v, 14, 2, s + 2)); let h = 0.85, gl = 0.5;
+      if (opTekst(w.naam, mx, my, 3, 3.24, 0.32)) { k = w.letter; h = 1; gl = 0.7; }
+      if (my < 3.1 || my > 3.69) { k = mul(w.bord, 0.55); h = 0.75; }
+      d.zet(x, y, k, h, gl, opTekst(w.naam, mx, my, 3, 3.24, 0.32) && w.letter[0] > 0.8 && w.letter[2] < 0.6 ? 0.8 : 0); return;
     }
-    let st = mul(K(0.30, 0.28, 0.27), 0.9 + 0.15 * fbm(u, v, 16, 3, s + 4)); let hh = 0.8;
-    if (my < 3.82) { st = K(0.78, 0.77, 0.73); hh = 1; }
+    let st = mul(K(0.62, 0.58, 0.51), 0.9 + 0.12 * fbm(u, v, 16, 3, s + 4)); let hh = 0.8;
+    if (my < 3.84) { st = K(0.70, 0.67, 0.61); hh = 1; }
     d.zet(x, y, st, hh, 0.2);
   });
-  return d.naarTex(5);
+  return d.naarTex(4);
 }
 
 /** Luifel met strepen; u in meters (strepen van 0,3 m). */

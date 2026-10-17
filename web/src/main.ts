@@ -92,7 +92,7 @@ async function start() {
   const districtLaag = new DistrictLaag(wereld, sfeer.camera);
   sfeer.scene.add(districtLaag.groep);
   // Dag en nacht (instelling bewaard; ?uur=21 voor schermafbeeldingen).
-  const dagNacht = new DagNacht(sfeer, mats, Number(param.get('uur') ?? 10));
+  const dagNacht = new DagNacht(sfeer, mats, Number(param.get('uur') ?? 15.5));
   try { dagNacht.aan = localStorage.getItem('stad_dagnacht') !== 'uit'; } catch { /* geen opslag */ }
   if (param.has('uur')) dagNacht.aan = true;
   const lichtLaag = new LichtLaag(stad.props, (x, z) => wereld.terrein.hoogte(x, z));

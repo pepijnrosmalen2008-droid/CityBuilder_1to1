@@ -59,7 +59,18 @@ export class Materialen {
           .replace('#include <aomap_fragment>', `#include <aomap_fragment>
   float kroonAO = smoothstep(0.0, 1.0, vKroon);
   reflectedLight.indirectDiffuse *= mix(0.42, 1.08, kroonAO);
-  reflectedLight.directDiffuse *= mix(0.62, 1.04, kroonAO);`);
+  reflectedLight.directDiffuse *= mix(0.62, 1.04, kroonAO);`)
+          .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+  #if NUM_DIR_LIGHTS > 0
+  {
+    // Doorschijnend blad: tegen de zon in gloeit de kroon geelgroen op; ook de schaduwkant krijgt wat licht.
+    vec3 Lz = directionalLights[0].direction;
+    float tegen = pow(max(0.0, dot(-normalize(vViewPosition), Lz)), 3.0);
+    float omslag = max(0.0, -dot(normal, Lz));
+    vec3 door = diffuseColor.rgb * vec3(1.15, 1.25, 0.6) * directionalLights[0].color;
+    reflectedLight.directDiffuse += door * (tegen * 0.42 + omslag * 0.12) * mix(0.5, 1.0, smoothstep(0.0, 1.0, vKroon));
+  }
+  #endif`);
       };
     }
     if (sleutel.startsWith('gevel:')) parallaxRamen(m);

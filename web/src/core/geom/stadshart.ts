@@ -3,9 +3,10 @@ import { Rng } from '../rng';
 import { Gebouw, totaleHoogte } from '../wereld';
 import { MeshBouwer, Prop } from './mesh';
 import { LOD } from './lod';
-import { Rand, randen, wand, vlak, doos, deur, P3, N3, PUIEN, LUIFELS } from './gebouwmesh';
+import { Rand, randen, wand, vlak, doos, deur, P3, N3, PUIEN, LUIFELS, puiUV } from './gebouwmesh';
 import { pandPolys } from './stijlmesh';
 import { cilinder } from './props';
+import { gevelMaat } from '../tex/generatoren';
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // STADSHART
@@ -39,6 +40,57 @@ function balkon(mb: MeshBouwer, x: Rand, y: number, steen: string) {
     const p0 = op(x, s, 0), p1 = op(x, s, d - 0.03);
     mb.quad('balustrade', P3(p0, y), P3(p1, y), P3(p1, y + 1.0), P3(p0, y + 1.0), [0, 0], [d / 2, 0], [d / 2, 1], [0, 1], N3(x.t));
   }
+}
+
+/**
+ * Gevelreliëf in echte geometrie, precies op de ramen van de textuur: dorpels, kroonlijstjes boven
+ * elk raam, frontons op de bel-etage, lijsten per verdieping en lisenen op de pandgrenzen. Zo werpen
+ * de ornamenten echte schaduw, zoals in de binnensteden van Cities: Skylines II.
+ */
+/** Lijstje langs de gevel (dorpel, kroonlijstje): voorkant, boven- en onderkant, 6 driehoeken. */
+function richel(mb: MeshBouwer, mat: string, x: Rand, s: number, b: number, diep: number, y0: number, y1: number) {
+  const a0 = op(x, s - b / 2, 0), b0 = op(x, s + b / 2, 0), a1 = op(x, s - b / 2, diep), b1 = op(x, s + b / 2, diep);
+  mb.quad(mat, P3(a1, y0), P3(b1, y0), P3(b1, y1), P3(a1, y1), [0, 0], [1, 0], [1, 1], [0, 1], N3(x.n));
+  mb.quad(mat, P3(a0, y1), P3(b0, y1), P3(b1, y1), P3(a1, y1), [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 1, z: 0 });
+  mb.quad(mat, P3(a0, y0), P3(b0, y0), P3(b1, y0), P3(a1, y0), [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: -1, z: 0 });
+}
+
+function gevelReliëf(mb: MeshBouwer, x: Rand, gevel: string, y0: number, top: number, lagen: number, steen: string, balkons: Set<number>) {
+  if (x.L < 2.5 || lagen < 1) return;
+  const m = gevelMaat(gevel);
+  const n = Math.max(1, Math.round(x.L / 3)), bw = x.L / n, g = bw / 3;
+  const hs = (top - y0) / lagen, f = hs / 3;
+  const w = m.rb * g, ow = Math.max(0.1, m.ow) * g;
+  for (let i = 0; i < lagen; i++) {
+    const yb = y0 + i * hs, ys = yb + m.borst * f, yt = yb + (m.borst + m.rh) * f;
+    // Lijst op de verdiepingsvloer (niet waar al een balkon ligt).
+    if (i > 0 && !balkons.has(i)) lijst(mb, steen, x, yb - 0.06, yb + 0.12, 0.13);
+    const fronton = i === 1 && lagen >= 3 && gevel !== 'gruender';
+    for (let j = 0; j < n; j++) {
+      const s = (j + 0.5) * bw;
+      if (!balkons.has(i)) richel(mb, steen, x, s, w + 0.3, 0.2, ys - 0.12, ys);
+      // Neggekanten: smalle stenen omlijsting die iets uitsteekt.
+      if (m.ow > 0) for (const k of [-1, 1]) {
+        // Alleen voorkant en zijkanten (de bovenkant zit onder het kroonlijstje): 6 driehoeken.
+        const s0 = s + k * w / 2, s1 = s + k * (w / 2 + ow), y1 = yt + ow * 0.6;
+        const a0 = op(x, s0, 0), a1 = op(x, s0, 0.07), b0 = op(x, s1, 0), b1 = op(x, s1, 0.07);
+        mb.quad(steen, P3(a1, ys), P3(b1, ys), P3(b1, y1), P3(a1, y1), [0, 0], [1, 0], [1, 1], [0, 1], N3(x.n));
+        mb.quad(steen, P3(a0, ys), P3(a1, ys), P3(a1, y1), P3(a0, y1), [0, 0], [1, 0], [1, 1], [0, 1], { x: -x.t.x * k, y: 0, z: -x.t.z * k });
+        mb.quad(steen, P3(b0, ys), P3(b1, ys), P3(b1, y1), P3(b0, y1), [0, 0], [1, 0], [1, 1], [0, 1], { x: x.t.x * k, y: 0, z: x.t.z * k });
+      }
+      const wc = w + 2 * ow + 0.25, yc = yt + ow * 0.6;
+      richel(mb, steen, x, s, wc, 0.26, yc, yc + 0.16);
+      if (fronton) {
+        const hp = 0.42, d = 0.24, yf = yc + 0.16;
+        const a = op(x, s - wc / 2, d), b = op(x, s + wc / 2, d), c = op(x, s, d), a0 = op(x, s - wc / 2, 0), b0 = op(x, s + wc / 2, 0), c0 = op(x, s, 0);
+        mb.driehoek(steen, P3(a, yf), P3(b, yf), P3(c, yf + hp), [0, 0], [1, 0], [0.5, 1], N3(x.n));
+        mb.quad(steen, P3(a, yf), P3(c, yf + hp), P3(c0, yf + hp), P3(a0, yf), [0, 0], [1, 0], [1, 1], [0, 1], { x: -x.t.x * hp, y: wc / 2, z: -x.t.z * hp });
+        mb.quad(steen, P3(c, yf + hp), P3(b, yf), P3(b0, yf), P3(c0, yf + hp), [0, 0], [1, 0], [1, 1], [0, 1], { x: x.t.x * hp, y: wc / 2, z: x.t.z * hp });
+      }
+    }
+  }
+  // Lisenen op de pandgrenzen.
+  if (x.L > 6) for (const s of [0.3, x.L - 0.3]) doos(mb, steen, steen, op(x, s, 0.07), x.t, 0.6, 0.14, y0, top - 0.55);
 }
 
 /** Koepel (halve bol) met rand, lantaarn en een vergulde top. */
@@ -214,7 +266,7 @@ export function stadsblok(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' |
         const n = Math.max(1, Math.round(x.L / 5)), pw = x.L / n;
         for (let i = 0; i < n; i++) {
           const a = op(x, i * pw + 0.25, 0.02), b = op(x, (i + 1) * pw - 0.25, 0.02);
-          mb.quad(soort === 'kantoor' ? 'glas' : `winkelpui:${(g.seed + p.i * 3 + i) % PUIEN}`, P3(a, Y), P3(b, Y), P3(b, Y + hBG - 0.4), P3(a, Y + hBG - 0.4), [0, 0], [1, 0], [1, 1], [0, 1], N3(x.n));
+          mb.quad(soort === 'kantoor' ? 'glas' : `winkelpui:${(g.seed + p.i * 3 + i) % PUIEN}`, P3(a, Y), P3(b, Y), P3(b, Y + hBG - 0.4), P3(a, Y + hBG - 0.4), ...puiUV(x), N3(x.n));
           // Markies (zonnescherm) boven een deel van de winkels.
           if (soort === 'winkel' && !LOD.ver && r.next() < 0.45) {
             const l = r.int(0, LUIFELS - 1), yl = Y + hBG - 0.6;
@@ -236,6 +288,11 @@ export function stadsblok(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' |
       if (!LOD.ver) {
         if (lagenBoven >= 3) balkon(mb, x, Y + hBG + LAAG, steen);
         if (lagenBoven >= 4) balkon(mb, x, top - LAAG, steen);
+        const hs = (top - Y - hBG) / lagenBoven;
+        const bk = new Set<number>();
+        if (lagenBoven >= 3) bk.add(Math.round(LAAG / hs));
+        if (lagenBoven >= 4) bk.add(Math.round((top - LAAG - Y - hBG) / hs));
+        gevelReliëf(mb, x, gevel, Y + hBG, top, lagenBoven, steen, bk);
         // Vlaggen aan de gevel (kantoren en enkele andere panden).
         if (x.L > 6 && r.next() < (gevel === 'kalksteen' || soort === 'kantoor' ? 0.65 : 0.18)) {
           const variant = r.int(0, 3), rot = Math.atan2(x.n.x, x.n.z);

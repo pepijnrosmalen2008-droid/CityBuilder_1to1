@@ -46,7 +46,7 @@ const VAST: Record<string, MatDef> = {
   groenLak: D({ kleur: [0.09, 0.32, 0.17], ruwheid: 0.45, metaal: 0.2 }),
   /** Getextureerde materialen op afstand uit één textuurreeks. */
   atlasVer: D({ kleur: [1, 1, 1], ruwheid: 0.85, meter: 0 }),
-  trim: D({ kleur: [0.92, 0.92, 0.9], ruwheid: 0.55 }),
+  trim: D({ kleur: [0.84, 0.84, 0.82], ruwheid: 0.55 }),
   trimDonker: D({ kleur: [0.16, 0.16, 0.17], ruwheid: 0.5, metaal: 0.2 }),
   glas: D({ kleur: [0.22, 0.30, 0.36], ruwheid: 0.08, metaal: 0.6 }),
   raam: D({ kleur: [0.16, 0.22, 0.28], ruwheid: 0.06, metaal: 0.5 }),
@@ -56,8 +56,8 @@ const VAST: Record<string, MatDef> = {
   dakgrind: D({ dubbelzijdig: true, tex: 'dakgrind', meter: 3, normaal: 0.8 }),
   zink: D({ dubbelzijdig: true, tex: 'zink', meter: 2, normaal: 1 }),
   balustrade: D({ tex: 'balustrade', meter: 0, alfa: 'knip', dubbelzijdig: true }),
-  natuursteen: D({ kleur: [0.86, 0.81, 0.70], ruwheid: 0.78 }),
-  natuursteenWit: D({ kleur: [0.93, 0.92, 0.88], ruwheid: 0.75 }),
+  natuursteen: D({ kleur: [0.74, 0.69, 0.59], ruwheid: 0.8 }),
+  natuursteenWit: D({ kleur: [0.82, 0.80, 0.75], ruwheid: 0.78 }),
   koper: D({ kleur: [0.33, 0.60, 0.50], ruwheid: 0.55, metaal: 0.25 }),
   goud: D({ kleur: [0.86, 0.66, 0.26], ruwheid: 0.3, metaal: 1 }),
   glasInLood: D({ kleur: [0.15, 0.15, 0.24], ruwheid: 0.1, metaal: 0.45, emissie: [0.02, 0.012, 0.03] }),
@@ -113,6 +113,9 @@ const VAST: Record<string, MatDef> = {
   lampUit: D({ kleur: [0.08, 0.08, 0.08], ruwheid: 0.3 }),
 };
 
+/** Lakkleuren van geparkeerde auto's op opritten (zoals de lakkleuren in het verkeer). */
+const LAK: [number, number, number][] = [[0.82, 0.82, 0.80], [0.05, 0.05, 0.06], [0.42, 0.44, 0.46], [0.12, 0.18, 0.34], [0.50, 0.06, 0.06], [0.62, 0.63, 0.64]];
+
 const DEUR: [number, number, number][] = [[0.12, 0.22, 0.16], [0.55, 0.12, 0.10], [0.12, 0.16, 0.30], [0.15, 0.15, 0.16], [0.85, 0.84, 0.78]];
 
 export function materiaal(sleutel: string): MatDef {
@@ -126,6 +129,7 @@ export function materiaal(sleutel: string): MatDef {
     case 'luifel': return D({ tex: sleutel, meter: 0.6, dubbelzijdig: true });
     case 'golfplaat': return D({ tex: sleutel, meter: 4, normaal: 1 });
     case 'deur': return D({ kleur: DEUR[Number(arg) % DEUR.length], ruwheid: 0.4 });
+    case 'lak': return D({ kleur: LAK[Number(arg) % LAK.length], ruwheid: 0.3, metaal: 0.45 });
     case 'gewas': return D({ tex: sleutel, meter: 8, normaal: 0.8, schaduw: false });
     case 'blad': return D({ tex: sleutel, meter: 0, alfa: 'knip', dubbelzijdig: true, normaal: 0.25, instantieTint: true });
     case 'bladkern': return D({ tex: sleutel, meter: 3, instantieTint: true });

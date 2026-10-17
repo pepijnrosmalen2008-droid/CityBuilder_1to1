@@ -1,6 +1,7 @@
 import { V3, norm3, sub3 } from '../math';
 import { Rng } from '../rng';
 import { MeshBouwer, MeshData } from './mesh';
+import { voertuigMesh } from './autos';
 
 // Modellen voor instanties, in lokale coördinaten: oorsprong op de grond, +Z = voorkant.
 
@@ -105,10 +106,10 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   }
   mb.ruw(kern, pts, nrm, uv, idx);
   // Bladtrossen: drie kruisende kaarten per tros, verdeeld over een ellipsoïde.
-  for (let t = 0; t < (ver ? 3 : laag ? Math.ceil(v.trossen / 3) : v.trossen); t++) {
+  for (let t = 0; t < (ver ? 3 : laag ? Math.ceil(v.trossen / 3) : Math.round(v.trossen * 1.35)); t++) {
     const th = Math.acos(r.range(-0.55, 0.95)), ph = r.range(0, Math.PI * 2);
     const c = { x: midden.x + Math.sin(th) * Math.cos(ph) * v.kroonR * 0.72, y: midden.y + Math.cos(th) * v.kroonH * 0.5, z: midden.z + Math.sin(th) * Math.sin(ph) * v.kroonR * 0.72 };
-    const s = v.kaart * r.range(0.8, 1.15);
+    const s = v.kaart * r.range(0.72, 1.05);
     const a = r.range(0, Math.PI);
     const assen: [V3, V3][] = [
       [{ x: Math.cos(a), y: 0, z: Math.sin(a) }, { x: 0, y: 1, z: 0 }],
@@ -301,7 +302,13 @@ function vlagMesh(variant: number): MeshData {
   return mb.bouw();
 }
 
-export const KLEIN_MEUBILAIR = new Set(['bank', 'afvalbak', 'fietsbeugel', 'paaltje', 'bord', 'vlag']);
+export const KLEIN_MEUBILAIR = new Set(['bank', 'afvalbak', 'fietsbeugel', 'paaltje', 'bord', 'vlag', 'oprijauto']);
+
+/** Geparkeerde auto op een oprit: het echte automodel met een vaste lakkleur (variant). +x = neus. */
+function oprijautoMesh(variant: number): MeshData {
+  const m = voertuigMesh((['hatchback', 'sedan', 'stationwagen', 'suv'] as const)[variant % 4]);
+  return { groepen: m.groepen.map(g => g.materiaal === 'autolak' ? { ...g, materiaal: `lak:${variant % 6}` } : g) };
+}
 
 export function propMesh(soort: string, variant: number, niveau = 0): MeshData {
   if (soort === 'bank') return bankMesh();
@@ -315,5 +322,6 @@ export function propMesh(soort: string, variant: number, niveau = 0): MeshData {
   if (soort === 'lantaarnKlassiek') return lantaarnKlassiekMesh();
   if (soort === 'vlag') return vlagMesh(variant);
   if (soort === 'jaknikker') return jaknikkerMesh();
+  if (soort === 'oprijauto') return oprijautoMesh(variant);
   return boomMesh(soort, variant, niveau);
 }

@@ -14,7 +14,7 @@ const ETMAAL_SECONDEN = 12 * 60;
 const C = (h: number) => new THREE.Color(h);
 const LUCHT_DAG = C(0xbcd6ff), LUCHT_NACHT = C(0x1b2a48), GROND_DAG = C(0x4d4a32), GROND_NACHT = C(0x0d0f14);
 const NEVEL_DAG = C(0xa9c4e2), NEVEL_SCHEMER = C(0xd9a98c), NEVEL_NACHT = C(0x0c121c);
-const ZON_LAAG = C(0xff9a5a), ZON_HOOG = C(0xffe7c4), MAAN = C(0x8fa8d8);
+const ZON_LAAG = C(0xff9a5a), ZON_HOOG = C(0xffe2b8), MAAN = C(0x8fa8d8);
 
 export class DagNacht {
   /** Uur van de dag (0-24). */
@@ -24,7 +24,7 @@ export class DagNacht {
   private vorigeRichting = new THREE.Vector3();
   private tmp = new THREE.Color();
 
-  constructor(private sfeer: Sfeer, private mats: Materialen, uur = 10) { this.uur = uur; }
+  constructor(private sfeer: Sfeer, private mats: Materialen, uur = 15.5) { this.uur = uur; }
 
   /** Tijd laten lopen (snelheid = spelsnelheid; 0 = pauze) en alles bijwerken. Geeft true als de schaduw opnieuw moet. */
   stap(dt: number, snelheid: number): boolean {
@@ -38,7 +38,7 @@ export class DagNacht {
     const s = this.sfeer;
     // Zonnestand: opkomst 6:00 in het oosten (+x), hoogste stand 12:00 in het zuiden (+z), onder om 18:00 in het westen.
     const hoek = (uur - 6) / 12 * Math.PI;
-    const elev = THREE.MathUtils.degToRad(52) * Math.sin(hoek);
+    const elev = THREE.MathUtils.degToRad(50) * Math.sin(hoek);
     const az = THREE.MathUtils.degToRad(90 - (uur - 6) * 15);
     const zon = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - elev, az);
     const elevGr = THREE.MathUtils.radToDeg(elev);
@@ -50,12 +50,12 @@ export class DagNacht {
     const maanRichting = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - Math.max(0.35, -elev * 0.8), az + Math.PI);
     const richting = elevGr > -3 ? zon : maanRichting;
     s.zonRichting.copy(richting);
-    s.zon.intensity = elevGr > -3 ? 3.4 * dag : 0.9 * nacht;
+    s.zon.intensity = elevGr > -3 ? 4.3 * dag : 0.9 * nacht;
     s.zon.color.copy(elevGr > -3 ? this.tmp.copy(ZON_LAAG).lerp(ZON_HOOG, THREE.MathUtils.smoothstep(elevGr, 0, 30)) : MAAN);
-    s.hemi.intensity = 0.3 + 0.12 * dag;
+    s.hemi.intensity = 0.24 + 0.06 * dag;
     s.hemi.color.copy(LUCHT_NACHT).lerp(LUCHT_DAG, dag);
     s.hemi.groundColor.copy(GROND_NACHT).lerp(GROND_DAG, dag);
-    s.scene.environmentIntensity = 0.12 + 0.33 * dag;
+    s.scene.environmentIntensity = 0.12 + 0.24 * dag;
     const u = s.sky.material.uniforms;
     u.sunPosition.value.copy(zon);
     u.rayleigh.value = 2.1 + schemer * 0.8;

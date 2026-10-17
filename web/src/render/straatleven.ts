@@ -9,7 +9,9 @@ import { NACHT } from './materialen';
 // alleen ingezoomd. Lopen = op en neer veren en licht wiegen; fietsers trappen.
 
 const HUID = [new THREE.Color(0xe8b896), new THREE.Color(0xc68a62), new THREE.Color(0x8d5a3b), new THREE.Color(0xf1cdb0)];
-const KLEREN = [0x2f6db5, 0xc0392b, 0xf2f2f2, 0x2d2d2d, 0x3e8e5a, 0xe1b12c, 0x8e44ad, 0xd35400, 0x7f8c8d, 0x16a085, 0xe84393, 0x34495e].map(c => new THREE.Color(c));
+// Stedelijke kleding: veel donker, navy, beige en wit, af en toe een kleur.
+const KLEREN = [0x1f2a3c, 0x2b2b2e, 0xd9d2c3, 0x6b5b45, 0xf0eee8, 0x3d4a5c, 0x8a2f2a, 0x556b4a, 0xb08a5a, 0x7a7f86, 0x2f4f6f, 0xc9b28a, 0x9a3b4f, 0x46505e].map(c => new THREE.Color(c));
+const BROEKEN = [0x2b3a55, 0x1c1c1e, 0x3a4a68, 0xbfb29a, 0x4a4a4e, 0x5a4a3a, 0x24304a].map(c => new THREE.Color(c));
 
 function kleur(geo: THREE.BufferGeometry, c: THREE.Color | number) {
   const k = c instanceof THREE.Color ? c : new THREE.Color(c);
@@ -27,6 +29,12 @@ export class StraatLevenWeergave {
   leven: StraatLeven;
   private voetKleding: THREE.InstancedMesh;
   private voetVast: THREE.InstancedMesh;
+  /** Benen en armen apart, zodat ze echt meezwaaien bij het lopen. */
+  private benen: THREE.InstancedMesh[];
+  private armen: THREE.InstancedMesh[];
+  private mb = new THREE.Matrix4();
+  private mr = new THREE.Matrix4();
+  private mz = new THREE.Matrix4();
   private fietsKleding: THREE.InstancedMesh;
   private fietsVast: THREE.InstancedMesh;
   private m = new THREE.Matrix4();
@@ -39,15 +47,23 @@ export class StraatLevenWeergave {
   constructor(private w: Wereld, readonly max = 320) {
     this.leven = new StraatLeven(w.net);
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
-    // Voetganger (1,75 m): romp getint, hoofd en benen vast.
-    const romp = samen([doos(0.4, 0.58, 0.24, 0, 1.18, 0), doos(0.11, 0.5, 0.12, -0.26, 1.15, 0), doos(0.11, 0.5, 0.12, 0.26, 1.15, 0)]);
+    // Voetganger (1,75 m): afgeronde romp met heupen (getint: jas), hoofd met haar en nek (getint: huidskleur),
+    // benen (broek, schoenen) en armen (mouwen) los aan heup en schouder.
+    const romp = samen([
+      new THREE.CapsuleGeometry(0.16, 0.36, 4, 10).scale(1.18, 1, 0.68).translate(0, 1.2, 0),
+      new THREE.CapsuleGeometry(0.13, 0.12, 3, 10).scale(1.25, 1, 0.75).translate(0, 0.94, 0),
+    ]);
     kleur(romp, 0xffffff);
     const vast = samen([
-      kleur(doos(0.15, 0.86, 0.17, -0.1, 0.45, 0), 0x2c3e50), kleur(doos(0.15, 0.86, 0.17, 0.1, 0.45, 0), 0x2c3e50),
-      kleur(new THREE.SphereGeometry(0.12, 8, 6).translate(0, 1.6, 0), HUID[0]),
-      kleur(new THREE.SphereGeometry(0.125, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.63, -0.01), 0x3b2a20),
-      kleur(doos(0.16, 0.06, 0.26, -0.1, 0.03, 0.03), 0x1a1a1a), kleur(doos(0.16, 0.06, 0.26, 0.1, 0.03, 0.03), 0x1a1a1a),
+      kleur(new THREE.CylinderGeometry(0.048, 0.055, 0.12, 8).translate(0, 1.58, 0), 0xffffff),
+      kleur(new THREE.SphereGeometry(0.105, 12, 9).scale(0.9, 1.12, 1).translate(0, 1.71, 0.005), 0xffffff),
+      kleur(new THREE.SphereGeometry(0.11, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(0.92, 1.1, 1.04).translate(0, 1.725, -0.008), 0x2a1d15),
     ]);
+    const been = samen([
+      kleur(new THREE.CapsuleGeometry(0.078, 0.74, 3, 8).translate(0, -0.44, 0), 0xffffff),
+      kleur(doos(0.1, 0.07, 0.25, 0, -0.88, 0.04), 0x2a2a2a),
+    ]);
+    const arm = samen([kleur(new THREE.CapsuleGeometry(0.048, 0.5, 3, 7).translate(0, -0.3, 0), 0xffffff)]);
     // Fietser: fiets (frame, wielen) en berijder; jas getint.
     const wiel = (z: number) => kleur(new THREE.TorusGeometry(0.33, 0.035, 4, 14).rotateY(Math.PI / 2).translate(0, 0.35, z), 0x151515);
     const buis = (a: THREE.Vector3, b: THREE.Vector3, r = 0.025) => {
@@ -76,6 +92,8 @@ export class StraatLevenWeergave {
       return im;
     };
     this.voetKleding = inst(romp, max, true); this.voetVast = inst(vast, max, true);
+    this.benen = [inst(been, max, true), inst(been.clone(), max, true)];
+    this.armen = [inst(arm, max, true), inst(arm.clone(), max, true)];
     this.fietsKleding = inst(fietsRomp, max, true); this.fietsVast = inst(fietsVast, max, false);
   }
 
@@ -92,14 +110,24 @@ export class StraatLevenWeergave {
       const p = this.leven.plek(l);
       const kl = KLEREN[l.kleur % KLEREN.length];
       if (l.soort === 'voet') {
-        const veer = Math.abs(Math.sin(l.fase)) * 0.045;
-        this.e.set(0, p.rot, Math.sin(l.fase) * 0.04);
+        const veer = Math.abs(Math.sin(l.fase)) * 0.035, zwaai = Math.sin(l.fase) * 0.42;
+        this.e.set(0, p.rot, Math.sin(l.fase) * 0.025);
         this.q.setFromEuler(this.e);
         this.m.compose(this.v.set(p.x, p.y + veer, p.z), this.q, this.sc.set(1, 0.92 + (l.kleur % 13) / 100, 1));
         this.voetKleding.setMatrixAt(nv, this.m); this.voetKleding.setColorAt(nv, kl);
         this.voetVast.setMatrixAt(nv, this.m);
-        // Vast deel licht variëren (broek en huid samen; goedkoper dan een derde laag).
-        this.voetVast.setColorAt(nv, this.c.setScalar(0.8 + ((l.kleur >> 5) % 5) * 0.06));
+        this.voetVast.setColorAt(nv, HUID[(l.kleur >> 3) % HUID.length]);
+        const broek = BROEKEN[(l.kleur >> 4) % BROEKEN.length];
+        for (const [k, im] of this.benen.entries()) {
+          const z = k ? 1 : -1;
+          this.mb.makeTranslation(z * 0.095, 0.95, 0).multiply(this.mr.makeRotationX(zwaai * z));
+          im.setMatrixAt(nv, this.mr.multiplyMatrices(this.m, this.mb)); im.setColorAt(nv, broek);
+        }
+        for (const [k, im] of this.armen.entries()) {
+          const z = k ? 1 : -1;
+          this.mb.makeTranslation(z * 0.235, 1.45, 0).multiply(this.mr.makeRotationX(-zwaai * z * 0.8)).multiply(this.mz.makeRotationZ(z * 0.07));
+          im.setMatrixAt(nv, this.mr.multiplyMatrices(this.m, this.mb)); im.setColorAt(nv, kl);
+        }
         nv++;
       } else {
         this.e.set(0, p.rot, Math.sin(l.fase) * 0.03);
@@ -111,7 +139,7 @@ export class StraatLevenWeergave {
         nf++;
       }
     }
-    for (const [im, n] of [[this.voetKleding, nv], [this.voetVast, nv], [this.fietsKleding, nf], [this.fietsVast, nf]] as const) {
+    for (const [im, n] of [[this.voetKleding, nv], [this.voetVast, nv], ...[...this.benen, ...this.armen].map(b => [b, nv] as const), [this.fietsKleding, nf], [this.fietsVast, nf]] as const) {
       im.count = n; im.instanceMatrix.needsUpdate = true;
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
     }

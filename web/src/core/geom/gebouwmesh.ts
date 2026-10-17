@@ -14,7 +14,7 @@ import { stadsblok } from './stadshart';
 
 export const GEVELSTIJLEN = ['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'stuc', 'modernDonker', 'vliesgevel', 'betonband', 'grachtRood', 'grachtDonker', 'naoorlogsGeel', 'naoorlogsGrijs', 'betonPaneel', 'witStuc', 'antraciet', 'nieuwRood', 'houtGevel', 'bruin70', 'haussmann', 'haussmannWit', 'gruender', 'kalksteen'] as const;
 export type GevelStijl = typeof GEVELSTIJLEN[number];
-export const PUIEN = 4, LUIFELS = 4, HALTINTEN = 4;
+export const PUIEN = 6, LUIFELS = 4, HALTINTEN = 4;
 
 export type H = (x: number, z: number) => number;
 export const OP: V3 = { x: 0, y: 1, z: 0 };
@@ -59,6 +59,9 @@ export function dichtstbij(p: V2, lijn: V2[]): V2 {
 }
 
 export const P3 = (p: V2, y: number): V3 => ({ x: p.x, y, z: p.z });
+type UV4 = [[number, number], [number, number], [number, number], [number, number]];
+/** UV's voor een vlak met tekst of een vaste links-rechts (winkelpui): nooit gespiegeld, welke kant de rand ook op loopt. */
+export const puiUV = (r: { t: V2; n: V2 }): UV4 => r.t.x * r.n.z - r.t.z * r.n.x >= 0 ? [[0, 0], [1, 0], [1, 1], [0, 1]] : [[1, 0], [0, 0], [0, 1], [1, 1]];
 export const N3 = (n: V2): V3 => ({ x: n.x, y: 0, z: n.z });
 
 /** Wand langs een rand; gevelmaterialen krijgen UV's in traveeën en verdiepingen. */
@@ -423,6 +426,19 @@ function plaat(mb: MeshBouwer, mat: string, an: Anker, d0: number, d1: number, s
 }
 
 /** Struik: afgeplatte bol van een paar lagen (goedkoop, één materiaal). */
+/** Rolcontainer (1100 liter): bak die naar onder smaller wordt, deksel met rand, handgreep en vier zwenkwielen. */
+export function rolcontainer(mb: MeshBouwer, c: V2, t: V2, y: number, mat: string) {
+  const n = { x: -t.z, z: t.x };
+  doos(mb, mat, mat, c, t, 1.22, 0.92, y + 0.22, y + 1.12);
+  doos(mb, mat, mat, c, t, 1.12, 0.84, y + 0.16, y + 0.24);
+  doos(mb, mat, mat, { x: c.x + n.x * 0.04, z: c.z + n.z * 0.04 }, t, 1.32, 1.04, y + 1.12, y + 1.2);
+  doos(mb, 'metaal', 'metaal', { x: c.x - n.x * 0.55, z: c.z - n.z * 0.55 }, t, 1.0, 0.05, y + 1.0, y + 1.05);
+  for (const a of [-0.45, 0.45]) for (const d of [-0.32, 0.32]) {
+    const q = { x: c.x + t.x * a + n.x * d, z: c.z + t.z * a + n.z * d };
+    cilinder(mb, 'rubber', { x: q.x - t.x * 0.03, y: y + 0.08, z: q.z - t.z * 0.03 }, { x: q.x + t.x * 0.03, y: y + 0.08, z: q.z + t.z * 0.03 }, 0.08, 0.08, 8);
+  }
+}
+
 export function struik(mb: MeshBouwer, c: V2, y: number, r: number, h: number) {
   if (LOD.ver) return;
   cilinder(mb, 'haag', { x: c.x, y, z: c.z }, { x: c.x, y: y + h * 0.55, z: c.z }, r * 0.75, r, 7);
@@ -562,7 +578,7 @@ export function winkels(mb: MeshBouwer, g: Gebouw, r: Rng, stijl: GevelStijl, lu
     const n = Math.max(1, Math.round(x.L / 6)), pw = x.L / n;
     for (let i = 0; i < n; i++) {
       const a = { x: x.a.x + x.t.x * i * pw, z: x.a.z + x.t.z * i * pw }, b = { x: x.a.x + x.t.x * (i + 1) * pw, z: x.a.z + x.t.z * (i + 1) * pw };
-      mb.quad(`winkelpui:${r.int(0, PUIEN - 1)}`, P3(a, Y), P3(b, Y), P3(b, Y + hBG), P3(a, Y + hBG), [0, 0], [1, 0], [1, 1], [0, 1], N3(x.n));
+      mb.quad(`winkelpui:${r.int(0, PUIEN - 1)}`, P3(a, Y), P3(b, Y), P3(b, Y + hBG), P3(a, Y + hBG), ...puiUV(x), N3(x.n));
       if (luifels && r.next() < 0.7 && pw > 2) {
         const l = r.int(0, LUIFELS - 1), yl = Y + hBG - 0.55;
         const v = (s: number, d: number) => ({ x: x.a.x + x.t.x * (i * pw + s) + x.n.x * d, z: x.a.z + x.t.z * (i * pw + s) + x.n.z * d });
@@ -738,9 +754,8 @@ function inrichting(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[])
         for (let s = -h + 1.55; s < h - 1.2; s += 2.5) {
           if (r.next() < 0.45) continue;
           const c = P(rd + 2.5, s), y = yv(c);
-          const kleur = r.kies(['trimDonker', 'trim', 'metaal', 'kraan', 'dakpannen'] as const);
-          doos(mb, kleur, kleur, c, an.n, 4.3, 1.8, y + 0.25, y + 0.95);
-          doos(mb, 'glas', kleur, P(rd + 2.7, s), an.n, 2.4, 1.6, y + 0.95, y + 1.45);
+          const m = c;
+          props.push({ soort: 'oprijauto', x: m.x, y, z: m.z, rot: Math.atan2(an.n.z, -an.n.x), schaal: 1, variant: r.int(0, 23) });
         }
       }
       // Bomen langs de achterrand.
@@ -781,10 +796,12 @@ function inrichting(mb: MeshBouwer, g: Gebouw, r: Rng, hoogte: H, props: Prop[])
       const h = vrij(d0, d1);
       if (h < 2.5) break;
       plaat(mb, 'stoeptegels', an, d0, d1, -h, h, hoogte);
-      for (let s = -h + 1; s < h - 1; s += 3.2) {
-        if (r.next() < 0.5) continue;
+      let bakken = 0;
+      for (let s = -h + 1; s < h - 1 && bakken < 2; s += 3.2) {
+        if (r.next() < 0.7) continue;
+        bakken++;
         const c = P(d0 + 0.8, s), y = yv(c);
-        doos(mb, r.next() < 0.5 ? 'trimDonker' : 'kraan', 'trimDonker', c, an.t, 1.3, 1.0, y, y + 1.3);
+        rolcontainer(mb, c, an.t, y, r.next() < 0.55 ? 'groenLak' : 'trimDonker');
       }
       if (diep > 6) boom(P(d0 + diep * 0.6, r.range(-h * 0.5, h * 0.5)), 0.6);
       for (let s = -h + 2; s < h - 2; s += 6) if (r.next() < 0.4) struikje(P(d1 - 0.5, s));

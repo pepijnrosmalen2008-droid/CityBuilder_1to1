@@ -4,7 +4,7 @@ import { Gebouw, Anker, totaleHoogte } from '../wereld';
 import { MeshBouwer, Prop } from './mesh';
 import { driehoeken, getekendOppervlak, knipHalfvlak, zwaartepunt } from '../poly';
 import { LOD } from './lod';
-import { H, Rand, randen, wand, vlak, inzet, norm, doos, dakrand, deur, P3, N3, OP, PUIEN } from './gebouwmesh';
+import { H, Rand, randen, wand, vlak, inzet, norm, doos, dakrand, deur, P3, N3, OP, PUIEN, puiUV } from './gebouwmesh';
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // GEBOUWTYPES PER BOUWSTIJL
@@ -145,7 +145,7 @@ export function grachtpanden(mb: MeshBouwer, g: Gebouw, hoogte: H, soort: 'wonen
       // Kopgevel aan het eind van de rij: ook ramen (je ziet hem vanaf de straat).
       if (x.soort === 'zij') { if (kop && !pakhuis) wand(mb, `gevel:${gevel}`, x, Y, top, 0, lagenHier, travee); else wand(mb, `muur:${gevel}`, x, Y, top, 0, 0); continue; }
       if (soort === 'winkel' && x.soort === 'voor') {
-        mb.quad(`winkelpui:${(g.seed + p.i) % PUIEN}`, P3(x.a, Y), P3(x.b, Y), P3(x.b, Y + hBG), P3(x.a, Y + hBG), [0, 0], [1, 0], [1, 1], [0, 1], N3(x.n));
+        mb.quad(`winkelpui:${(g.seed + p.i) % PUIEN}`, P3(x.a, Y), P3(x.b, Y), P3(x.b, Y + hBG), P3(x.a, Y + hBG), ...puiUV(x), N3(x.n));
         wand(mb, `gevel:${gevel}`, x, Y + hBG, top, 0, lagenHier - 1, travee);
         continue;
       }
