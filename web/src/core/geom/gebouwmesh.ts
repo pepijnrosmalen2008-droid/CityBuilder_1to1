@@ -7,11 +7,12 @@ import { LOD } from './lod';
 import { DakInfo, villas, terrasflat, woontoren, grachtpanden, rijParams, erker, luifel, houtAccent, portiekflat, galerijflat, appModern, wederopbouwLuifel, bovenBalkons, kantoor30, kantoorToren, sheddak, steigers } from './stijlmesh';
 import { afstandTotLijn, driehoeken, getekendOppervlak, verfijn, zwaartepunt } from '../poly';
 import { puntInPolygoon } from '../math';
+import { stadsblok } from './stadshart';
 
 // Gebouwen op de vorm van hun perceel: elke rand van de footprint wordt een voor-, achter- of
 // zijgevel; daken volgen de gevellijn (ook in bochten en op hoeken in verstek).
 
-export const GEVELSTIJLEN = ['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'stuc', 'modernDonker', 'vliesgevel', 'betonband', 'grachtRood', 'grachtDonker', 'naoorlogsGeel', 'naoorlogsGrijs', 'betonPaneel', 'witStuc', 'antraciet', 'nieuwRood', 'houtGevel', 'bruin70'] as const;
+export const GEVELSTIJLEN = ['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'stuc', 'modernDonker', 'vliesgevel', 'betonband', 'grachtRood', 'grachtDonker', 'naoorlogsGeel', 'naoorlogsGrijs', 'betonPaneel', 'witStuc', 'antraciet', 'nieuwRood', 'houtGevel', 'bruin70', 'haussmann', 'haussmannWit', 'gruender', 'kalksteen'] as const;
 export type GevelStijl = typeof GEVELSTIJLEN[number];
 export const PUIEN = 4, LUIFELS = 4, HALTINTEN = 4;
 
@@ -181,6 +182,9 @@ function bouwGebouwIntern(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[]
     case 'kantoor30': dak = kantoor30(mb, g); break;
     case 'kantoorBeton': case 'kantoorGlas': dak = kantoorToren(mb, g); break;
     case 'sheddak': dak = sheddak(mb, g); break;
+    case 'stadsblok': stadsblok(mb, g, 'wonen'); dak = null; break;
+    case 'stadsWinkel': stadsblok(mb, g, 'winkel'); dak = null; break;
+    case 'stadsKantoor': stadsblok(mb, g, 'kantoor'); dak = null; break;
     default:
       switch (g.vorm) {
         case 'rijwoningen': rijwoningen(mb, g, r, stijl, hoogte, props); dak = null; break;

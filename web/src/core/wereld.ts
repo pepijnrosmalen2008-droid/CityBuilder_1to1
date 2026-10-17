@@ -546,7 +546,7 @@ export class Wereld {
     diepte = Math.min(diepte, mid.d - terug - 1.5);
     if (diepte < 6) return null;
     // Hoekpand: ook afstand houden tot de zijstraat.
-    const terugZij = vorm === 'winkelsMetWonen' ? 0.2 : Math.max(1.5, terug * 0.6);
+    const terugZij = vorm === 'winkelsMetWonen' || keuze.terug[1] < 1 ? 0.2 : Math.max(1.5, terug * 0.6);
     const zijStraat = st.knippen.filter(kn => kn.straat).map(kn => ({ o: { x: kn.o.x + kn.n.x * terugZij, z: kn.o.z + kn.n.z * terugZij }, n: kn.n }));
     const opZij = (poly: V2[]) => { for (const z of zijStraat) poly = poly.length >= 3 ? knipHalfvlak(poly, z.o, z.n) : poly; return poly; };
     let voet = opZij(band(st, s0, s1, terug, (d: number) => Math.min(terug + diepte, d - 1)));

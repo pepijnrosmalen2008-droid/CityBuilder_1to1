@@ -24,11 +24,12 @@ import { BOUWSTIJLEN, DistrictStijl } from '../core/stijlen';
 
 const STIJL_KEUZE: { id: DistrictStijl; naam: string; uitleg: string }[] = [
   { id: 'gemengd', naam: 'Gemengd', uitleg: 'De ontwikkelaar kiest; hogere niveaus worden vaker nieuwbouw.' },
-  ...(['klassiek', 'gracht', 'naoorlogs', 'jaren70', 'nieuwbouw'] as const).map(id => ({ id, naam: BOUWSTIJLEN[id].naam, uitleg: BOUWSTIJLEN[id].uitleg })),
+  ...(['stadshart', 'klassiek', 'gracht', 'naoorlogs', 'jaren70', 'nieuwbouw'] as const).map(id => ({ id, naam: BOUWSTIJLEN[id].naam, uitleg: BOUWSTIJLEN[id].uitleg })),
 ];
 
 /** Klein plaatje per bouwstijl (silhouet). */
 const STIJL_ICOON: Record<DistrictStijl, string> = {
+  stadshart: '<svg viewBox="0 0 86 46"><path d="M8 40V18h22v22zM32 40V14h22v26zM56 40V18h22v22z" fill="#e3d6bd"/><path d="M6 18l4-6h18l4 6zM30 14l4-6h18l4 6zM54 18l4-6h18l4 6z" fill="#8a96a3"/><path d="M14 24h4v4h-4zM22 24h4v4h-4zM38 20h4v4h-4zM46 20h4v4h-4zM62 24h4v4h-4zM70 24h4v4h-4z" fill="#3b4b5c"/><path d="M8 30h22M32 28h22M56 30h22" stroke="#222" stroke-width="1.4"/><circle cx="43" cy="7" r="4" fill="#5fa58c"/></svg>',
   gemengd: '<svg viewBox="0 0 86 46"><path d="M12 40V24l8-6 8 6v16zM32 40V12h14v28zM50 40V20h12v20zM66 40V28l6-5 6 5v12z" fill="#adb5bd"/></svg>',
   klassiek: '<svg viewBox="0 0 86 46"><path d="M10 40V24l12-10 12 10v16zM34 40V24l12-10 12 10v16zM58 40V24l12-10 12 10v16z" fill="#c2553a"/><path d="M10 24l12-10 12 10M34 24l12-10 12 10M58 24l12-10 12 10" stroke="#7a2e1f" stroke-width="2" fill="none"/></svg>',
   gracht: '<svg viewBox="0 0 86 46"><path d="M10 40V14h3v-3h3v-3h4v3h3v3h3v26zM28 40V16l3-4V6h6v6l3 4v24zM44 40V18c0-4 3-4 3-8s3-4 4-4 4 0 4 4 3 4 3 8v22zM62 40V12h16v28z" fill="#8a3b28"/><path d="M28 40V16l3-4V6h6v6l3 4v24z" fill="#e9ecef"/></svg>',

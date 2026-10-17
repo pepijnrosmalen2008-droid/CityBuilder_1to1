@@ -41,12 +41,12 @@ export function bouwVoorbeeldstad(w: Wereld, groeiSeconden = 1800) {
     w.zoneer(c, 0.1, zone);
   }
   // Districten: een historische binnenstad met grachtenpanden, een naoorlogse wijk en nieuwbouw.
-  const district = (naam: string, x0: number, x1: number, z0: number, z1: number, stijl: 'gracht' | 'naoorlogs' | 'jaren70' | 'nieuwbouw', aanpassen?: (d: import('./districten').District) => void) => {
+  const district = (naam: string, x0: number, x1: number, z0: number, z1: number, stijl: 'gracht' | 'naoorlogs' | 'jaren70' | 'nieuwbouw' | 'stadshart', aanpassen?: (d: import('./districten').District) => void) => {
     const d = w.districten.nieuw();
     d.naam = naam; d.stijl = stijl; aanpassen?.(d);
     for (let x = x0; x <= x1; x += 8) for (let z = z0; z <= z1; z += 8) w.districten.schilder({ x, z }, 6, d.id);
   };
-  district('Binnenstad', -580, -340, 30, 250, 'gracht', d => { d.beleid.hoogte = 'midden'; });
+  district('Binnenstad', -580, -340, 30, 250, 'stadshart');
   district('Oud-Zuid', -330, -120, 130, 370, 'naoorlogs');
   district('De Akkers', -100, 150, 140, 370, 'jaren70');
   district('Nieuw-Oost', -110, 150, -310, -50, 'nieuwbouw', d => { d.beleid.zon = true; });

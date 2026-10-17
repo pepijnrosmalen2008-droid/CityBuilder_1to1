@@ -138,7 +138,9 @@ export function beton(tint: C = K(0.62, 0.61, 0.58)): TexData {
 
 // ═══════ GEVELS ═══════
 
-interface GevelP { muur: C; voeg: C; kozijn: C; dorpel: C; rb: number; rh: number; borst: number; kd: number; variatie: number; baksteen?: boolean; paneel?: boolean; roede?: boolean; bovenlicht?: boolean; rollaag?: boolean; vuil?: boolean; hout?: boolean; borstPaneel?: C }
+interface GevelP { muur: C; voeg: C; kozijn: C; dorpel: C; rb: number; rh: number; borst: number; kd: number; variatie: number; baksteen?: boolean; paneel?: boolean; roede?: boolean; bovenlicht?: boolean; rollaag?: boolean; vuil?: boolean; hout?: boolean; borstPaneel?: C;
+  /** Natuursteen in lagen (blokken), omlijsting rond de ramen, een kap erboven, smeedijzeren hekje voor het raam, een band op elke verdieping, sluitsteen. */
+  steen?: boolean; omlijsting?: C; ow?: number; kap?: boolean; hekje?: boolean; band?: C; sluitsteen?: boolean; luiken?: C }
 
 function gevelP(stijl: string): GevelP {
   const p: GevelP = { muur: K(0.66, 0.65, 0.61), voeg: K(0.72, 0.70, 0.66), kozijn: K(0.92, 0.92, 0.90), dorpel: K(0.74, 0.73, 0.70), rb: 1.5, rh: 1.6, borst: 0.85, kd: 0.07, variatie: 0.07 };
@@ -162,6 +164,11 @@ function gevelP(stijl: string): GevelP {
     case 'antraciet': Object.assign(p, { muur: K(0.17, 0.16, 0.16), voeg: K(0.42, 0.41, 0.40), kozijn: K(0.09, 0.09, 0.10), dorpel: K(0.12, 0.12, 0.13), rb: 1.6, rh: 2.4, borst: 0.3, kd: 0.05, variatie: 0.05, baksteen: true }); break;
     case 'nieuwRood': Object.assign(p, { muur: K(0.44, 0.23, 0.16), voeg: K(0.40, 0.36, 0.33), kozijn: K(0.10, 0.10, 0.11), dorpel: K(0.12, 0.12, 0.13), rb: 1.5, rh: 2.35, borst: 0.3, kd: 0.05, variatie: 0.06, baksteen: true }); break;
     case 'houtGevel': Object.assign(p, { muur: K(0.50, 0.37, 0.24), kozijn: K(0.11, 0.11, 0.12), dorpel: K(0.12, 0.12, 0.13), rb: 1.8, rh: 2.35, borst: 0.3, kd: 0.05, hout: true }); break;
+    // Stadshart: Parijse natuursteen (Haussmann), rode baksteen met witte omlijsting (Gründerzeit), grijze kalksteen.
+    case 'haussmann': Object.assign(p, { muur: K(0.84, 0.78, 0.66), voeg: K(0.70, 0.65, 0.55), kozijn: K(0.93, 0.92, 0.88), dorpel: K(0.80, 0.75, 0.64), rb: 1.2, rh: 2.3, borst: 0.2, kd: 0.06, variatie: 0.04, steen: true, omlijsting: K(0.90, 0.85, 0.74), ow: 0.14, kap: true, hekje: true, roede: true, vuil: true }); break;
+    case 'haussmannWit': Object.assign(p, { muur: K(0.90, 0.88, 0.83), voeg: K(0.76, 0.74, 0.69), kozijn: K(0.95, 0.95, 0.93), dorpel: K(0.85, 0.83, 0.78), rb: 1.2, rh: 2.3, borst: 0.2, kd: 0.06, variatie: 0.03, steen: true, omlijsting: K(0.95, 0.94, 0.90), ow: 0.13, kap: true, hekje: true, roede: true, luiken: K(0.42, 0.47, 0.52) }); break;
+    case 'gruender': Object.assign(p, { muur: K(0.55, 0.21, 0.14), voeg: K(0.78, 0.76, 0.72), kozijn: K(0.94, 0.94, 0.92), dorpel: K(0.90, 0.89, 0.85), rb: 1.25, rh: 2.15, borst: 0.55, kd: 0.07, variatie: 0.08, baksteen: true, omlijsting: K(0.93, 0.92, 0.88), ow: 0.2, sluitsteen: true, band: K(0.92, 0.91, 0.87), roede: true, bovenlicht: true }); break;
+    case 'kalksteen': Object.assign(p, { muur: K(0.76, 0.75, 0.72), voeg: K(0.62, 0.61, 0.59), kozijn: K(0.18, 0.19, 0.20), dorpel: K(0.70, 0.69, 0.66), rb: 1.7, rh: 2.1, borst: 0.5, kd: 0.05, variatie: 0.03, steen: true, omlijsting: K(0.80, 0.79, 0.76), ow: 0.1, band: K(0.82, 0.81, 0.78) }); break;
     case 'plint': Object.assign(p, { muur: K(0.22, 0.16, 0.13), voeg: K(0.40, 0.38, 0.35), baksteen: true }); break;
   }
   return p;
@@ -219,6 +226,13 @@ export function gevel(stijl: string, ramen: boolean): TexData {
     else if (p.paneel) {
       k = mul(p.muur, 0.95 + 0.08 * fbm(u, v, 8, 3, s + 1)); h = 0.8; gl = 0.25;
       if (frac(mx / 0.75) * 0.75 < 0.012 || by < 0.02) { k = mul(k, 0.55); h = 0.6; }
+    } else if (p.steen) {
+      // Natuursteen in lagen van 0,5 m, stootvoegen verspringend per laag.
+      const laag = my / 0.5, rij = Math.floor(laag), fy = laag - rij;
+      const blok = mx / 1.1 + (rij & 1) * 0.5, kol = Math.floor(blok), fx = blok - kol;
+      k = mul(p.muur, (1 + (hash01(wikkel(kol, 6), wikkel(rij, 12), s + 20) - 0.5) * 2 * p.variatie) * (0.95 + 0.08 * fbm(u, v, 10, 3, s + 1)));
+      h = 0.82; gl = 0.12;
+      if (fy < 0.035 || fx < 0.015) { k = mul(p.voeg, 0.95); h = 0.62; }
     } else { k = mul(p.muur, 0.94 + 0.1 * fbm(u, v, 8, 3, s + 1)); h = 0.8 + 0.04 * fbm(u, v, 32, 2, s + 2); gl = 0.15; }
     const rx0 = (3 - p.rb) / 2, rx1 = rx0 + p.rb, ry0 = p.borst, ry1 = p.borst + p.rh;
     if (!ramen) { d.zet(x, y, k, h, gl); return; }
@@ -230,12 +244,36 @@ export function gevel(stijl: string, ramen: boolean): TexData {
       const vg = frac(mx / 0.065) < 0.15 || by - ry1 < 0.01;
       k = vg ? p.voeg : mul(p.muur, 0.85 + 0.2 * hash01(Math.floor(mx / 0.065), vloer, s + 4)); h = vg ? 0.55 : 0.88; gl = 0.1;
     }
+    if (p.band && by < 0.16) { k = mul(p.band, 0.95 + 0.06 * fbm(u, v, 12, 2, s + 21)); h = by < 0.03 || by > 0.13 ? 0.7 : 0.95; gl = 0.15; }
+    if (p.omlijsting) {
+      const ow = p.ow ?? 0.14;
+      const inX = bx > rx0 - ow && bx < rx1 + ow, inY = by > ry0 - 0.02 && by < ry1 + ow;
+      if (inX && inY) { k = mul(p.omlijsting, 0.95 + 0.07 * fbm(u, v, 14, 2, s + 22)); h = 0.97; gl = 0.18; }
+      // Kap (sierlijst) boven het raam met een schaduwrand eronder.
+      if (p.kap && bx > rx0 - ow - 0.12 && bx < rx1 + ow + 0.12) {
+        if (by > ry1 + ow && by < ry1 + ow + 0.17) { k = mul(p.omlijsting, 1.03); h = 1; gl = 0.2; }
+        else if (by > ry1 + ow + 0.17 && by < ry1 + ow + 0.22) { k = mul(k, 0.62); h = 0.5; }
+      }
+      // Sluitsteen midden boven het raam.
+      if (p.sluitsteen && Math.abs(bx - 1.5) < 0.14 - (by - ry1) * 0.25 && by > ry1 - 0.02 && by < ry1 + ow + 0.08) { k = mul(p.omlijsting, 0.97); h = 1; }
+      // Luiken naast het raam.
+      if (p.luiken && by >= ry0 && by <= ry1 && ((bx > rx0 - ow - 0.45 && bx < rx0 - ow - 0.04) || (bx > rx1 + ow + 0.04 && bx < rx1 + ow + 0.45))) {
+        const lam = frac((by - ry0) / 0.07) < 0.35;
+        k = mul(p.luiken, lam ? 0.75 : 1); h = lam ? 0.7 : 0.9; gl = 0.35;
+      }
+    }
     if (p.borstPaneel && bx >= rx0 && bx <= rx1 && by > 0.12 && by < ry0 - 0.07) { k = mul(p.borstPaneel, 0.92 + 0.08 * fbm(u, v, 12, 2, s + 13)); h = 0.75; gl = 0.35; }
     if (by > ry0 - 0.07 && by <= ry0 && bx > rx0 - 0.05 && bx < rx1 + 0.05) { k = mul(p.dorpel, 0.95 + 0.08 * hash01(x, y, s + 5)); h = 0.97; gl = 0.3; }
     if (bx >= rx0 && bx <= rx1 && by >= ry0 && by <= ry1) {
       const lx = bx - rx0, ly = by - ry0, t = p.kd;
       const kozijn = lx < t || lx > p.rb - t || ly < t || ly > p.rh - t || (!!p.roede && Math.abs(lx - p.rb / 2) < t / 2) || (!!p.bovenlicht && Math.abs(ly - p.rh * 0.72) < t / 2);
       if (kozijn) { k = p.kozijn; h = 0.7; gl = 0.45; } else { k = glas(u, v, lx, ly, p.rb, p.rh, raamId, s); h = 0.1; gl = 0.93; }
+      // Smeedijzeren hekje (Frans balkon) voor het onderste deel van het raam.
+      if (p.hekje && ly < 0.98) {
+        const bar = frac(lx / 0.11) < 0.22, regel = ly > 0.9 || ly < 0.05 || Math.abs(ly - 0.5) < 0.025;
+        const krul = Math.abs(Math.hypot(frac(lx / 0.22) * 0.22 - 0.11, ly - 0.72) - 0.08) < 0.012;
+        if (bar || regel || krul) { k = K(0.05, 0.05, 0.055); h = 0.95; gl = 0.35; }
+      }
     }
     d.zet(x, y, k, h, gl);
   });
@@ -261,6 +299,35 @@ function betonband(d: Doek, x: number, y: number, u: number, v: number, mx: numb
   }
   if (frac(mx / 1.2) * 1.2 < 0.05 || by < 1.04 || by > 2.61) { d.zet(x, y, K(0.16, 0.16, 0.17), 0.7, 0.45); return; }
   d.zet(x, y, glas(u, v, frac(mx / 1.2) * 1.2, by - 1.0, 1.2, 1.65, raamId * 5 + Math.floor(mx / 1.2), s), 0.1, 0.93);
+}
+
+/** Zink met staande naden (mansardedaken), 2 m. */
+export function zink(): TexData {
+  const d = new Doek(256, 256);
+  loop(d, (x, y, u, v) => {
+    const mx = u * 2, f = frac(mx / 0.45) * 0.45;
+    let k = mul(K(0.50, 0.53, 0.57), 0.9 + 0.12 * fbm(u, v, 4, 3, 301) + 0.04 * hash01(Math.floor(mx / 0.45), 0, 302));
+    let h = 0.5;
+    if (f < 0.03) { k = mul(k, 1.18); h = 1; } else if (f < 0.05) { k = mul(k, 0.72); h = 0.3; }
+    d.zet(x, y, k, h, 0.45, 0.55);
+  });
+  return d.naarTex(2);
+}
+
+/** Smeedijzeren balustrade (balkonhek) met krullen; alfa = doorzichtig. 2 m breed, 1 m hoog. */
+export function balustrade(): TexData {
+  const d = new Doek(256, 128, true);
+  loop(d, (x, y, u, v) => {
+    const mx = u * 2, my = v * 1;
+    const regel = my < 0.06 || my > 0.92 || (my > 0.2 && my < 0.24);
+    const spijl = frac(mx / 0.12) < 0.14 && my < 0.22;
+    const c = frac(mx / 0.24) * 0.24 - 0.12, r = Math.hypot(c, my - 0.56);
+    const krul = (Math.abs(r - 0.1) < 0.014 || Math.abs(r - 0.05) < 0.012) && my > 0.24 && my < 0.9;
+    const staaf = frac(mx / 0.24) < 0.06 && my > 0.24;
+    const vol = regel || spijl || krul || staaf;
+    d.zet(x, y, K(0.04, 0.04, 0.045), 0.8, 0.35, 0.6, vol ? 1 : 0);
+  });
+  return d.naarTex(2);
 }
 
 /** Golfplaat (verticaal geribd); u en v in meters, 4 m. */

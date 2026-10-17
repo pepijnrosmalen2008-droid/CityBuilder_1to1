@@ -29,6 +29,8 @@ export function maakTextuur(sleutel: string): TexData {
     case 'dakpannen': return G.dakpannen(false);
     case 'dakpannenAntraciet': return G.dakpannen(true);
     case 'dakgrind': return G.dakgrind();
+    case 'zink': return G.zink();
+    case 'balustrade': return G.balustrade();
     case 'haag': return G.haag();
     case 'hout': return G.hout();
     case 'schutting': return G.schutting();
