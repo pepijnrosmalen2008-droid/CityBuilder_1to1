@@ -30,6 +30,8 @@ export type NetEvent = { soort: 'seg+' | 'seg-'; id: number } | { soort: 'knoop~
 export class Wegennet {
   /** Verkeersregels van de speler (TM:PE): borden, lichten, pijlen, snelheden, verboden. */
   regels = new Verkeersregels();
+  /** Bouwstijl van het district op een punt (gezet door de wereld): bepaalt o.a. de lantaarns. */
+  stijlBij: (p: V2) => string | undefined = () => undefined;
   knopen = new Map<number, Knoop>();
   segmenten = new Map<number, Segment>();
   private volgende = 1;

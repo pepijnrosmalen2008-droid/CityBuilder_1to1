@@ -260,7 +260,48 @@ function bordMesh(variant: number): MeshData {
   return mb.bouw();
 }
 
-export const KLEIN_MEUBILAIR = new Set(['bank', 'afvalbak', 'fietsbeugel', 'paaltje', 'bord']);
+/** Gietijzeren sierlantaarn (groen) met twee lantaarnkappen aan krullende armen. */
+function lantaarnKlassiekMesh(): MeshData {
+  const mb = new MeshBouwer();
+  const m = 'groenLak';
+  cilinder(mb, m, { x: 0, y: -0.1, z: 0 }, { x: 0, y: 0.7, z: 0 }, 0.24, 0.17, 8);
+  cilinder(mb, m, { x: 0, y: 0.7, z: 0 }, { x: 0, y: 0.85, z: 0 }, 0.2, 0.12, 8);
+  cilinder(mb, m, { x: 0, y: 0.85, z: 0 }, { x: 0, y: 4.1, z: 0 }, 0.085, 0.06, 8);
+  cilinder(mb, m, { x: 0, y: 4.1, z: 0 }, { x: 0, y: 4.25, z: 0 }, 0.13, 0.13, 8);
+  for (const s of [-1, 1]) {
+    // Arm met een boogje naar de lantaarn.
+    cilinder(mb, m, { x: 0, y: 4.15, z: 0 }, { x: s * 0.45, y: 4.45, z: 0 }, 0.035, 0.03, 5);
+    cilinder(mb, m, { x: s * 0.45, y: 4.45, z: 0 }, { x: s * 0.62, y: 4.35, z: 0 }, 0.03, 0.03, 5);
+    const c = { x: s * 0.62, y: 0, z: 0 };
+    // Lantaarnkap: glas (licht) taps naar boven, met een dakje en een knop.
+    cilinder(mb, 'lamp', { x: c.x, y: 3.85, z: 0 }, { x: c.x, y: 4.3, z: 0 }, 0.12, 0.18, 6);
+    cilinder(mb, m, { x: c.x, y: 4.3, z: 0 }, { x: c.x, y: 4.45, z: 0 }, 0.21, 0.08, 6);
+    cilinder(mb, m, { x: c.x, y: 3.8, z: 0 }, { x: c.x, y: 3.86, z: 0 }, 0.08, 0.13, 6);
+  }
+  cilinder(mb, m, { x: 0, y: 4.25, z: 0 }, { x: 0, y: 4.65, z: 0 }, 0.05, 0.02, 6);
+  return mb.bouw();
+}
+
+/** Vlag aan een schuine stok uit de gevel (+z = de straat in). */
+function vlagMesh(variant: number): MeshData {
+  const mb = new MeshBouwer();
+  const a = { x: 0, y: 0, z: 0 }, b = { x: 0, y: 1.3, z: 1.6 };
+  cilinder(mb, 'trim', a, b, 0.03, 0.025, 5);
+  const kleuren = [['remklauw', 'trim', 'politieblauw'], ['politieblauw', 'politieblauw', 'goud'], ['remklauw', 'remklauw', 'trim'], ['groenLak', 'trim', 'groenLak']][variant % 4];
+  // Doek hangt aan de stok; drie banen (horizontaal of verticaal).
+  const L = 1.5, H = 1.0;
+  for (let i = 0; i < 3; i++) {
+    const t0 = i / 3, t1 = (i + 1) / 3;
+    const P = (u: number, v: number) => ({ x: Math.sin(u * 3) * 0.06, y: b.y - 0.05 - v * H - u * 0.15, z: 0.4 + u * L * 0.75 + v * 0.05 });
+    const vert = variant === 1;
+    const [u0, u1, v0, v1] = vert ? [t0, t1, 0, 1] : [0, 1, t0, t1];
+    mb.quad(kleuren[i], P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1), [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0, z: 0 });
+    mb.quad(kleuren[i], P(u0, v0), P(u0, v1), P(u1, v1), P(u1, v0), [0, 0], [1, 0], [1, 1], [0, 1], { x: -1, y: 0, z: 0 });
+  }
+  return mb.bouw();
+}
+
+export const KLEIN_MEUBILAIR = new Set(['bank', 'afvalbak', 'fietsbeugel', 'paaltje', 'bord', 'vlag']);
 
 export function propMesh(soort: string, variant: number, niveau = 0): MeshData {
   if (soort === 'bank') return bankMesh();
@@ -271,6 +312,8 @@ export function propMesh(soort: string, variant: number, niveau = 0): MeshData {
   if (soort === 'bord') return bordMesh(variant);
   if (soort === 'lantaarn') return lantaarnMesh(false);
   if (soort === 'lantaarnDubbel') return lantaarnMesh(true);
+  if (soort === 'lantaarnKlassiek') return lantaarnKlassiekMesh();
+  if (soort === 'vlag') return vlagMesh(variant);
   if (soort === 'jaknikker') return jaknikkerMesh();
   return boomMesh(soort, variant, niveau);
 }

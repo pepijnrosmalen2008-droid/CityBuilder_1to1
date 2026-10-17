@@ -97,6 +97,13 @@ export class PropLaag {
         if (boom) {
           const h = hash01(Math.round(p.x * 10), Math.round(p.z * 10), 3);
           kleur.setRGB(0.86 + h * 0.24, 0.9 + h * 0.16, 0.82 + (1 - h) * 0.2);
+          // Herfst: een deel van de bomen kleurt oranje, rood of geel (straatbomen vaker dan bosbomen).
+          const hf = hash01(Math.round(p.x * 7), Math.round(p.z * 7), 11);
+          const straat = soort === 'plataan' || soort === 'linde';
+          if (hf < (straat ? 0.3 : 0.12) && soort !== 'den') {
+            const t = hf / (straat ? 0.3 : 0.12);
+            if (t < 0.4) kleur.setRGB(2.7, 1.05, 0.32); else if (t < 0.7) kleur.setRGB(2.9, 0.62, 0.28); else kleur.setRGB(2.3, 1.75, 0.38);
+          }
           im.setColorAt(i, kleur);
         }
       });

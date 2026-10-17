@@ -4,6 +4,7 @@ import { WEGTYPEN, Strook, strookGrenzen, totaleBreedte, randen, profiel, RANG }
 import { MeshBouwer, MeshData, Prop } from './mesh';
 import { ZEENIVEAU } from '../terrain';
 import { driehoeken } from '../poly';
+import { cilinder } from './props';
 
 export { randen };
 
@@ -336,7 +337,46 @@ export function bouwSegment(net: Wegennet, seg: Segment): { mesh: MeshData; prop
   }
   const mid = g.find(x => x.s.soort === 'middenberm');
   let kant = seg.id % 2 === 0 ? 1 : -1;
-  for (let d = L0 + 10; d < L1 - 6; d += 32) {
+  // In een historisch district: gietijzeren sierlantaarns, dichter op elkaar en aan beide kanten.
+  const mPad = pad[pad.length >> 1];
+  const stijlHier = net.stijlBij({ x: mPad.x, z: mPad.z });
+  const klassiek = (stijlHier === 'stadshart' || stijlHier === 'gracht') && W >= 5 && type.snelheid <= 50;
+  if (klassiek) {
+    for (let d = L0 + 8; d < L1 - 5; d += 22) {
+      if (asPunt(pad, d).tunnel || asPunt(pad, d).brug) continue;
+      for (const k of [-1, 1] as const) {
+        const st = k < 0 ? g[0] : g[g.length - 1];
+        if (st.s.soort !== 'stoep') continue;
+        const o = k < 0 ? st.b - 0.5 : st.a + 0.5;
+        const p = plek(d + (k > 0 ? 11 : 0), o, verhoogd(st.s));
+        props.push({ soort: 'lantaarnKlassiek', x: p.x, y: p.y, z: p.z, rot: rotVan(d), schaal: 1, variant: 0 });
+      }
+    }
+  }
+  // Bovenleiding boven trambanen: masten aan beide kanten, dwarsdraden en rijdraden boven elk spoor.
+  const trams = g.filter(x => x.s.soort === 'tram');
+  if (trams.length) {
+    const ra = randen(type.stroken);
+    const masten: { d: number; l: V3; r: V3 }[] = [];
+    for (let d = L0 + 4; d < L1 - 2; d += 28) {
+      if (asPunt(pad, d).tunnel) continue;
+      const l = plek(d, ra.binnenL - 0.6, STOEP_H), r = plek(d, ra.binnenR + 0.6, STOEP_H);
+      for (const q of [l, r]) cilinder(mb, 'paal', q, { x: q.x, y: q.y + 7.2, z: q.z }, 0.11, 0.08, 7);
+      cilinder(mb, 'paal', { x: l.x, y: l.y + 6.7, z: l.z }, { x: r.x, y: r.y + 6.7, z: r.z }, 0.022, 0.022, 4);
+      masten.push({ d, l, r });
+    }
+    for (const x of trams) {
+      const o = (x.a + x.b) / 2;
+      for (let i = 1; i < masten.length; i++) {
+        const a = plek(masten[i - 1].d, o, 6.2), b = plek(masten[i].d, o, 6.2);
+        cilinder(mb, 'paal', a, b, 0.018, 0.018, 4);
+        const a2 = plek(masten[i - 1].d, o, 6.7), b2 = plek(masten[i].d, o, 6.7);
+        cilinder(mb, 'paal', { x: a2.x, y: a2.y - 0.05, z: a2.z }, { x: (a2.x + b2.x) / 2, y: a2.y - 0.35, z: (a2.z + b2.z) / 2 }, 0.012, 0.012, 3);
+        cilinder(mb, 'paal', { x: (a2.x + b2.x) / 2, y: a2.y - 0.35, z: (a2.z + b2.z) / 2 }, { x: b2.x, y: b2.y - 0.05, z: b2.z }, 0.012, 0.012, 3);
+      }
+    }
+  }
+  for (let d = L0 + 10; d < L1 - 6 && !klassiek; d += 32) {
     if (asPunt(pad, d).tunnel) continue;
     const rot = rotVan(d);
     if (mid && type.snelheid >= 70) {

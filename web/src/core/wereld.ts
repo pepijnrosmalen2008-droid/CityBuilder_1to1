@@ -140,6 +140,7 @@ export class Wereld {
     this.naam = stadsnaam(seed);
     this.namen = new Namen(seed);
     this.net.naamGever = t => this.namen.straat(t);
+    this.net.stijlBij = p => this.districten.van(p)?.stijl;
     this.economie = new Economie(this);
     this.verkeer = new Verkeer(this);
     this.voorzieningen = new Voorzieningen(this);

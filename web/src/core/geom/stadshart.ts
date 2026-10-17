@@ -1,7 +1,7 @@
 import { V2, V3 } from '../math';
 import { Rng } from '../rng';
 import { Gebouw, totaleHoogte } from '../wereld';
-import { MeshBouwer } from './mesh';
+import { MeshBouwer, Prop } from './mesh';
 import { LOD } from './lod';
 import { Rand, randen, wand, vlak, doos, deur, P3, N3, PUIEN, LUIFELS } from './gebouwmesh';
 import { pandPolys } from './stijlmesh';
@@ -188,7 +188,7 @@ function mansarde(mb: MeshBouwer, poly: V2[], voor: Rand, top: number, muur: str
  * Stadsblok: één gebouw met meerdere panden (pandGrenzen). `soort` bepaalt de begane grond:
  * winkelpuien (gemengd), kantoorentree of woonhuis met voordeur.
  */
-export function stadsblok(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' | 'kantoor') {
+export function stadsblok(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' | 'kantoor', props: Prop[] = []) {
   const Y = g.y, hBG = g.lagen[0].hoogte, nL = g.lagen.length;
   const alle = pandPolys(g);
   const basisTop = Y + totaleHoogte(g.lagen);
@@ -236,12 +236,20 @@ export function stadsblok(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' |
       if (!LOD.ver) {
         if (lagenBoven >= 3) balkon(mb, x, Y + hBG + LAAG, steen);
         if (lagenBoven >= 4) balkon(mb, x, top - LAAG, steen);
+        // Vlaggen aan de gevel (kantoren en enkele andere panden).
+        if (x.L > 6 && r.next() < (gevel === 'kalksteen' || soort === 'kantoor' ? 0.65 : 0.18)) {
+          const variant = r.int(0, 3), rot = Math.atan2(x.n.x, x.n.z);
+          for (const s of x.L > 12 && soort === 'kantoor' ? [x.L * 0.3, x.L * 0.7] : [x.L / 2]) {
+            const q = op(x, s, 0.05);
+            props.push({ soort: 'vlag', x: q.x, y: Y + hBG + LAAG * 1.55, z: q.z, rot, schaal: 1, variant });
+          }
+        }
       }
     }
     if (p.voor) mansarde(mb, p.poly, p.voor, top, `muur:${gevel}`, steen, r, kop);
     else vlak(mb, 'zink', p.poly, top);
     // Hoekpand: toren met koepel op de hoek van twee straten.
-    if (!hoekGedaan && (g.zijStraat?.length ?? 0) > 0 && (kop[0] || kop[1])) {
+    if (!hoekGedaan && (g.zijStraat?.length ?? 0) > 0 && (kop[0] || kop[1]) && new Rng(g.seed + 5).next() < 0.45) {
       const voor = rd.filter(x => x.soort === 'voor');
       for (let i = 0; i < voor.length && !hoekGedaan; i++) for (let j = 0; j < voor.length; j++) {
         const e1 = voor[i], e2 = voor[j];

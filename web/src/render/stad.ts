@@ -174,6 +174,9 @@ export class StadWeergave {
   /** Camera (voor de volgorde van opbouwen en de keuze van het detailniveau). */
   cam: THREE.Vector3 | null = null;
 
+  private distVersie = -1;
+  private distKlok = 0;
+
   werkBij(budgetMs = 8, dt = 0.016) {
     for (const e of this.w.haalEvents()) {
       switch (e.soort) {
@@ -185,6 +188,9 @@ export class StadWeergave {
         case 'gebouw-': this.tegels.wis(`geb:${e.id}`); this.props.wis(`geb:${e.id}`); this.bouwRij.delete(e.id); break;
       }
     }
+    // Districten veranderd (stijl bepaalt de lantaarns): wegen opnieuw, als het schilderen even stilligt.
+    if (this.w.districten.versie !== this.distVersie) { this.distVersie = this.w.districten.versie; this.distKlok = 1.2; }
+    if (this.distKlok > 0) { this.distKlok -= dt; if (this.distKlok <= 0) for (const id of this.w.net.segmenten.keys()) this.segRij.add(id); }
     // Verkeersregels die het wegdek veranderen (borden, pijlen, oversteekplaatsen, lichten).
     const rv = this.w.net.regels.haalVuil();
     for (const id of rv.segs) this.segRij.add(id);

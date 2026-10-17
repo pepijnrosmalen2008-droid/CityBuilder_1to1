@@ -27,12 +27,13 @@ export class LichtLaag {
   }
 
   private bouw() {
-    const lijst = this.props.verzamel(new Set(['lantaarn', 'lantaarnDubbel']));
+    const lijst = this.props.verzamel(new Set(['lantaarn', 'lantaarnDubbel', 'lantaarnKlassiek']));
     const plekken: THREE.Vector3[] = [];
     for (const p of lijst) {
       // De lamp hangt 1,7 m van de mast (dubbel: aan beide kanten), gedraaid zoals de prop.
       for (const k of p.soort === 'lantaarnDubbel' ? [1, -1] : [1]) {
-        const x = p.x + Math.sin(p.rot) * 1.7 * k * p.schaal, z = p.z + Math.cos(p.rot) * 1.7 * k * p.schaal;
+        const arm = p.soort === 'lantaarnKlassiek' ? 0 : 1.7;
+        const x = p.x + Math.sin(p.rot) * arm * k * p.schaal, z = p.z + Math.cos(p.rot) * arm * k * p.schaal;
         plekken.push(new THREE.Vector3(x, Math.max(p.y, this.hoogte(x, z)) + 0.12, z));
       }
     }

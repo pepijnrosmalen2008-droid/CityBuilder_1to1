@@ -13,7 +13,7 @@ import { Materialen, NACHT } from './materialen';
 const ETMAAL_SECONDEN = 12 * 60;
 const C = (h: number) => new THREE.Color(h);
 const LUCHT_DAG = C(0xbcd6ff), LUCHT_NACHT = C(0x1b2a48), GROND_DAG = C(0x4d4a32), GROND_NACHT = C(0x0d0f14);
-const NEVEL_DAG = C(0xb4c7da), NEVEL_SCHEMER = C(0xd9a98c), NEVEL_NACHT = C(0x0c121c);
+const NEVEL_DAG = C(0xa9c4e2), NEVEL_SCHEMER = C(0xd9a98c), NEVEL_NACHT = C(0x0c121c);
 const ZON_LAAG = C(0xff9a5a), ZON_HOOG = C(0xffe7c4), MAAN = C(0x8fa8d8);
 
 export class DagNacht {
@@ -58,8 +58,8 @@ export class DagNacht {
     s.scene.environmentIntensity = 0.12 + 0.33 * dag;
     const u = s.sky.material.uniforms;
     u.sunPosition.value.copy(zon);
-    u.rayleigh.value = 1.3 + schemer * 1.2;
-    u.turbidity.value = 3.2 + schemer * 4;
+    u.rayleigh.value = 2.1 + schemer * 0.8;
+    u.turbidity.value = 2.2 + schemer * 4;
     const f = s.scene.fog as THREE.Fog;
     f.color.copy(NEVEL_NACHT).lerp(NEVEL_DAG, dag).lerp(NEVEL_SCHEMER, schemer * 0.55);
     s.renderer.toneMappingExposure = 1.0 + nacht * 0.15;

@@ -25,8 +25,8 @@ const KLEURCORRECTIE = {
     void main(){
       vec3 c = texture2D(tDiffuse, vUv).rgb;
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      c = mix(vec3(l), c, 1.04);
-      c = (c - 0.5) * 1.07 + 0.5;
+      c = mix(vec3(l), c, 1.13);
+      c = (c - 0.5) * 1.09 + 0.5;
       c += vec3(-0.010, 0.0, 0.016) * (1.0 - l) + vec3(0.018, 0.008, -0.014) * l;
       vec2 d = vUv - 0.5;
       c *= 1.0 - dot(d, d) * 0.32;
@@ -78,7 +78,7 @@ export class Sfeer {
     this.sky = new Sky();
     this.sky.scale.setScalar(20000);
     const u = this.sky.material.uniforms;
-    u.turbidity.value = 3.2; u.rayleigh.value = 1.3; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
+    u.turbidity.value = 2.2; u.rayleigh.value = 2.1; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.82;
     this.scene.add(this.sky);
 
     // Zon: middag in de lente, licht van het zuidwesten.
@@ -99,8 +99,8 @@ export class Sfeer {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const luchtScene = new THREE.Scene();
     const s2 = new Sky(); s2.scale.setScalar(1000);
-    Object.assign(s2.material.uniforms.turbidity, { value: 3.2 });
-    s2.material.uniforms.rayleigh.value = 1.3; s2.material.uniforms.mieCoefficient.value = 0.004; s2.material.uniforms.mieDirectionalG.value = 0.82;
+    Object.assign(s2.material.uniforms.turbidity, { value: 2.2 });
+    s2.material.uniforms.rayleigh.value = 2.1; s2.material.uniforms.mieCoefficient.value = 0.003; s2.material.uniforms.mieDirectionalG.value = 0.82;
     s2.material.uniforms.sunPosition.value.copy(this.zonRichting);
     luchtScene.add(s2);
     this.scene.environment = pmrem.fromScene(luchtScene, 0, 1, 2000).texture;

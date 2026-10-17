@@ -182,9 +182,9 @@ function bouwGebouwIntern(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[]
     case 'kantoor30': dak = kantoor30(mb, g); break;
     case 'kantoorBeton': case 'kantoorGlas': dak = kantoorToren(mb, g); break;
     case 'sheddak': dak = sheddak(mb, g); break;
-    case 'stadsblok': stadsblok(mb, g, 'wonen'); dak = null; break;
-    case 'stadsWinkel': stadsblok(mb, g, 'winkel'); dak = null; break;
-    case 'stadsKantoor': stadsblok(mb, g, 'kantoor'); dak = null; break;
+    case 'stadsblok': stadsblok(mb, g, 'wonen', props); dak = null; break;
+    case 'stadsWinkel': stadsblok(mb, g, 'winkel', props); dak = null; break;
+    case 'stadsKantoor': stadsblok(mb, g, 'kantoor', props); dak = null; break;
     default:
       switch (g.vorm) {
         case 'rijwoningen': rijwoningen(mb, g, r, stijl, hoogte, props); dak = null; break;
