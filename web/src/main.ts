@@ -123,6 +123,7 @@ async function start() {
   const ecoPaneel = new EconomiePaneel(wereld);
   werkbalk.opEconomie = () => ecoPaneel.wissel();
   werkbalk.hulpStat = () => wereld.hulpdiensten.stat;
+  werkbalk.aanzien = () => wereld.voorzieningen.aanzienGeluk;
   werkbalk.districten = wereld.districten;
   werkbalk.opDistrictModus = aan => districtLaag.toon(aan);
   // Verkeersgereedschap (TM:PE): klikbare iconen boven de kruispunten.

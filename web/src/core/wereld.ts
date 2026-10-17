@@ -883,6 +883,7 @@ export class Wereld {
     // Hoe groter de stad, hoe meer inwoners verwachten van brandweer, politie en zorg.
     const h = this.hulpdiensten.stat, eis = Math.min(1, s.inwoners / 3000);
     let t = 84 - this.voorzieningen.tekortAandeel * 70 - h.misdaad * 22 * eis - (1 - h.gezondheid) * 14 * eis - (1 - h.brandveiligheid) * 8 * eis - s.werkloosheid * 160 - Math.max(0, v.detailhandel - 0.6) * 25 - Math.max(0, v.wonen - 0.85) * 10;
+    t += this.voorzieningen.aanzienGeluk;
     return Math.round(Math.max(5, Math.min(100, t)));
   }
 
@@ -920,7 +921,7 @@ export class Wereld {
     let m2 = 0;
     for (const sg of this.net.segmenten.values()) m2 += wegOppervlak(sg.type, sg.lengte);
     void banenWOZ;
-    this.prognose = maandstaat(this.tarieven, wonWOZ, Math.round(banenWOZ + winning), Math.round(inw), m2, this.exportHeffing, this.voorzieningen.onderhoud + this.beleidKosten, this.voorzieningen.inkoopKosten);
+    this.prognose = maandstaat(this.tarieven, wonWOZ, Math.round(banenWOZ + winning), Math.round(inw), m2, this.exportHeffing, this.voorzieningen.onderhoud + this.beleidKosten, this.voorzieningen.inkoopKosten, this.voorzieningen.toerisme(inw));
   }
 
   // ─── Opslaan (engine-onafhankelijk JSON-formaat) ────────────────────────────

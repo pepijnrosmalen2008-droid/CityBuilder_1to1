@@ -116,6 +116,7 @@ export class InfoPaneel {
     regels.push(`<div class="ip-klein">${info.uitleg}</div>`);
     if (!d.klaar) regels.push(`<div class="ip-rij"><span>In aanbouw</span><b>${Math.round(d.voortgang * 100)}%</b></div>${balk(d.voortgang, '#74c0fc')}`);
     for (const [n, x] of Object.entries(info.levert) as [Nut, number][]) regels.push(`<div class="ip-rij"><span>${NUT_NAAM[n]}</span><b>${x.toLocaleString('nl-NL')} ${NUT_EENHEID[n]}</b></div>`);
+    if (info.aanzien) regels.push(`<div class="ip-rij"><span>Grondwaarde in de buurt</span><b>+${Math.round(info.aanzien.waarde * 100)}% tot ${nl(info.aanzien.bereik)} m</b></div><div class="ip-rij"><span>Tevredenheid stad</span><b>+${info.aanzien.geluk}</b></div><div class="ip-rij"><span>Toerisme</span><b>tot € ${nl(Math.round(info.aanzien.toerisme * 1.2))} / maand</b></div>`);
     if (info.dekking) {
       const onderweg = this.w.hulpdiensten.onderweg(d.id);
       regels.push(`<div class="ip-rij"><span>Bereik</span><b>${(info.dekking.bereik / 1000).toLocaleString('nl-NL')} km over de weg</b></div><div class="ip-rij"><span>Voertuigen onderweg</span><b>${onderweg} / ${info.dekking.voertuigen}</b></div>${balk(onderweg / info.dekking.voertuigen, '#74c0fc')}`);

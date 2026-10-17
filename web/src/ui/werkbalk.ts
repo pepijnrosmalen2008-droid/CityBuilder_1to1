@@ -49,11 +49,15 @@ const DIENST_ICOON: Record<DienstSoort, string> = {
   brandweer: '<svg viewBox="0 0 86 46"><rect x="10" y="16" width="46" height="26" fill="#b5462e"/><rect x="58" y="4" width="10" height="38" fill="#a33d28"/><rect x="14" y="26" width="10" height="16" fill="#e03131"/><rect x="28" y="26" width="10" height="16" fill="#e03131"/><rect x="42" y="26" width="10" height="16" fill="#e03131"/></svg>',
   politie: '<svg viewBox="0 0 86 46"><rect x="18" y="10" width="50" height="32" fill="#343a40"/><rect x="18" y="8" width="50" height="5" fill="#1c3f94"/><rect x="38" y="30" width="10" height="12" fill="#74c0fc"/><path d="M43 16l5 3v4c0 4-3 6-5 7-2-1-5-3-5-7v-4z" fill="#ffd43b"/></svg>',
   ziekenhuis: '<svg viewBox="0 0 86 46"><rect x="10" y="12" width="44" height="30" fill="#dee2e6"/><rect x="54" y="20" width="22" height="22" fill="#a5d8ff"/><rect x="27" y="17" width="10" height="20" fill="#e03131"/><rect x="22" y="22" width="20" height="10" fill="#e03131"/></svg>',
+  kathedraal: '<svg viewBox="0 0 86 46"><path d="M24 44V14l4-12 4 12v30zM54 44V14l4-12 4 12v30z" fill="#adb5bd"/><rect x="32" y="20" width="22" height="24" fill="#ced4da"/><path d="M32 20l11-8 11 8z" fill="#868e96"/><circle cx="43" cy="27" r="4" fill="#7048e8"/><path d="M40 44v-8l3-3 3 3v8z" fill="#343a40"/></svg>',
+  koepelgebouw: '<svg viewBox="0 0 86 46"><rect x="18" y="28" width="50" height="16" fill="#e9ecef"/><path d="M28 28a15 15 0 0 1 30 0z" fill="#63a088"/><rect x="41" y="7" width="4" height="7" fill="#e9ecef"/><path d="M22 28l21-6 21 6z" fill="#dee2e6"/><path d="M26 30v12M32 30v12M38 30v12M48 30v12M54 30v12M60 30v12" stroke="#adb5bd" stroke-width="2"/></svg>',
+  stadhuis: '<svg viewBox="0 0 86 46"><rect x="12" y="24" width="62" height="20" fill="#e9ecef"/><path d="M10 24l6-6h54l6 6z" fill="#868e96"/><rect x="37" y="8" width="12" height="18" fill="#dee2e6"/><circle cx="43" cy="16" r="3.6" fill="#fff" stroke="#e8b04a" stroke-width="1"/><path d="M38 8l5-7 5 7z" fill="#63a088"/><path d="M16 30h54M16 36h54" stroke="#adb5bd" stroke-width="2" stroke-dasharray="3 3"/></svg>',
+  fonteinplein: '<svg viewBox="0 0 86 46"><ellipse cx="43" cy="36" rx="26" ry="7" fill="#ced4da"/><ellipse cx="43" cy="35" rx="21" ry="5" fill="#74c0fc"/><rect x="41" y="16" width="4" height="18" fill="#e9ecef"/><path d="M43 14c-8 0-12 6-14 18M43 14c8 0 12 6 14 18" stroke="#a5d8ff" stroke-width="2" fill="none"/><circle cx="14" cy="22" r="7" fill="#40c057"/><circle cx="72" cy="22" r="7" fill="#40c057"/></svg>',
   gezondheidscentrum: '<svg viewBox="0 0 86 46"><rect x="18" y="16" width="50" height="26" fill="#e9c46a"/><rect x="38" y="22" width="10" height="16" fill="#2f9e44"/><rect x="35" y="25" width="16" height="10" fill="#2f9e44"/></svg>',
 };
 
 const GROEPEN: { id: import('../core/voorzieningen').DienstGroep; naam: string }[] = [
-  { id: 'stroom', naam: 'Stroom' }, { id: 'water', naam: 'Water' }, { id: 'afval', naam: 'Afval' }, { id: 'veiligheid', naam: 'Brandweer & politie' }, { id: 'zorg', naam: 'Zorg' },
+  { id: 'stroom', naam: 'Stroom' }, { id: 'water', naam: 'Water' }, { id: 'afval', naam: 'Afval' }, { id: 'veiligheid', naam: 'Brandweer & politie' }, { id: 'zorg', naam: 'Zorg' }, { id: 'monument', naam: 'Monumenten' },
 ];
 
 const GRONDSTOF_ICOON: Record<Grondstof, string> = {
@@ -63,7 +67,7 @@ const GRONDSTOF_ICOON: Record<Grondstof, string> = {
   delfstoffen: '<svg viewBox="0 0 86 46"><path d="M10 38l14-16 12 16z" fill="#d9a066"/><path d="M30 38l14-12 12 12z" fill="#adb5bd"/><path d="M52 38l12-18 14 18z" fill="#d9a066"/><path d="M8 38h72" stroke="#6c757d" stroke-width="2"/></svg>',
 };
 
-const DIENST_VOLGORDE: DienstSoort[] = ['windmolen', 'zonnepark', 'gascentrale', 'pompstation', 'rwzi', 'stortplaats', 'afvalcentrale', 'brandweer', 'politie', 'ziekenhuis', 'gezondheidscentrum'];
+const DIENST_VOLGORDE: DienstSoort[] = ['windmolen', 'zonnepark', 'gascentrale', 'pompstation', 'rwzi', 'stortplaats', 'afvalcentrale', 'brandweer', 'politie', 'ziekenhuis', 'gezondheidscentrum', 'kathedraal', 'koepelgebouw', 'stadhuis', 'fonteinplein'];
 
 const STROOKKLEUR: Record<string, string> = { stoep: '#9aa0a6', fiets: '#a8473b', auto: '#3b3f45', gedeeld: '#7b4a3a', bus: '#7a3f35', tram: '#55575c', berm: '#5f8d3e', middenberm: '#5f8d3e', vluchtstrook: '#4a4e55', parkeer: '#6d6a66' };
 
@@ -281,7 +285,7 @@ export class Werkbalk {
       items = (Object.values(GRONDSTOFFEN)).map((x, i) => `<div class="item ${g.grondstof === x.id ? 'aan' : ''}" data-gs="${x.id}">${GRONDSTOF_ICOON[x.id]}<div class="item-naam">${x.naam}</div><div class="item-sub">${i + 1} · ${x.product.toLowerCase()}</div></div>`).join('');
       opties = `<button class="knop" data-eco>Overzicht economie</button>`;
     } else if (g.modus === 'dienst') {
-      items = this.inGroep().map((id, i) => { const d = DIENSTEN[id]; const lev = d.dekking ? `${(d.dekking.bereik / 1000).toLocaleString('nl-NL')} km · ${d.dekking.voertuigen} wagen${d.dekking.voertuigen > 1 ? 's' : ''}` : Object.entries(d.levert).map(([n, x]) => `${(x as number).toLocaleString('nl-NL')} ${NUT_EENHEID[n as Nut]}`).join(' + '); return `<div class="item ${g.dienst === id ? 'aan' : ''}" data-d="${id}" title="${d.uitleg}">${DIENST_ICOON[id]}<div class="item-naam">${d.naam}</div><div class="item-sub">${i + 1} · € ${(d.kosten / 1e6).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} mln · ${lev}</div></div>`; }).join('');
+      items = this.inGroep().map((id, i) => { const d = DIENSTEN[id]; const lev = d.aanzien ? `+${Math.round(d.aanzien.waarde * 100)}% grond · ${d.aanzien.bereik} m` : d.dekking ? `${(d.dekking.bereik / 1000).toLocaleString('nl-NL')} km · ${d.dekking.voertuigen} wagen${d.dekking.voertuigen > 1 ? 's' : ''}` : Object.entries(d.levert).map(([n, x]) => `${(x as number).toLocaleString('nl-NL')} ${NUT_EENHEID[n as Nut]}`).join(' + '); return `<div class="item ${g.dienst === id ? 'aan' : ''}" data-d="${id}" title="${d.uitleg}">${DIENST_ICOON[id]}<div class="item-naam">${d.naam}</div><div class="item-sub">${i + 1} · € ${(d.kosten / 1e6).toLocaleString('nl-NL', { maximumFractionDigits: 1 })} mln · ${lev}</div></div>`; }).join('');
       opties = `<div class="groep">${GROEPEN.map(x => `<button class="knop ${this.groep === x.id ? 'aan' : ''}" data-grp="${x.id}">${x.naam}</button>`).join('')}</div><div class="balans" data-balans></div>`;
     } else if (g.modus === 'verkeer') {
       ({ items, opties } = this.verkeerTab());
@@ -341,12 +345,20 @@ export class Werkbalk {
   /** Stadscijfers van de hulpdiensten (voor het tabblad). */
   hulpStat: () => { brandveiligheid: number; misdaad: number; gezondheid: number; branden: number; afgebrand: number } = () => ({ brandveiligheid: 0, misdaad: 0, gezondheid: 0, branden: 0, afgebrand: 0 });
 
+  /** Punten tevredenheid uit monumenten. */
+  aanzien: () => number = () => 0;
+
   private groep: import('../core/voorzieningen').DienstGroep = 'stroom';
   private inGroep() { return DIENST_VOLGORDE.filter(id => DIENSTEN[id].groep === this.groep); }
 
   werkBijBalans() {
     const el = this.el.querySelector<HTMLElement>('[data-balans]');
     if (!el) return;
+    if (this.groep === 'monument') {
+      const x = this.aanzien();
+      el.innerHTML = `<span class="nut"><b>Tevredenheid uit monumenten</b><i><u style="width:${Math.round(x / 12 * 100)}%"></u></i>+${x.toLocaleString('nl-NL', { maximumFractionDigits: 1 })} (max +12)</span>`;
+      return;
+    }
     if (this.groep === 'veiligheid' || this.groep === 'zorg') {
       const h = this.hulpStat();
       const balk = (naam: string, x: number, goed: boolean) => `<span class="nut ${goed ? '' : 'tekort'}"><b>${naam}</b><i><u style="width:${Math.round(x * 100)}%"></u></i>${Math.round(x * 100)}%</span>`;

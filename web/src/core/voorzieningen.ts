@@ -14,8 +14,8 @@ import type { Wereld } from './wereld';
 // ════════════════════════════════════════════════════════════════════════════════════
 
 export type Nut = 'stroom' | 'water' | 'riool' | 'afval';
-export type DienstSoort = 'windmolen' | 'zonnepark' | 'gascentrale' | 'pompstation' | 'rwzi' | 'stortplaats' | 'afvalcentrale' | 'brandweer' | 'politie' | 'ziekenhuis' | 'gezondheidscentrum';
-export type DienstGroep = 'stroom' | 'water' | 'afval' | 'veiligheid' | 'zorg';
+export type DienstSoort = 'windmolen' | 'zonnepark' | 'gascentrale' | 'pompstation' | 'rwzi' | 'stortplaats' | 'afvalcentrale' | 'brandweer' | 'politie' | 'ziekenhuis' | 'gezondheidscentrum' | 'kathedraal' | 'koepelgebouw' | 'stadhuis' | 'fonteinplein';
+export type DienstGroep = 'stroom' | 'water' | 'afval' | 'veiligheid' | 'zorg' | 'monument';
 export type DekkingSoort = 'brand' | 'politie' | 'zorg';
 
 export interface DienstInfo {
@@ -27,6 +27,8 @@ export interface DienstInfo {
   uitleg: string;
   /** Hulpdienst: soort dekking, bereik over de weg (m), aantal voertuigen, kwaliteit (0-1). */
   dekking?: { soort: DekkingSoort; bereik: number; voertuigen: number; kwaliteit: number };
+  /** Monument: hogere grondwaarde binnen `bereik` m (tot `waarde`), en punten tevredenheid voor de hele stad. */
+  aanzien?: { bereik: number; waarde: number; geluk: number; toerisme: number };
 }
 
 export const DIENSTEN: Record<DienstSoort, DienstInfo> = {
@@ -41,6 +43,10 @@ export const DIENSTEN: Record<DienstSoort, DienstInfo> = {
   politie: { naam: 'Politiebureau', groep: 'veiligheid', b: 44, d: 36, kosten: 6_000_000, onderhoud: 50_000, levert: {}, uitleg: 'Vier surveillancewagens. Dekking tot ~1,8 km.', dekking: { soort: 'politie', bereik: 1800, voertuigen: 4, kwaliteit: 1 } },
   ziekenhuis: { naam: 'Ziekenhuis', groep: 'zorg', b: 120, d: 90, kosten: 42_000_000, onderhoud: 140_000, levert: {}, uitleg: 'Spoedeisende hulp en vijf ambulances. Dekking tot ~4 km.', dekking: { soort: 'zorg', bereik: 4000, voertuigen: 5, kwaliteit: 1 } },
   gezondheidscentrum: { naam: 'Gezondheidscentrum', groep: 'zorg', b: 36, d: 30, kosten: 2_800_000, onderhoud: 18_000, levert: {}, uitleg: 'Huisartsen en apotheek in de wijk, één ambulancepost. Dekking ~1,2 km.', dekking: { soort: 'zorg', bereik: 1200, voertuigen: 1, kwaliteit: 0.65 } },
+  kathedraal: { naam: 'Kathedraal', groep: 'monument', b: 56, d: 100, kosten: 60_000_000, onderhoud: 90_000, levert: {}, uitleg: 'Gotische kathedraal met torens van 84 m. Grondwaarde +16% tot 900 m, tevredenheid +4.', aanzien: { bereik: 900, waarde: 0.16, geluk: 4, toerisme: 90_000 } },
+  koepelgebouw: { naam: 'Koepelgebouw', groep: 'monument', b: 60, d: 60, kosten: 38_000_000, onderhoud: 60_000, levert: {}, uitleg: 'Klassiek koepelgebouw met zuilenportiek. Grondwaarde +12% tot 700 m, tevredenheid +3.', aanzien: { bereik: 700, waarde: 0.12, geluk: 3, toerisme: 55_000 } },
+  stadhuis: { naam: 'Stadhuis', groep: 'monument', b: 64, d: 44, kosten: 28_000_000, onderhoud: 55_000, levert: {}, uitleg: 'Stadhuis met klokkentoren van 60 m. Grondwaarde +10% tot 600 m, tevredenheid +3.', aanzien: { bereik: 600, waarde: 0.1, geluk: 3, toerisme: 30_000 } },
+  fonteinplein: { naam: 'Fonteinplein', groep: 'monument', b: 50, d: 50, kosten: 3_500_000, onderhoud: 9_000, levert: {}, uitleg: 'Plein met fontein, platanen en banken. Grondwaarde +8% tot 350 m, tevredenheid +1.', aanzien: { bereik: 350, waarde: 0.08, geluk: 1, toerisme: 6_000 } },
 };
 
 export const NUT_EENHEID: Record<Nut, string> = { stroom: 'MW', water: 'm³/dag', riool: 'm³/dag', afval: 'ton/jaar' };
@@ -160,6 +166,26 @@ export class Voorzieningen {
     this.w.bomen.wisInPolygoon(k.voet, 2);
     this.events.push({ soort: 'dienst+', id }); this.klok = 99;
     return id;
+  }
+
+  /** Punten tevredenheid uit monumenten (een tweede van dezelfde soort telt half, max 12). */
+  get aanzienGeluk(): number {
+    const per = new Map<DienstSoort, number>();
+    let t = 0;
+    for (const d of this.diensten.values()) {
+      const a = DIENSTEN[d.soort].aanzien;
+      if (!a || !d.klaar) continue;
+      const n = per.get(d.soort) ?? 0; per.set(d.soort, n + 1);
+      t += a.geluk / (n + 1);
+    }
+    return Math.min(12, t);
+  }
+
+  /** Bezoekers aan monumenten per maand (euro); een grotere stad trekt meer toeristen. */
+  toerisme(inwoners: number): number {
+    let t = 0;
+    for (const d of this.diensten.values()) { const a = DIENSTEN[d.soort].aanzien; if (a && d.klaar) t += a.toerisme; }
+    return t * Math.min(1.2, 0.5 + inwoners / 15000);
   }
 
   dienstOp(p: V2): Dienst | null {

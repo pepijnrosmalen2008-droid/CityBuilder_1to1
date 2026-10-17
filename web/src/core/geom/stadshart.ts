@@ -42,7 +42,7 @@ function balkon(mb: MeshBouwer, x: Rand, y: number, steen: string) {
 }
 
 /** Koepel (halve bol) met rand, lantaarn en een vergulde top. */
-function koepel(mb: MeshBouwer, mat: string, c: V3, r: number, h: number, n = 16) {
+export function koepel(mb: MeshBouwer, mat: string, c: V3, r: number, h: number, n = 16) {
   const ringen = 7;
   for (let j = 0; j < ringen; j++) {
     const f0 = (j / ringen) * Math.PI / 2, f1 = ((j + 1) / ringen) * Math.PI / 2;

@@ -89,6 +89,11 @@ hierheen).
 - Hoogte: per buurpand hooguit 2 lagen hoger plus 1 laag per 12 m afstand, zodat de skyline geleidelijk oploopt.
 - Opwaarderen zoals in CS2: een pand dat een niveau stijgt gaat in de steigers (bewoners blijven) en komt terug als ontwerp van het nieuwe niveau, vaak hoger en in een nieuwere stijl.
 - Meshes van de nieuwe types: `src/core/geom/stijlmesh.ts`.
+- Stadshart (`src/core/geom/stadshart.ts`): Europese binnenstad met gesloten bouwblokken, Haussmann- en Gründerzeitgevels met luiken en omlijstingen, zinken mansardedaken met dakkapellen en schoorstenen, smeedijzeren balkons, winkelpuien met luifels, af en toe een hoektoren met koepel en vlaggen aan de gevels. In een stadshart- of grachtdistrict krijgen de straten gietijzeren lantaarns; trambanen krijgen een bovenleiding.
+
+## Monumenten
+
+`src/core/geom/monumentmesh.ts` (groep Monumenten in Voorzieningen): gotische kathedraal (torens van 84 m, roosvensters, luchtbogen, koor met kooromgang), koepelgebouw met zuilenportiek en koperen koepel, stadhuis met klokkentoren en wijzerplaten, fonteinplein met platanen en banken. Een monument verhoogt de grondwaarde in de buurt (sterkste volledig, de rest voor een derde, samen max 25%), geeft de hele stad punten tevredenheid (een tweede van dezelfde soort telt half, max +12) en trekt toeristen: inkomsten per maand die meegroeien met de stad (post Toerisme in de begroting).
 
 ## Dag en nacht en prestaties
 

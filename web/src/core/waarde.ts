@@ -1,6 +1,6 @@
 import { ZEENIVEAU } from './terrain';
 import type { V2 } from './math';
-import { DienstSoort } from './voorzieningen';
+import { DienstSoort, DIENSTEN } from './voorzieningen';
 import type { Wereld, Gebouw } from './wereld';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -32,7 +32,7 @@ export class Grondwaarde {
   static euroPerM2(x: number) { return Math.round(120 + x * 880); }
 
   /** Lijsten voor de lopende ronde (worden aan het begin van elke ronde ververst). */
-  private ronde: { ids: number[]; i: number; winkels: Map<number, V2[]>; bedrijven: V2[]; vervuilers: { p: V2; r: number }[] } | null = null;
+  private ronde: { ids: number[]; i: number; winkels: Map<number, V2[]>; bedrijven: V2[]; vervuilers: { p: V2; r: number }[]; monumenten: { p: V2; r: number; x: number }[] } | null = null;
 
   private static cel = (x: number, z: number) => (Math.floor(x / 100) + 500) * 1000 + Math.floor(z / 100) + 500;
 
@@ -48,6 +48,7 @@ export class Grondwaarde {
         ids: [...w.gebouwen.keys()], i: 0, winkels,
         bedrijven: [...w.gebouwen.values()].filter(g => g.klaar && g.vorm === 'bedrijfshal').map(g => g.centrum),
         vervuilers: [...w.voorzieningen.diensten.values()].filter(d => d.klaar && VERVUILERS[d.soort]).map(d => ({ p: d.p, r: VERVUILERS[d.soort]! })),
+        monumenten: [...w.voorzieningen.diensten.values()].filter(d => d.klaar && DIENSTEN[d.soort].aanzien).map(d => ({ p: d.p, r: DIENSTEN[d.soort].aanzien!.bereik, x: DIENSTEN[d.soort].aanzien!.waarde })),
       };
       for (const id of this.waarde.keys()) if (!w.gebouwen.has(id)) this.waarde.delete(id);
     }
@@ -72,6 +73,10 @@ export class Grondwaarde {
       if (g.vorm !== 'bedrijfshal') delen.push({ naam: 'Winkels in de buurt', x: 0.08 * winkel });
       let water = 0;
       for (const [dx, dz] of [[90, 0], [-90, 0], [0, 90], [0, -90], [60, 60], [-60, 60], [60, -60], [-60, -60]]) if (w.terrein.hoogte(g.centrum.x + dx, g.centrum.z + dz) < ZEENIVEAU + 0.3) water = 1;
+      // Monumenten in de buurt: de sterkste telt volledig, de rest voor een derde (samen max 0,25).
+      let mon: number[] = [];
+      for (const m of r.monumenten) { const d = Math.hypot(m.p.x - g.centrum.x, m.p.z - g.centrum.z); if (d < m.r) mon.push(m.x * Math.pow(1 - d / m.r, 0.6)); }
+      if (mon.length) { mon.sort((a, b) => b - a); delen.push({ naam: 'Monumenten in de buurt', x: Math.min(0.25, mon[0] + mon.slice(1).reduce((s, x) => s + x / 3, 0)) }); }
       if (water) delen.push({ naam: 'Aan het water', x: 0.1 });
       let vuil = 0;
       if (g.vorm !== 'bedrijfshal') {

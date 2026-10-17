@@ -21,6 +21,8 @@ export interface Maandstaat {
   wegen: number; voorzieningen: number;
   /** Onderhoud van nutsvoorzieningen en ingekochte stroom, water en afvalverwerking. */
   nuts: number; inkoop: number;
+  /** Bestedingen van bezoekers aan monumenten (toeristenbelasting, parkeren, horeca). */
+  toerisme: number;
   saldo: number;
 }
 
@@ -32,15 +34,15 @@ export const STANDAARD = {
   wegPerM2: 3,
 };
 
-export function maandstaat(t: Tarieven, woningen: number, banen: number, inwoners: number, wegM2: number, exportHeffing: number, nuts = 0, inkoop = 0): Maandstaat {
+export function maandstaat(t: Tarieven, woningen: number, banen: number, inwoners: number, wegM2: number, exportHeffing: number, nuts = 0, inkoop = 0, toerisme = 0): Maandstaat {
   const m = 1 / 12;
   const woonlasten = woningen * STANDAARD.woonlastenPerWoning * t.wonen * m;
   const bedrijfslasten = banen * STANDAARD.ozbPerBaan * t.bedrijven * m;
   const gemeentefonds = inwoners * STANDAARD.gemeentefondsPerInwoner * m;
   const wegen = wegM2 * STANDAARD.wegPerM2 * m;
   const voorzieningen = inwoners * STANDAARD.voorzieningenPerInwoner * m;
-  const saldo = woonlasten + bedrijfslasten + gemeentefonds + exportHeffing - wegen - voorzieningen - nuts - inkoop;
-  return { woonlasten, bedrijfslasten, gemeentefonds, export: exportHeffing, wegen, voorzieningen, nuts, inkoop, saldo };
+  const saldo = woonlasten + bedrijfslasten + gemeentefonds + exportHeffing + toerisme - wegen - voorzieningen - nuts - inkoop;
+  return { woonlasten, bedrijfslasten, gemeentefonds, export: exportHeffing, wegen, voorzieningen, nuts, inkoop, toerisme, saldo };
 }
 
 /** Oppervlak verharding (m²) van een wegsegment. */

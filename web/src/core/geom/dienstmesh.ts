@@ -4,6 +4,7 @@ import { cilinder } from './props';
 import { driehoeken, verfijn } from '../poly';
 import { Dienst, DIENSTEN } from '../voorzieningen';
 import { Rng } from '../rng';
+import { kathedraal, koepelgebouw, stadhuis, fonteinplein } from './monumentmesh';
 import { gebouwBlok, dakkasten, luifel, parkeervakken, leidingbrug, vlaggenmast, fietsenrek, tank, container } from './detail';
 
 // Gebouwen van de nutsvoorzieningen. Assen per voorziening: u langs de weg, v naar de weg toe
@@ -84,7 +85,12 @@ export function bouwDienst(d: Dienst, hoogte: H): { mesh: MeshData; props: Prop[
     return { mesh: mb.bouw(), props };
   }
 
+  const K = { mb, props, r, hoogte, P, u, v, Y };
   switch (d.soort) {
+    case 'kathedraal': grond(mb, 'stoeptegels', d.voet, hoogte); kathedraal(K); break;
+    case 'koepelgebouw': grond(mb, 'stoeptegels', d.voet, hoogte); koepelgebouw(K); break;
+    case 'stadhuis': grond(mb, 'stoeptegels', d.voet, hoogte); stadhuis(K); break;
+    case 'fonteinplein': grond(mb, 'stoeptegels', d.voet, hoogte); fonteinplein(K); break;
     case 'windmolen': {
       grond(mb, 'grind', [P(-12, -12), P(12, -12), P(12, 12), P(-12, 12)], hoogte);
       const c = d.p;

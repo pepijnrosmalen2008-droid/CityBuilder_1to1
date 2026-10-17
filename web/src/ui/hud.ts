@@ -102,7 +102,7 @@ export class Hud {
     const rij = (n: string, b: number, kl = '') => `<div class="rij ${kl}"><span>${n}</span><b>${b >= 0 ? '' : '−'}€ ${fmt(Math.abs(b))}</b></div>`;
     const tabel = `<div class="menu-kop">Begroting per maand</div>
       <div class="groep">Inkomsten</div>
-      ${rij('Woonlasten (OZB, riool, afval)', p.woonlasten)}${rij('OZB bedrijven', p.bedrijfslasten)}${rij('Gemeentefonds', p.gemeentefonds)}${p.export ? rij('Heffing op export', p.export) : ''}
+      ${rij('Woonlasten (OZB, riool, afval)', p.woonlasten)}${rij('OZB bedrijven', p.bedrijfslasten)}${rij('Gemeentefonds', p.gemeentefonds)}${p.export ? rij('Heffing op export', p.export) : ''}${p.toerisme ? rij('Toerisme (monumenten)', p.toerisme) : ''}
       <div class="groep">Uitgaven</div>
       ${rij('Voorzieningen', -p.voorzieningen)}${rij('Onderhoud wegen', -p.wegen)}${p.nuts ? rij('Nutsvoorzieningen', -p.nuts) : ''}${p.inkoop ? rij('Inkoop stroom, water, afval', -p.inkoop) : ''}
       ${rij('Saldo', p.saldo, p.saldo >= 0 ? 'plus' : 'min')}
