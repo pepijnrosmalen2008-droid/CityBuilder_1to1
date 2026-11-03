@@ -3,7 +3,7 @@ import { Wereld } from '../core/wereld';
 import { Materialen, NACHT } from './materialen';
 import { naarMesh } from './meshes';
 import { MeshData, MeshBouwer } from '../core/geom/mesh';
-import { voertuigMesh, voertuigZonderWielen, losWiel, WielPlek, remlichten, zwaailichten } from '../core/geom/autos';
+import { voertuigMesh, voertuigZonderWielen, losWiel, WielPlek, remlichten, zwaailichten, VARIANTEN } from '../core/geom/autos';
 import { VoertuigSoort, AFMETING, LAKKEN } from '../core/verkeer/verkeer';
 import { Baan } from '../core/verkeer/rijstroken';
 import { cilinder } from '../core/geom/props';
@@ -56,12 +56,12 @@ export class VerkeerWeergave {
   private tmp = { f: new THREE.Vector3(), u: new THREE.Vector3(), r: new THREE.Vector3(), p: new THREE.Vector3() };
 
   constructor(private w: Wereld, private mats: Materialen, readonly max = 1200) {
-    for (const soort of SOORTEN) for (const laag of [false, true]) {
+    for (const soort of SOORTEN) for (let variant = 0; variant < (VARIANTEN[soort] ?? 1); variant++) for (const laag of [false, true]) {
       // Dichtbij zonder wielen: die worden los getekend en draaien mee met de snelheid.
       let data: MeshData;
-      if (laag) data = voertuigMesh(soort, true);
+      if (laag) data = voertuigMesh(soort, true, variant);
       else {
-        const z = voertuigZonderWielen(soort, false);
+        const z = voertuigZonderWielen(soort, false, variant);
         data = z.mesh;
         const lijst: { plek: WielPlek; sleutel: string }[] = [];
         for (const w of z.wielen) {
@@ -91,7 +91,7 @@ export class VerkeerWeergave {
       };
       const l: Laag = { lak: inst(mLak), rest: mRest ? inst(mRest) : null, n: 0 };
       l.lak.setColorAt(0, this.wit); l.lak.instanceColor!.setUsage(THREE.DynamicDrawUsage);
-      this.lagen.set(`${soort}${laag ? 1 : 0}`, l);
+      this.lagen.set(`${soort}${variant}${laag ? 1 : 0}`, l);
     }
     for (const soort of SOORTEN) {
       const m = naarMesh(remlichten(soort), mats, false, 'rem')!;
@@ -215,7 +215,7 @@ export class VerkeerWeergave {
       u.crossVectors(r, f).normalize();
       p.set((voor.x + achter.x) / 2, (voor.y + achter.y) / 2 + 0.03, (voor.z + achter.z) / 2).addScaledVector(r, v.zij);
       const ver = p.distanceToSquared(cam) > LOD_AFSTAND * LOD_AFSTAND;
-      const laag = this.lagen.get(`${v.soort}${ver ? 1 : 0}`)!;
+      const laag = this.lagen.get(`${v.soort}${v.lak % (VARIANTEN[v.soort] ?? 1)}${ver ? 1 : 0}`)!;
       if (laag.n >= this.max) continue;
       this.m.makeBasis(f, u, r).setPosition(p);
       laag.lak.setMatrixAt(laag.n, this.m);
@@ -258,7 +258,7 @@ export class VerkeerWeergave {
       const dx = pv.x - cam.x, dz = pv.z - cam.z;
       if (dx * dx + dz * dz > PARK) continue;
       const ver = dx * dx + dz * dz + (cam.y - pv.y) ** 2 > LOD_AFSTAND * LOD_AFSTAND;
-      const laag = this.lagen.get(`${a.soort}${ver ? 1 : 0}`);
+      const laag = this.lagen.get(`${a.soort}${a.lak % (VARIANTEN[a.soort] ?? 1)}${ver ? 1 : 0}`);
       if (!laag || laag.n >= this.max) continue;
       f.set(pv.dx, 0, pv.dz).normalize(); r.set(-f.z, 0, f.x); u.set(0, 1, 0);
       p.set(pv.x, pv.y + 0.03, pv.z);

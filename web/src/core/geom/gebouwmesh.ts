@@ -8,6 +8,7 @@ import { DakInfo, villas, terrasflat, woontoren, grachtpanden, rijParams, erker,
 import { afstandTotLijn, driehoeken, getekendOppervlak, verfijn, zwaartepunt } from '../poly';
 import { puntInPolygoon } from '../math';
 import { stadsblok } from './stadshart';
+import { halDetail } from './zakelijk';
 import { gevelMaat } from '../tex/generatoren';
 
 // Gebouwen op de vorm van hun perceel: elke rand van de footprint wordt een voor-, achter- of
@@ -690,6 +691,8 @@ export function hal(mb: MeshBouwer, g: Gebouw, r: Rng) {
       doos(mb, 'trimDonker', 'trimDonker', v(0, 1.0), x.t, 4.4, 2.0, Y + 4.8, Y + 5.0);
     }
   }
+  const voorK = rd.find(q => q.soort === 'voor');
+  halDetail(mb, g, Y, H, voorK ? Math.min(7.5, voorK.L * 0.35) : 0);
 }
 
 // ─── Bouwplaats ──────────────────────────────────────────────────────────────────

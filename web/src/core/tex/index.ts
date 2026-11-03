@@ -25,6 +25,9 @@ export function maakTextuur(sleutel: string): TexData {
     case 'golfdak': return G.golfplaat(K(0.55, 0.56, 0.58), true);
     case 'roldeur': return G.roldeur();
     case 'winkelpui': return G.winkelpui(Number(arg));
+    case 'reclame': return G.reclame(Number(arg));
+    case 'lijnbord': return G.lijnbord();
+    case 'logo': return G.logo(Number(arg));
     case 'luifel': return G.luifel(Number(arg));
     case 'dakpannen': return G.dakpannen(false);
     case 'dakpannenAntraciet': return G.dakpannen(true);

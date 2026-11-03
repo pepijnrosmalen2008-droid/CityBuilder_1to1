@@ -48,7 +48,8 @@ function kaart(mb: MeshBouwer, mat: string, c: V3, as1: V3, as2: V3, r: number, 
 /** niveau 0 = vol detail, 1 = middel, 2 = ver weg, 3 = heel ver (een paar driehoeken). */
 export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   const laag = niveau > 0, ver = niveau > 1;
-  if (laag) return niveau > 2 ? boomVer(soort, 5, 2, false) : boomVer(soort, ver ? 6 : 10, ver ? 3 : 6, !ver);
+  // Niveau 1 houdt de bladkaarten (minder trossen, geen takken); pas vanaf niveau 2 een gesloten kroon.
+  if (ver) return niveau > 2 ? boomVer(soort, 5, 2, false) : boomVer(soort, 6, 3, false);
   const v = VORM[soort] ?? VORM.eik;
   const r = new Rng(soort.length * 977 + variant * 31 + 5);
   const mb = new MeshBouwer();

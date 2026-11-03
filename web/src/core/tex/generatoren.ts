@@ -379,6 +379,11 @@ const LETTERS: Record<string, string[]> = {
   O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'], R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
   S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'], U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
   W: ['10001', '10001', '10001', '10101', '10101', '11011', '10001'], G: ['01111', '10000', '10000', '10011', '10001', '10001', '01111'],
+  T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'], P: ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+  V: ['10001', '10001', '10001', '10001', '10001', '01010', '00100'], H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+  Z: ['11111', '00001', '00010', '00100', '01000', '10000', '11111'], Y: ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
+  '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'], '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
+  '.': ['00000', '00000', '00000', '00000', '00000', '00000', '00100'],
   ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
 };
 /** Ligt (x, y) (meters, oorsprong linksonder) op een letter van `tekst`, gecentreerd rond cx, met letterhoogte h? */
@@ -497,6 +502,69 @@ export function winkelpui(variant: number): TexData {
     d.zet(x, y, st, hh, 0.2);
   });
   return d.naarTex(4);
+}
+
+/** Bedrijfsopschriften voor laadbakken en bestelbussen: achtergrond, accentvorm, naam en ondertitel. */
+const OPSCHRIFTEN: { bg: C; acc: C; letter: C; naam: string; sub: string; vorm: 'zwiep' | 'band' | 'golf' | 'rondjes' }[] = [
+  { bg: K(0.92, 0.92, 0.90), acc: K(0.08, 0.22, 0.52), letter: K(0.08, 0.22, 0.52), naam: 'VAN DER MEER', sub: 'TRANSPORT', vorm: 'zwiep' },
+  { bg: K(0.70, 0.08, 0.07), acc: K(0.95, 0.80, 0.15), letter: K(0.97, 0.96, 0.92), naam: 'SUPERMARKT', sub: 'VERS ELKE DAG', vorm: 'rondjes' },
+  { bg: K(0.93, 0.47, 0.08), acc: K(0.15, 0.15, 0.16), letter: K(0.12, 0.12, 0.13), naam: 'BOUWMARKT', sub: 'ALLES VOOR DE KLUS', vorm: 'band' },
+  { bg: K(0.95, 0.78, 0.10), acc: K(0.12, 0.12, 0.12), letter: K(0.10, 0.10, 0.10), naam: 'KOERIER', sub: 'SNEL BEZORGD', vorm: 'band' },
+  { bg: K(0.10, 0.38, 0.20), acc: K(0.92, 0.92, 0.88), letter: K(0.95, 0.95, 0.92), naam: 'VERHUIZINGEN', sub: 'DE BOER', vorm: 'zwiep' },
+  { bg: K(0.93, 0.95, 0.97), acc: K(0.35, 0.62, 0.86), letter: K(0.10, 0.30, 0.60), naam: 'ZUIVEL', sub: 'VAN DE BOERDERIJ', vorm: 'golf' },
+];
+
+/** Opschrift voor de zijkant van een laadbak (7,2 × 2,7 m); u loopt van achter naar voor. */
+export function reclame(variant: number): TexData {
+  const W = 1024, H = 384, d = new Doek(W, H);
+  const o = OPSCHRIFTEN[wikkel(variant, OPSCHRIFTEN.length)];
+  loop(d, (x, y, u, v) => {
+    const mx = u * 7.2, my = v * 2.7;
+    let k = mul(o.bg, 0.97 + 0.04 * fbm(u, v, 8, 2, 700 + variant));
+    let gl = 0.55;
+    if (o.vorm === 'zwiep' && my < 0.62 + 0.25 * Math.sin(mx * 0.6) && my > 0.22 + 0.25 * Math.sin(mx * 0.6)) k = o.acc;
+    if (o.vorm === 'band' && ((my > 0.25 && my < 0.55) || (frac((mx + my) / 0.6) < 0.5 && my < 0.22))) k = o.acc;
+    if (o.vorm === 'golf' && my < 0.7 + 0.18 * Math.sin(mx * 1.3)) k = o.acc;
+    if (o.vorm === 'rondjes') { const c = Math.hypot(frac(mx / 0.9) - 0.5, (my - 0.45) / 0.9) ; if (c < 0.28 && mx > 0.4 && mx < 6.8) k = c < 0.2 ? o.acc : mul(o.acc, 0.8); }
+    if (opTekst(o.naam, mx, my, 3.6, 1.35, 0.62)) { k = o.letter; gl = 0.7; }
+    if (opTekst(o.sub, mx, my, 3.6, 1.02, 0.22)) { k = o.letter; gl = 0.7; }
+    d.zet(x, y, k, 0.5, gl, 0.1);
+  });
+  return d.naarTex(1);
+}
+
+/** Bedrijfsnamen voor torens en hallen: letters met alfa (de rest doorzichtig), 8 × 2 m. */
+const LOGOS: { naam: string; kleur: C; balk?: C }[] = [
+  { naam: 'NORDBANK', kleur: K(0.95, 0.95, 0.93) }, { naam: 'TECHNOVA', kleur: K(0.30, 0.75, 0.95) },
+  { naam: 'DELTA', kleur: K(0.95, 0.72, 0.15) }, { naam: 'POLDER ICT', kleur: K(0.95, 0.95, 0.93), balk: K(0.85, 0.12, 0.10) },
+  { naam: 'LOGISTIEK', kleur: K(0.08, 0.22, 0.55), balk: K(0.95, 0.55, 0.08) }, { naam: 'METAALBOUW', kleur: K(0.70, 0.10, 0.08) },
+  { naam: 'DISTRIBUTIE', kleur: K(0.10, 0.40, 0.22) }, { naam: 'ZUIDERKANT', kleur: K(0.15, 0.15, 0.17), balk: K(0.95, 0.80, 0.10) },
+];
+export const AANTAL_LOGOS = LOGOS.length;
+export function logo(variant: number): TexData {
+  const W = 1024, H = 256, d = new Doek(W, H, true);
+  const o = LOGOS[wikkel(variant, LOGOS.length)];
+  loop(d, (x, y, u, v) => {
+    const mx = u * 8, my = v * 2;
+    const letter = opTekst(o.naam, mx, my, 4, 0.55, 1.05);
+    const balk = !!o.balk && my > 0.18 && my < 0.36 && mx > 0.6 && mx < 7.4;
+    if (letter) d.zet(x, y, o.kleur, 1, 0.6, 0.2, 1);
+    else if (balk) d.zet(x, y, o.balk!, 1, 0.6, 0.2, 1);
+    else d.zet(x, y, o.kleur, 0, 0, 0, 0);
+  });
+  return d.naarTex(1);
+}
+
+/** Richtingsbord van een bus: zwart met oranje ledletters (lijnnummer en bestemming). */
+export function lijnbord(): TexData {
+  const W = 512, H = 64, d = new Doek(W, H);
+  loop(d, (x, y, u, v) => {
+    const mx = u * 2.0, my = v * 0.25;
+    const led = opTekst('12  CENTRUM', mx, my, 1.0, 0.04, 0.17);
+    const raster = frac(x / 3) < 0.7 && frac(y / 3) < 0.7;
+    d.zet(x, y, led && raster ? K(1.0, 0.62, 0.1) : K(0.03, 0.03, 0.035), 0.5, 0.8, 0);
+  });
+  return d.naarTex(0.5);
 }
 
 /** Luifel met strepen; u in meters (strepen van 0,3 m). */

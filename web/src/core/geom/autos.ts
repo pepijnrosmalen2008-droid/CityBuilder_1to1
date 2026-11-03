@@ -136,9 +136,9 @@ export interface WielPlek { x: number; z: number; r: number; b: number; laag: bo
 let VERZAMEL: WielPlek[] | null = null;
 
 /** Voertuig zonder wielen plus de plekken van de wielen (de render-laag laat ze draaien). */
-export function voertuigZonderWielen(soort: VoertuigSoort, laag = false): { mesh: MeshData; wielen: WielPlek[] } {
+export function voertuigZonderWielen(soort: VoertuigSoort, laag = false, variant = 0): { mesh: MeshData; wielen: WielPlek[] } {
   VERZAMEL = [];
-  try { const mesh = voertuigMesh(soort, laag); return { mesh, wielen: VERZAMEL }; } finally { VERZAMEL = null; }
+  try { const mesh = voertuigMesh(soort, laag, variant); return { mesh, wielen: VERZAMEL }; } finally { VERZAMEL = null; }
 }
 
 /** Los wiel met de as door de oorsprong (as langs z; buitenkant naar +z bij kant 1). */
@@ -440,7 +440,7 @@ function personenauto(soort: keyof typeof VORMEN, laag: boolean): MeshData {
  * windkap, spiegels en opstappen; chassisbalken, dieseltank, dubbel gemonteerde achterwielen met
  * spatborden en zijafscherming; laadbak met hoekprofielen, ribben en achterdeuren.
  */
-function vrachtwagen(laag: boolean, brandweer = false): MeshData {
+function vrachtwagen(laag: boolean, brandweer = false, variant = 0): MeshData {
   const mb = new MeshBouwer();
   const L = 9.6, W = 2.5;
   const cabL = 2.25, xF = L / 2, xR = xF - cabL;
@@ -470,6 +470,12 @@ function vrachtwagen(laag: boolean, brandweer = false): MeshData {
   // Wielen: voor enkel, achter tandem met dubbellucht.
   for (const z of [-1.0, 1.0]) wiel(mb, xVoorWiel, z, 0.5, 0.32, laag, 'vracht');
   for (const x of achter) for (const z of [-1.0, 1.0, -0.66, 0.66]) wiel(mb, x, z, 0.5, 0.3, laag || Math.abs(z) < 0.8, 'vracht');
+  if (!brandweer && variant > 0) {
+    // Opschrift op beide zijden; tekst leest altijd van links naar rechts.
+    const mat = `reclame:${variant - 1}`, y0 = bakY0 + 0.12, y1 = bakY1 - 0.12, a = bakX0 + 0.12, b = bakX1 - 0.12;
+    mb.quad(mat, { x: a, y: y0, z: W / 2 + 0.005 }, { x: b, y: y0, z: W / 2 + 0.005 }, { x: b, y: y1, z: W / 2 + 0.005 }, { x: a, y: y1, z: W / 2 + 0.005 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: 1 });
+    mb.quad(mat, { x: b, y: y0, z: -W / 2 - 0.005 }, { x: a, y: y0, z: -W / 2 - 0.005 }, { x: a, y: y1, z: -W / 2 - 0.005 }, { x: b, y: y1, z: -W / 2 - 0.005 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: 0, z: -1 });
+  }
   if (laag) {
     mb.quad('autoglas', { x: xF + 0.01, y: 2.0, z: -1.05 }, { x: xF + 0.01, y: 2.0, z: 1.05 }, { x: xF - 0.08, y: 3.0, z: 1.0 }, { x: xF - 0.08, y: 3.0, z: -1.0 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0.1, z: 0 });
     return mb.bouw();
@@ -579,6 +585,46 @@ function bus(laag: boolean): MeshData {
   mb.quad('autoglas', { x: xf, y: 1.1, z: -1.15 }, { x: xf, y: 1.1, z: 1.15 }, { x: xf, y: 2.85, z: 1.15 }, { x: xf, y: 2.85, z: -1.15 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0, z: 0 });
   for (const x of [L / 2 - 2.6, -L / 2 + 3.2]) for (const z of [-1.0, 1.0]) wiel(mb, x, z, 0.48, 0.3, laag, 'vracht');
   if (!laag) for (const s of [-1, 1]) { kastje(mb, 'koplamp', { x: L / 2 + 0.01, y: 0.75, z: s * 0.95 }, 0.05, 0.15, 0.35); kastje(mb, 'achterlicht', { x: -L / 2 - 0.01, y: 0.95, z: s * 1.05 }, 0.05, 0.4, 0.2); }
+  if (!laag) {
+    const zk = W / 2 + 0.006;
+    for (const s of [-1, 1]) {
+      const z = s * zk, N = { x: 0, y: 0, z: s };
+      const q = (mat: string, x0: number, x1: number, y0: number, y1: number, dz = 0) => mb.quad(mat, { x: x0, y: y0, z: z + s * dz }, { x: x1, y: y0, z: z + s * dz }, { x: x1, y: y1, z: z + s * dz }, { x: x0, y: y1, z: z + s * dz }, [0, 0], [1, 0], [1, 1], [0, 1], N);
+      // Raamstijlen in de raamband, donkere onderrand, witte stadsband.
+      for (let x = -L / 2 + 0.9; x < L / 2 - 0.8; x += 1.45) q('autotrim', x - 0.05, x + 0.05, 1.45, 2.75, 0.004);
+      q('autotrim', -L / 2 + 0.2, L / 2 - 0.2, 0.32, 0.55);
+      q('turbinewit', -L / 2 + 0.2, L / 2 - 0.2, 1.22, 1.36, 0.002);
+      // Deuren rechts (voor en midden): dubbel glas met zwarte rand.
+      if (s > 0) for (const xd of [L / 2 - 1.35, -0.4]) {
+        q('autotrim', xd - 0.65, xd + 0.65, 0.35, 2.75, 0.008);
+        q('autoglas', xd - 0.58, xd - 0.04, 0.6, 2.65, 0.012);
+        q('autoglas', xd + 0.04, xd + 0.58, 0.6, 2.65, 0.012);
+      }
+    }
+    // Richtingsbord boven de voorruit en achteraan; zwarte rand rond de voorruit.
+    mb.quad('lijnbord', { x: L / 2 + 0.02, y: 2.62, z: 1.05 }, { x: L / 2 + 0.02, y: 2.62, z: -1.05 }, { x: L / 2 + 0.02, y: 2.9, z: -1.05 }, { x: L / 2 + 0.02, y: 2.9, z: 1.05 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: 1, y: 0, z: 0 });
+    mb.quad('lijnbord', { x: -L / 2 - 0.02, y: 2.62, z: -0.8 }, { x: -L / 2 - 0.02, y: 2.62, z: 0.8 }, { x: -L / 2 - 0.02, y: 2.88, z: 0.8 }, { x: -L / 2 - 0.02, y: 2.88, z: -0.8 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: -1, y: 0, z: 0 });
+    kastje(mb, 'autotrim', { x: L / 2 + 0.01, y: 0.62, z: 0 }, 0.12, 0.3, W - 0.1);
+    kastje(mb, 'kenteken', { x: L / 2 + 0.08, y: 0.62, z: 0 }, 0.02, 0.11, 0.52);
+    for (const s of [-1, 1]) kastje(mb, 'autotrim', { x: L / 2 - 0.1, y: 2.4, z: s * (W / 2 + 0.25) }, 0.08, 0.38, 0.12);
+    // Daktechniek (airco en batterijen) en een achterruit.
+    kastje(mb, 'autolak', { x: 1.5, y: 3.18, z: 0 }, 2.6, 0.28, 1.7);
+    kastje(mb, 'autotrim', { x: -2.5, y: 3.15, z: 0 }, 3.2, 0.22, 1.9);
+    mb.quad('autoglas', { x: -L / 2 - 0.012, y: 1.6, z: -1.0 }, { x: -L / 2 - 0.012, y: 1.6, z: 1.0 }, { x: -L / 2 - 0.012, y: 2.5, z: 1.0 }, { x: -L / 2 - 0.012, y: 2.5, z: -1.0 }, [0, 0], [1, 0], [1, 1], [0, 1], { x: -1, y: 0, z: 0 });
+  }
+  return mb.bouw();
+}
+
+/** Opschrift op de laadruimte van een bestelbus (beide zijkanten, volgt de breedte van de carrosserie). */
+function bestelOpschrift(variant: number): MeshData {
+  const mb = new MeshBouwer(), v = VORMEN.bestelbus, mat = `reclame:${variant}`;
+  const u0 = 0.06, u1 = v.zijglasTot ?? 0.64, y0 = 0.62, y1 = 1.95, n = 12;
+  for (const s of [-1, 1]) for (let i = 0; i < n; i++) {
+    const ua = lerp(u0, u1, i / n), ub = lerp(u0, u1, (i + 1) / n);
+    const za = s * (plan(v, ua) / 2 + 0.007), zb = s * (plan(v, ub) / 2 + 0.007);
+    const ta = s > 0 ? i / n : 1 - i / n, tb = s > 0 ? (i + 1) / n : 1 - (i + 1) / n;
+    mb.quad(mat, { x: (ua - 0.5) * v.L, y: y0, z: za }, { x: (ub - 0.5) * v.L, y: y0, z: zb }, { x: (ub - 0.5) * v.L, y: y1, z: zb }, { x: (ua - 0.5) * v.L, y: y1, z: za }, [ta, 0], [tb, 0], [tb, 1], [ta, 1], { x: 0, y: 0, z: s });
+  }
   return mb.bouw();
 }
 
@@ -604,8 +650,12 @@ function lichtbalk(mb: MeshBouwer, x: number, y: number, breed: number) {
 }
 
 /** Mesh voor een voertuigsoort (laag = eenvoudig, voor ver weg). */
-export function voertuigMesh(soort: VoertuigSoort, laag = false): MeshData {
-  if (soort === 'vrachtwagen') return vrachtwagen(laag);
+/** Aantal uiterlijkvarianten per soort (opschrift op laadbak of bestelbus; 0 = blanco). */
+export const VARIANTEN: Partial<Record<VoertuigSoort, number>> = { vrachtwagen: 7, bestelbus: 5 };
+
+export function voertuigMesh(soort: VoertuigSoort, laag = false, variant = 0): MeshData {
+  if (soort === 'vrachtwagen') return vrachtwagen(laag, false, variant);
+  if (soort === 'bestelbus' && variant > 0) return samenvoegen([personenauto('bestelbus', laag), bestelOpschrift(variant - 1)]);
   if (soort === 'brandweer') {
     const m = vrachtwagen(laag, true);
     if (laag) return m;

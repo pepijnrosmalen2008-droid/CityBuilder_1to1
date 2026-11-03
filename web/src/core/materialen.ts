@@ -126,6 +126,9 @@ export function materiaal(sleutel: string): MatDef {
     case 'gevel': return D({ tex: sleutel, meter: 0, normaal: 1 });
     case 'muur': return D({ tex: sleutel, meter: 6, normaal: 1 });
     case 'winkelpui': return D({ tex: sleutel, meter: 0, normaal: 0.8 });
+    case 'reclame': return D({ tex: sleutel, meter: 0, normaal: 0.2 });
+    case 'logo': return D({ tex: sleutel, meter: 0, alfa: 'knip', dubbelzijdig: true });
+    case 'lijnbord': return D({ tex: sleutel, meter: 0, ruwheid: 0.3 });
     case 'luifel': return D({ tex: sleutel, meter: 0.6, dubbelzijdig: true });
     case 'golfplaat': return D({ tex: sleutel, meter: 4, normaal: 1 });
     case 'deur': return D({ kleur: DEUR[Number(arg) % DEUR.length], ruwheid: 0.4 });

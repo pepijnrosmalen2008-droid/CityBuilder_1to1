@@ -4,6 +4,7 @@ import { Gebouw, Anker, totaleHoogte } from '../wereld';
 import { MeshBouwer, Prop } from './mesh';
 import { driehoeken, getekendOppervlak, knipHalfvlak, zwaartepunt } from '../poly';
 import { LOD } from './lod';
+import { torenDetail } from './zakelijk';
 import { H, Rand, randen, wand, vlak, inzet, norm, doos, dakrand, deur, P3, N3, OP, PUIEN, puiUV } from './gebouwmesh';
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -408,6 +409,7 @@ export function kantoorToren(mb: MeshBouwer, g: Gebouw): DakInfo {
     vlak(mb, 'dakgrind', d.poly, yL(d.tot));
     dakrand(mb, d.poly, yL(d.tot) - 0.1, 1.1, 0.35, g.gevel === 'vliesgevel' ? 'metaal' : 'trimDonker');
   }
+  torenDetail(mb, g, delen.map(d => ({ poly: d.poly, y0: yL(d.van), y1: yL(d.tot) })), g.gevel === 'vliesgevel');
   // Hoogste niveau: een spits op de kroon.
   const top = yL(lagen);
   if ((g.niveau ?? 1) >= 5 && lagen >= 12) { const c = zwaartepunt(poly); doos(mb, 'metaal', 'metaal', c, { x: 1, z: 0 }, 0.6, 0.6, top, top + 14); }
