@@ -65,9 +65,29 @@ export class TerreinWeergave {
     this.buitenBomen();
   }
 
+  /**
+   * Bos vlak buiten de kaartrand als gewone bomen (props): dezelfde modellen en detailniveaus als
+   * binnen de kaart, zodat de rand dichtbij niet opvalt. Verder weg de eenvoudige instanties.
+   */
+  buitenBos(): { soort: string; x: number; y: number; z: number; rot: number; schaal: number; variant: number }[] {
+    const t = this.t, H0 = t.grootte / 2, uit: { soort: string; x: number; y: number; z: number; rot: number; schaal: number; variant: number }[] = [];
+    let s = t.seed * 7919 + 3;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    for (let poging = 0; poging < 60000 && uit.length < 7000; poging++) {
+      const d = 4 + rnd() * 316, zij = Math.floor(rnd() * 4), f = rnd() * 2 - 1, H = H0 + d;
+      const [x, z] = zij === 0 ? [f * H, -H] : zij === 1 ? [H, f * H] : zij === 2 ? [-f * H, H] : [-H, -f * H];
+      const bos = smoothstep(0.42, 0.56, fbm(x / 900, z / 900, 1, 4, t.seed + 71, 0.5, false));
+      const y = Terrein.natuurlijk(x, z, t.seed, t.grootte);
+      if (bos < 0.4 || y < 1.5 || rnd() > bos) continue;
+      const k = rnd();
+      uit.push({ soort: k < 0.35 ? 'den' : k < 0.6 ? 'eik' : k < 0.8 ? 'berk' : 'linde', x, y, z, rot: rnd() * 6.28, schaal: 0.75 + rnd() * 0.45, variant: Math.floor(rnd() * 2) });
+    }
+    return uit;
+  }
+
   /** Bos buiten de kaart: kegels (naaldbomen, 12 driehoeken) en afgeplatte twintigvlakken (loofbomen) als instanties. */
   private buitenBomen() {
-    const t = this.t, H0 = t.grootte / 2, MAX = 9000;
+    const t = this.t, H0 = t.grootte / 2, MAX = 7000, BIJ = 320;
     const naald = new THREE.ConeGeometry(1, 2.6, 6, 1, true).translate(0, 1.5, 0);
     const loof = new THREE.IcosahedronGeometry(1, 0).scale(1, 0.85, 1).translate(0, 1.2, 0);
     for (const g of [naald, loof]) g.computeVertexNormals();
@@ -78,7 +98,7 @@ export class TerreinWeergave {
     let s = t.seed * 9973 + 17;
     const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
     for (let poging = 0; poging < MAX * 8 && tel[0] + tel[1] < MAX; poging++) {
-      const d = 6 + Math.pow(rnd(), 1.8) * 1100, zij = Math.floor(rnd() * 4), f = rnd() * 2 - 1, H = H0 + d;
+      const d = BIJ + Math.pow(rnd(), 1.6) * (1100 - BIJ), zij = Math.floor(rnd() * 4), f = rnd() * 2 - 1, H = H0 + d;
       const [x, z] = zij === 0 ? [f * H, -H] : zij === 1 ? [H, f * H] : zij === 2 ? [-f * H, H] : [-H, -f * H];
       const bos = smoothstep(0.42, 0.56, fbm(x / 900, z / 900, 1, 4, t.seed + 71, 0.5, false));
       const y = Terrein.natuurlijk(x, z, t.seed, t.grootte);

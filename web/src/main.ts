@@ -19,6 +19,7 @@ import { InfoPaneel } from './ui/infopaneel';
 import { ICOON } from './ui/iconen';
 import { Rijstroken } from './core/verkeer/rijstroken';
 import { TerreinWeergave } from './render/terrein';
+import { GrasWeergave } from './render/gras';
 import { StadWeergave } from './render/stad';
 import { VoorbeeldLaag } from './render/voorbeeld';
 import { Hud } from './ui/hud';
@@ -83,6 +84,8 @@ async function start() {
   // Voetgangers en fietsers dichtbij; aantal per kwaliteitsniveau.
   const straatLeven = new StraatLevenWeergave(wereld);
   sfeer.scene.add(straatLeven.groep);
+  const gras = new GrasWeergave(wereld);
+  sfeer.scene.add(gras.mesh);
   const levenMax = () => ({ laag: 110, midden: 200, hoog: 320 } as Record<string, number>)[sfeer.niveau] ?? 200;
   const diensten = new DienstWeergave(wereld, mats);
   sfeer.scene.add(diensten.groep);
@@ -109,6 +112,7 @@ async function start() {
   camera.zet(c[0], c[1], c[2], c[3], c[4]);
   stad.werkBij(1e9);
   terrein.werkBij();
+  stad.props.zet('buitenbos', terrein.buitenBos());
   stad.props.werkBij(sfeer.camera.position, 0, true);
 
   const gereedschap = new Gereedschap(wereld);
@@ -369,6 +373,7 @@ async function start() {
     wereld.stap(dt);
     verkeer.werkBij(sfeer.camera.position, dt);
     straatLeven.werkBij(dt, camera.doel, camera.afstand, wereld.snelheid, levenMax());
+    gras.werkBij(dt, camera.doel, camera.afstand, sfeer.niveau !== 'laag');
     verkeersLaag.werkBij(camera.doel, camera.afstand);
     if (diensten.werkBij(dt, sfeer.camera, wereld.snelheid)) sfeer.schaduwVuil();
     const grond = grondOnder();

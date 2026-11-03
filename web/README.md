@@ -104,7 +104,10 @@ hierheen).
 - Lucht: diepblauw verloop overdag, belichte wolkenlaag die meedrijft, zonsop- en ondergang uit de luchtshader.
 - Wegdek en stoep in wereldcoördinaten (`straatDek`): tintvariatie zonder herhaling, reparatieplekken, olievlekken, putdeksels, vuil en mos.
 - Bomen: takkenskelet met zijtakken, trossen aan de takuiteinden, grillig silhouet, doorschijnend blad tegen de zon in.
-- Van ver: land en bos buiten de kaart tot ~6 km (zelfde landschapsfunctie), nevel die meeschaalt met de zoomafstand, anisotrope filtering op de verre textuuratlas.
+- Gras dichtbij (`render/gras.ts`): ~20k plukjes als één instanced mesh rond het kijkpunt, op het terrein via een hoogtetextuur, wind in de shader, enkele bloemen; een grasmasker houdt wegen, gebouwen, verharding en strand vrij. Alleen ingezoomd en vanaf 'midden'.
+- Voertuigen: bedrijfsopschriften op vrachtwagens en bestelbussen (varianten per `lak`), bus met deuren, raamstijlen en ledrichtingsbord.
+- Kantoren en hallen (`core/geom/zakelijk.ts`): vinnen langs glasgevels, bedrijfsnamen, techniekruimtes, antennes, dockshelters, kolommen, dakinstallaties.
+- Van ver: land en bos buiten de kaart tot ~6 km (zelfde landschapsfunctie; de eerste ~320 m met echte boommodellen), nevel die meeschaalt met de zoomafstand, anisotrope filtering op de verre textuuratlas.
 
 ## Dag en nacht en prestaties
 
