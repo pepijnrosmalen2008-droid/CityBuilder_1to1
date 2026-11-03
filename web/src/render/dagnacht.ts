@@ -58,8 +58,12 @@ export class DagNacht {
     s.scene.environmentIntensity = 0.12 + 0.24 * dag;
     const u = s.sky.material.uniforms;
     u.sunPosition.value.copy(zon);
-    u.rayleigh.value = 2.1 + schemer * 0.8;
-    u.turbidity.value = 2.2 + schemer * 4;
+    u.rayleigh.value = 2.4 + schemer * 0.8;
+    u.turbidity.value = 1.7 + schemer * 4;
+    // Wolken: wit in de zon, warm bij schemering, donker 's nachts.
+    const wu = (s.wolken.material as THREE.ShaderMaterial).uniforms;
+    wu.uLicht.value.copy(s.zon.color).multiplyScalar(0.12 + 0.95 * dag).lerp(this.tmp.set(0x2a3550), nacht * 0.7);
+    wu.uSchaduw.value.set(0x9fb0c8).multiplyScalar(0.18 + 0.72 * dag).lerp(this.tmp.set(0x141a28), nacht * 0.8);
     const f = s.scene.fog as THREE.Fog;
     f.color.copy(NEVEL_NACHT).lerp(NEVEL_DAG, dag).lerp(NEVEL_SCHEMER, schemer * 0.55);
     s.renderer.toneMappingExposure = 1.0 + nacht * 0.15;

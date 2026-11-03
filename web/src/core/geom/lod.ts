@@ -1,6 +1,6 @@
 /** Detailniveau bij het opbouwen van een mesh: `ver` = versie voor op afstand (zelfde silhouet en
  *  gevels, zonder tuinspullen, deuren, balkons, installaties). */
-export const LOD = { ver: false };
+export const LOD = { ver: false, /** Gevelreliëf in echte geometrie (uit op de laagste kwaliteit). */ reliëf: true };
 
 import type { MeshData, MeshGroep } from './mesh';
 import { materiaal } from '../materialen';

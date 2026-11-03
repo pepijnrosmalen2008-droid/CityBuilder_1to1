@@ -3,7 +3,7 @@ import { Rng } from '../rng';
 import { Gebouw, totaleHoogte } from '../wereld';
 import { MeshBouwer, Prop } from './mesh';
 import { LOD } from './lod';
-import { Rand, randen, wand, vlak, doos, deur, P3, N3, PUIEN, LUIFELS, puiUV } from './gebouwmesh';
+import { Rand, randen, wand, vlak, doos, deur, P3, N3, PUIEN, LUIFELS, puiUV, RELIEF } from './gebouwmesh';
 import { pandPolys } from './stijlmesh';
 import { cilinder } from './props';
 import { gevelMaat } from '../tex/generatoren';
@@ -241,6 +241,12 @@ function mansarde(mb: MeshBouwer, poly: V2[], voor: Rand, top: number, muur: str
  * winkelpuien (gemengd), kantoorentree of woonhuis met voordeur.
  */
 export function stadsblok(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' | 'kantoor', props: Prop[] = []) {
+  // Het stadshart maakt zijn eigen, rijkere reliëf (gevelReliëf).
+  RELIEF.aan = false;
+  try { stadsblokIntern(mb, g, soort, props); } finally { RELIEF.aan = true; }
+}
+
+function stadsblokIntern(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' | 'kantoor', props: Prop[]) {
   const Y = g.y, hBG = g.lagen[0].hoogte, nL = g.lagen.length;
   const alle = pandPolys(g);
   const basisTop = Y + totaleHoogte(g.lagen);
@@ -292,7 +298,7 @@ export function stadsblok(mb: MeshBouwer, g: Gebouw, soort: 'wonen' | 'winkel' |
         const bk = new Set<number>();
         if (lagenBoven >= 3) bk.add(Math.round(LAAG / hs));
         if (lagenBoven >= 4) bk.add(Math.round((top - LAAG - Y - hBG) / hs));
-        gevelReliëf(mb, x, gevel, Y + hBG, top, lagenBoven, steen, bk);
+        if (LOD.reliëf) gevelReliëf(mb, x, gevel, Y + hBG, top, lagenBoven, steen, bk);
         // Vlaggen aan de gevel (kantoren en enkele andere panden).
         if (x.L > 6 && r.next() < (gevel === 'kalksteen' || soort === 'kantoor' ? 0.65 : 0.18)) {
           const variant = r.int(0, 3), rot = Math.atan2(x.n.x, x.n.z);

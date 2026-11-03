@@ -17,6 +17,35 @@ vec3 raamLicht(vec2 cel, float glas) {
   vec3 kl = h2 < 0.72 ? vec3(1.0, 0.62, 0.32) : h2 < 0.92 ? vec3(1.0, 0.8, 0.58) : vec3(0.45, 0.62, 1.0);
   float sterk = 0.35 + 0.65 * raamHash(cel + 3.1);
   return kl * aan * sterk * uNacht * uNacht;
+}
+/** Interieur achter een raamvak (interior mapping): straal vanuit het glas (f = plek in het vak 0-1, cel = vak)
+ *  in richting d (raakvlakruimte, z < 0 = de kamer in) door een doos met wanden, vloer, plafond en meubels. */
+vec3 kamer(vec2 cel, vec2 f, vec3 d) {
+  float h1 = raamHash(cel + 5.1), h2 = raamHash(cel + 9.7), h3 = raamHash(cel + 2.3), h4 = raamHash(cel + 7.9);
+  float D = 1.0 + h1 * 0.7;
+  d.z = min(d.z, -0.05);
+  float tx = (d.x > 0.0 ? 1.0 - f.x : -f.x) / (abs(d.x) < 1e-4 ? (d.x < 0.0 ? -1e-4 : 1e-4) : d.x);
+  float ty = (d.y > 0.0 ? 1.0 - f.y : -f.y) / (abs(d.y) < 1e-4 ? (d.y < 0.0 ? -1e-4 : 1e-4) : d.y);
+  float tz = -D / d.z;
+  float t = min(min(tx, ty), tz);
+  vec3 p = vec3(f, 0.0) + d * t;
+  vec3 wand = h2 < 0.4 ? vec3(0.80, 0.76, 0.68) : h2 < 0.7 ? vec3(0.86, 0.85, 0.82) : h2 < 0.85 ? vec3(0.66, 0.72, 0.70) : vec3(0.78, 0.66, 0.55);
+  vec3 c;
+  if (t == tz) {
+    c = wand * 0.92;
+    // Achterwand: kast, schilderij, deur of bank.
+    if (h3 < 0.3 && abs(p.x - 0.3) < 0.16 && p.y < 0.75) c = vec3(0.32, 0.22, 0.14) * (fract(p.y * 6.0) < 0.12 ? 0.6 : 1.0);
+    else if (h3 < 0.6 && abs(p.x - 0.55) < 0.15 && abs(p.y - 0.55) < 0.1) c = mix(vec3(0.25, 0.3, 0.38), vec3(0.6, 0.45, 0.3), h4);
+    else if (h3 < 0.75 && abs(p.x - 0.7) < 0.1 && p.y < 0.7) c = wand * 0.65;
+    if (p.y < 0.24 && abs(p.x - 0.45) < 0.3 && h4 > 0.35) c = mix(vec3(0.20, 0.22, 0.28), vec3(0.45, 0.30, 0.22), h1) * (p.y > 0.2 ? 1.2 : 1.0);
+  } else if (t == ty) {
+    c = d.y < 0.0 ? mix(vec3(0.42, 0.28, 0.17), vec3(0.62, 0.52, 0.40), h4) * (0.85 + 0.15 * step(0.5, fract(p.x * 9.0))) : vec3(0.88, 0.87, 0.84);
+  } else {
+    c = wand * 0.78;
+    if (p.y < 0.24 && -p.z > D * 0.25 && -p.z < D * 0.7 && h1 > 0.5) c = vec3(0.30, 0.20, 0.12);
+  }
+  // Dieper in de kamer donkerder; plafond en wanden boven vangen het meeste licht.
+  return c * mix(1.0, 0.5, clamp(-p.z / D, 0.0, 1.0)) * (0.8 + 0.25 * p.y);
 }`
 
 /** MatDef (engine-onafhankelijk) → three.js-materiaal. Texturen komen later binnen uit de workers. */
@@ -74,6 +103,8 @@ export class Materialen {
       };
     }
     if (sleutel.startsWith('gevel:')) parallaxRamen(m);
+    if (sleutel === 'asfalt' || sleutel === 'busbaan') straatDek(m, true);
+    else if (sleutel === 'fietsasfalt' || sleutel === 'stoeptegels' || sleutel === 'klinkers') straatDek(m, false);
     if (sleutel.startsWith('winkelpui:')) etalage(m);
     if (d.bovenop) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -4; }
     if (d.tex) {
@@ -157,6 +188,58 @@ export class Materialen {
 }
 
 /**
+ * Wegdek en stoep in wereldcoördinaten (geen herhaling, geen extra texturen): grote tintverschillen,
+ * vuil langs randen. Asfalt krijgt ook reparatieplekken met vers donker asfalt, olie- en rubbervlekken
+ * en gietijzeren putdeksels. Ver weg (vakjes kleiner dan een pixel) vallen de kleine details weg.
+ */
+function straatDek(m: THREE.MeshStandardMaterial, asfalt: boolean) {
+  m.onBeforeCompile = s => {
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vWP;
+float sdH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float sdR(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(sdH(i), sdH(i + vec2(1, 0)), f.x), mix(sdH(i + vec2(0, 1)), sdH(i + vec2(1, 1)), f.x), f.y); }
+float sdF(vec2 p) { return sdR(p) * 0.5 + sdR(p * 2.1 + 3.7) * 0.3 + sdR(p * 4.3 + 9.1) * 0.2; }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  vec2 wp = vWP.xz;
+  float sdFw = length(fwidth(wp));
+  float sdDicht = 1.0 - smoothstep(0.15, 0.6, sdFw);
+  float sdRuw = 0.0;
+  diffuseColor.rgb *= mix(0.88, 1.08, sdF(wp / 38.0)) * mix(0.95, 1.04, sdF(wp / 7.0 + 5.0));
+  ${asfalt ? `
+  // Reparatieplekken: vers, donkerder en gladder asfalt met een scherpe rand.
+  float plek = sdF(wp / 9.0 + 17.0);
+  float rep = smoothstep(0.66, 0.665 + sdFw * 0.05, plek);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.72, 0.74), rep);
+  diffuseColor.rgb *= 1.0 - 0.25 * smoothstep(0.645, 0.66, plek) * (1.0 - rep) * sdDicht;
+  sdRuw -= rep * 0.08;
+  // Olie- en rubbervlekken.
+  float vlek = smoothstep(0.72, 0.9, sdF(wp / 1.6 + 41.0)) * smoothstep(0.55, 0.7, sdF(wp / 11.0 + 3.0));
+  diffuseColor.rgb *= 1.0 - 0.35 * vlek * sdDicht;
+  sdRuw -= vlek * 0.25;
+  // Putdeksels: één op de paar vakken van 14 m, rond, gietijzer met ribbels.
+  vec2 cel = floor(wp / 14.0), loc = fract(wp / 14.0) * 14.0;
+  if (sdH(cel + 7.3) > 0.55 && sdDicht > 0.0) {
+    vec2 c = vec2(3.0 + sdH(cel + 1.1) * 8.0, 3.0 + sdH(cel + 2.2) * 8.0);
+    float r = length(loc - c);
+    float put = 1.0 - smoothstep(0.33, 0.34, r);
+    float rand = smoothstep(0.30, 0.33, r) * put;
+    vec2 q = (loc - c) * 14.0;
+    float ribbel = step(0.5, fract((q.x + q.y) * 0.5)) * 0.5 + step(0.5, fract((q.x - q.y) * 0.5)) * 0.5;
+    vec3 ijzer = vec3(0.16, 0.155, 0.15) * (0.75 + 0.35 * ribbel);
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(ijzer, vec3(0.3, 0.29, 0.28), rand), put * sdDicht);
+    sdRuw -= put * 0.3 * sdDicht;
+  }` : `
+  // Stoep en fietspad: vuil, mos en verkleurde tegels.
+  diffuseColor.rgb *= 1.0 - 0.14 * smoothstep(0.62, 0.82, sdF(wp / 3.0 + 13.0));
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.86, 0.92, 0.80), 0.35 * smoothstep(0.7, 0.9, sdF(wp / 5.0 + 29.0)));`}`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = clamp(roughnessFactor + sdRuw, 0.04, 1.0);');
+  };
+}
+
+/**
  * Ramen die in de gevel liggen: parallax op de hoogte in het alfakanaal van de normal map.
  * Alleen diepe delen (glas) zakken weg, ~15 cm; bij een schuine blik schuift het muurwerk over het
  * glas en wordt de neggekant zichtbaar, zoals bij echte vensters. Werkt met afgeleiden, dus zonder tangents.
@@ -170,7 +253,18 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
   {
     // Glas = lage delen van de hoogtekaart; per raamvak (2 × 2 per textuurherhaling) aan of uit.
     float glasM = smoothstep(0.32, 0.18, texture2D(normalMap, pUv).a);
-    totalEmissiveRadiance += raamLicht(floor(pUv * 2.0), glasM) * 0.9;
+    vec2 cel = floor(pUv * 2.0);
+    // Dichtbij: echte kamers achter het glas; ver weg (vakken kleiner dan een paar pixels) de vlakke versie.
+    vec2 fw = fwidth(pUv * 2.0);
+    float dicht = 1.0 - smoothstep(0.012, 0.04, max(fw.x, fw.y));
+    vec3 vlak = raamLicht(cel, glasM) * 0.9;
+    if (dicht > 0.0 && glasM > 0.01) {
+      vec3 k = kamer(cel, fract(pUv * 2.0), -pV);
+      float aanL = step(raamHash(cel), 0.12 + uNacht * 0.33);
+      vec3 licht = vec3(0.16, 0.17, 0.18) * (1.0 - uNacht) + (aanL > 0.5 ? raamLicht(cel, 1.0) * 1.7 + vec3(0.02) * uNacht : vec3(0.008) * uNacht);
+      vec3 binnen = k * licht * glasM;
+      totalEmissiveRadiance += mix(vlak, binnen, dicht);
+    } else totalEmissiveRadiance += vlak;
   }
   #endif`);
     const C = THREE.ShaderChunk;
@@ -179,6 +273,7 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
       .replace('#include <map_fragment>', `
   vec2 pUv = vMapUv;
   float pDiep = 0.0;
+  vec3 pV = vec3(0.0, 0.0, 1.0);
   #ifdef USE_NORMALMAP
   {
     vec3 N = normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0);
@@ -189,6 +284,7 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
     float im = inversesqrt(max(dot(T, T), dot(B, B)) + 1e-12);
     mat3 tbn = mat3(T * im, B * im, N);
     vec3 v = normalize(vViewPosition) * tbn;
+    pV = v;
     // Diepte: alleen lage delen (glas) liggen terug.
     const float SCHAAL = 0.026;
     const int N_STAP = 10;
@@ -207,7 +303,14 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
   #endif
 ` + met(C.map_fragment) + `
   // Neggekant en binnenkant van het venster wat donkerder.
-  diffuseColor.rgb *= 1.0 - 0.35 * pDiep;`)
+  diffuseColor.rgb *= 1.0 - 0.35 * pDiep;
+  #ifdef USE_NORMALMAP
+  {
+    float glasA = smoothstep(0.32, 0.18, texture2D(normalMap, pUv).a);
+    vec2 fwA = fwidth(pUv * 2.0);
+    diffuseColor.rgb *= 1.0 - 0.55 * glasA * (1.0 - smoothstep(0.012, 0.04, max(fwA.x, fwA.y)));
+  }
+  #endif`)
       .replace('#include <roughnessmap_fragment>', met(C.roughnessmap_fragment))
       .replace('#include <metalnessmap_fragment>', met(C.metalnessmap_fragment))
       .replace('#include <normal_fragment_maps>', met(C.normal_fragment_maps));

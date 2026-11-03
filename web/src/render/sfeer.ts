@@ -7,6 +7,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
+import { LOD } from '../core/geom/lod';
 
 export type Niveau = 'laag' | 'midden' | 'hoog';
 export interface Kwaliteit { schaduw: number; zacht: boolean; ao: boolean; bloom: boolean; msaa: number; schaal: number }
@@ -34,6 +35,42 @@ const KLEURCORRECTIE = {
     }`,
 };
 
+/** Wolkenlaag: koepel rond de camera; wolken uit ruis geprojecteerd op een vlak hoog in de lucht,
+ *  belicht door de zon (lichte bovenkant, blauwgrijze onderkant, zilveren rand tegen de zon in). */
+function maakWolken(): THREE.Mesh {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false, side: THREE.BackSide,
+    uniforms: { uZon: { value: new THREE.Vector3(0, 1, 0) }, uTijd: { value: 0 }, uLicht: { value: new THREE.Color(1, 0.97, 0.92) }, uSchaduw: { value: new THREE.Color(0.62, 0.68, 0.78) }, uDek: { value: 0.44 } },
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
+    fragmentShader: `uniform vec3 uZon; uniform float uTijd; uniform vec3 uLicht; uniform vec3 uSchaduw; uniform float uDek; varying vec3 vDir;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float ruis(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+      float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 6; i++){ s += a * ruis(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }
+      void main(){
+        vec3 d = normalize(vDir);
+        if (d.y < 0.015) discard;
+        vec2 uv = d.xz / (d.y + 0.08) * 1.05 + vec2(uTijd * 0.004, uTijd * 0.0015);
+        // Bolle stapelwolken: grove vorm maal fijne randjes.
+        float vorm = fbm(uv * 0.6 + 3.1);
+        float n = mix(fbm(uv), vorm, 0.55) + 0.12 * (vorm - 0.5);
+        float dicht = smoothstep(uDek, uDek + 0.16, n);
+        if (dicht < 0.01) discard;
+        // Belichting: ruis iets richting de zon verschoven = dikte tussen dit punt en de zon.
+        vec2 zz = normalize(uZon.xz + 1e-4) * 0.1;
+        float naarZon = mix(fbm(uv + zz), fbm((uv + zz) * 0.6 + 3.1), 0.55);
+        float licht = clamp(0.6 + (n - naarZon) * 5.0 - (dicht - 0.5) * 0.35, 0.0, 1.0);
+        float rand = pow(max(0.0, dot(d, normalize(uZon))), 8.0) * (1.0 - dicht) * 1.5;
+        vec3 c = mix(uSchaduw, uLicht, licht) + uLicht * rand;
+        float horizon = smoothstep(0.015, 0.22, d.y);
+        gl_FragColor = vec4(c, min(1.0, dicht * 1.15) * horizon * 0.95);
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.5), mat);
+  m.frustumCulled = false; m.renderOrder = -1; m.userData.geenAO = true;
+  return m;
+}
+
 /** Renderer, lucht, zon, mist en nabewerking. */
 export class Sfeer {
   renderer: THREE.WebGLRenderer;
@@ -42,6 +79,7 @@ export class Sfeer {
   zon: THREE.DirectionalLight;
   hemi: THREE.HemisphereLight;
   sky: Sky;
+  wolken: THREE.Mesh;
   composer: EffectComposer;
   ao?: GTAOPass;
   zonRichting = new THREE.Vector3();
@@ -79,7 +117,15 @@ export class Sfeer {
     this.sky.scale.setScalar(20000);
     const u = this.sky.material.uniforms;
     u.turbidity.value = 2.2; u.rayleigh.value = 2.1; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.82;
+    // Zichtbare lucht minder fel (anders brandt de tonemapping hem wit uit); het omgevingslicht blijft zoals het was.
+    this.sky.material.fragmentShader = this.sky.material.fragmentShader.replace('gl_FragColor = vec4( retColor, 1.0 );', `float hz = clamp(direction.y, 0.0, 1.0);
+      vec3 blauw = mix(vec3(0.60, 0.73, 0.88), vec3(0.17, 0.38, 0.78), pow(hz, 0.5));
+      float dagF = smoothstep(0.04, 0.3, vSunDirection.y);
+      retColor = mix(retColor * 0.7, blauw + min(retColor * 0.05, vec3(2.0)), dagF * 0.9);
+      gl_FragColor = vec4( retColor, 1.0 );`);
     this.scene.add(this.sky);
+    this.wolken = maakWolken();
+    this.scene.add(this.wolken);
 
     // Zon: middag in de lente, licht van het zuidwesten.
     // (azimut gemeten vanaf +z = zuid, tegen de klok in vanaf boven: 325° = zuidwest)
@@ -117,6 +163,8 @@ export class Sfeer {
   zetNiveau(niveau: Niveau) {
     this.niveau = niveau;
     const k = this.k = NIVEAUS[niveau];
+    // Gevelreliëf alleen vanaf 'midden' (geldt voor gebouwen die vanaf nu worden opgebouwd).
+    LOD.reliëf = niveau !== 'laag';
     this.renderer.shadowMap.type = k.zacht ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.zon.shadow.mapSize.set(k.schaduw, k.schaduw);
     this.zon.shadow.map?.dispose(); this.zon.shadow.map = null;
@@ -201,5 +249,11 @@ export class Sfeer {
     }
   }
 
-  render() { this.composer.render(); }
+  render() {
+    this.wolken.position.copy(this.camera.position);
+    const u = (this.wolken.material as THREE.ShaderMaterial).uniforms;
+    u.uTijd.value = performance.now() / 1000;
+    u.uZon.value.copy(this.zonRichting);
+    this.composer.render();
+  }
 }

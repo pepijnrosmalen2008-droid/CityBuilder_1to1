@@ -8,6 +8,7 @@ import { DakInfo, villas, terrasflat, woontoren, grachtpanden, rijParams, erker,
 import { afstandTotLijn, driehoeken, getekendOppervlak, verfijn, zwaartepunt } from '../poly';
 import { puntInPolygoon } from '../math';
 import { stadsblok } from './stadshart';
+import { gevelMaat } from '../tex/generatoren';
 
 // Gebouwen op de vorm van hun perceel: elke rand van de footprint wordt een voor-, achter- of
 // zijgevel; daken volgen de gevellijn (ook in bochten en op hoeken in verstek).
@@ -64,9 +65,46 @@ type UV4 = [[number, number], [number, number], [number, number], [number, numbe
 export const puiUV = (r: { t: V2; n: V2 }): UV4 => r.t.x * r.n.z - r.t.z * r.n.x >= 0 ? [[0, 0], [1, 0], [1, 1], [0, 1]] : [[1, 0], [0, 0], [0, 1], [1, 1]];
 export const N3 = (n: V2): V3 => ({ x: n.x, y: 0, z: n.z });
 
+/** Gevelreliëf (dorpels, lateien) aan bij het opbouwen van een detailmesh; het stadshart doet het zelf. */
+export const RELIEF = { aan: true };
+
+const KLASSIEK = new Set(['baksteenRood', 'baksteenBruin', 'baksteenGeel', 'grachtRood', 'grachtDonker', 'stuc', 'gruender', 'haussmann', 'haussmannWit', 'kalksteen']);
+const MODERN = new Set(['modernDonker', 'antraciet', 'nieuwRood', 'witStuc', 'houtGevel']);
+
+/** Lijstje voor de gevel: voorkant, boven- en onderkant (6 driehoeken). */
+function lijstje(mb: MeshBouwer, mat: string, r: Rand, s: number, b: number, diep: number, y0: number, y1: number, uit: number) {
+  const P = (ss: number, d: number): V3 => ({ x: r.a.x + r.t.x * ss + r.n.x * (d + uit), y: 0, z: r.a.z + r.t.z * ss + r.n.z * (d + uit) });
+  const a0 = P(s - b / 2, 0), b0 = P(s + b / 2, 0), a1 = P(s - b / 2, diep), b1 = P(s + b / 2, diep);
+  const Y = (p: V3, y: number): V3 => ({ x: p.x, y, z: p.z });
+  mb.quad(mat, Y(a1, y0), Y(b1, y0), Y(b1, y1), Y(a1, y1), [0, 0], [1, 0], [1, 1], [0, 1], N3(r.n));
+  mb.quad(mat, Y(a0, y1), Y(b0, y1), Y(b1, y1), Y(a1, y1), [0, 0], [1, 0], [1, 1], [0, 1], OP);
+  mb.quad(mat, Y(a0, y0), Y(b0, y0), Y(b1, y0), Y(a1, y0), [0, 0], [1, 0], [1, 1], [0, 1], { x: 0, y: -1, z: 0 });
+}
+
+/** Dorpels onder en lateien boven de ramen van een gevelwand, precies op de ramen van de textuur. */
+function wandReliëf(mb: MeshBouwer, stijl: string, r: Rand, y0: number, y1: number, laagVan: number, laagTot: number, travee: number, uit: number) {
+  if (stijl === 'vliesgevel' || stijl === 'betonband' || r.L < 2 || laagTot - laagVan < 0.99) return;
+  const m = gevelMaat(stijl);
+  const n = Math.max(1, Math.round(r.L / travee)), bw = r.L / n, g = bw / 3;
+  const hs = (y1 - y0) / (laagTot - laagVan), f = hs / 3;
+  const w = m.rb * g;
+  const klassiek = KLASSIEK.has(stijl), modern = MODERN.has(stijl);
+  const mat = modern ? 'trimDonker' : stijl.startsWith('naoorlogs') || stijl === 'betonPaneel' || stijl === 'bruin70' ? 'beton' : stijl === 'haussmann' || stijl === 'kalksteen' ? 'natuursteen' : 'natuursteenWit';
+  for (let i = Math.max(1, Math.ceil(laagVan - 1e-6)) - laagVan; i < laagTot - laagVan - 1e-6; i++) {
+    const yb = y0 + i * hs, ys = yb + m.borst * f, yt = yb + (m.borst + m.rh) * f;
+    if (ys - 0.1 < y0 || yt + 0.3 > y1 + 0.01) continue;
+    for (let j = 0; j < n; j++) {
+      const s = (j + 0.5) * bw;
+      lijstje(mb, mat, r, s, w + (modern ? 0.08 : 0.24), modern ? 0.09 : 0.14, ys - (modern ? 0.04 : 0.09), ys, uit);
+      if (klassiek) lijstje(mb, mat, r, s, w + 2 * Math.max(0.1, m.ow) * g + 0.12, 0.1, yt + 0.02, yt + 0.16, uit);
+    }
+  }
+}
+
 /** Wand langs een rand; gevelmaterialen krijgen UV's in traveeën en verdiepingen. */
 export function wand(mb: MeshBouwer, mat: string, r: Rand, y0: number, y1: number, laagVan: number, laagTot: number, travee = 3, uitstek = 0) {
   const a = { x: r.a.x + r.n.x * uitstek, z: r.a.z + r.n.z * uitstek }, b = { x: r.b.x + r.n.x * uitstek, z: r.b.z + r.n.z * uitstek };
+  if (mat.startsWith('gevel:') && RELIEF.aan && LOD.reliëf && !LOD.ver) wandReliëf(mb, mat.slice(6), r, y0, y1, laagVan, laagTot, travee, uitstek);
   if (mat.startsWith('gevel:')) {
     const n = Math.max(1, Math.round(r.L / travee));
     mb.quad(mat, P3(a, y0), P3(b, y0), P3(b, y1), P3(a, y1), [0, laagVan * 0.5], [n / 2, laagVan * 0.5], [n / 2, laagTot * 0.5], [0, laagTot * 0.5], N3(r.n));
