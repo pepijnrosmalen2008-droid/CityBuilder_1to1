@@ -243,10 +243,11 @@ export class Sfeer {
     const ver = THREE.MathUtils.smoothstep(afstand, 450, 1300);
     this.zon.shadow.intensity = 1 - ver * 0.3;
     if (this.ao) {
-      const ao = 1 - THREE.MathUtils.smoothstep(afstand, 380, 800);
+      // AO blijft tot ver uitgezoomd (gebouwen staan dan nog steeds 'op' de grond).
+      const ao = 1 - THREE.MathUtils.smoothstep(afstand, 1100, 1700);
       this.ao.enabled = ao > 0.02;
       this.ao.blendIntensity = 0.85 * ao;
-      this.ao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(afstand * 0.012, 1.5, 8) });
+      this.ao.updateGtaoMaterial({ radius: THREE.MathUtils.clamp(afstand * 0.014, 1.5, 14) });
     }
   }
 

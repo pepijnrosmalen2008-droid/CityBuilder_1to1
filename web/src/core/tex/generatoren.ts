@@ -314,7 +314,10 @@ export function zink(): TexData {
     const mx = u * 2, f = frac(mx / 0.45) * 0.45;
     // Verweerd blauwgrijs zink: banen met staande naden, per baan iets anders, regenstrepen omlaag.
     const baan = Math.floor(mx / 0.45);
-    let k = mul(K(0.33, 0.37, 0.43), 0.9 + 0.1 * fbm(u, v, 4, 3, 301) + 0.07 * (hash01(baan, 0, 302) - 0.5));
+    let k = mul(K(0.23, 0.26, 0.31), 0.88 + 0.14 * fbm(u, v, 4, 3, 301) + 0.12 * (hash01(baan, 0, 302) - 0.5));
+    // Dwarsnaden (felsen) per ~1,8 m en vlekken van verkleuring.
+    if (frac(v * 2 / 1.8 + hash01(baan, 5, 306) * 0.7) < 0.012) k = mul(k, 0.7);
+    k = mix(k, K(0.30, 0.34, 0.36), 0.25 * glad01(0.6, 0.8, fbm(u, v, 3, 3, 307)));
     const streep = fbm(u * 6, v * 0.5, 8, 3, 303);
     k = mul(k, 1 - 0.14 * glad01(0.55, 0.75, streep));
     if (hash01(baan, 1, 304) > 0.88) k = mix(k, K(0.46, 0.49, 0.53), 0.5);

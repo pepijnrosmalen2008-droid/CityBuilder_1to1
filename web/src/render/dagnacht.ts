@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Sfeer } from './sfeer';
-import { Materialen, NACHT } from './materialen';
+import { Materialen, NACHT, LUCHT } from './materialen';
 
 // ════════════════════════════════════════════════════════════════════════════════════
 // DAG EN NACHT
@@ -50,12 +50,12 @@ export class DagNacht {
     const maanRichting = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - Math.max(0.35, -elev * 0.8), az + Math.PI);
     const richting = elevGr > -3 ? zon : maanRichting;
     s.zonRichting.copy(richting);
-    s.zon.intensity = elevGr > -3 ? 4.3 * dag : 0.9 * nacht;
+    s.zon.intensity = elevGr > -3 ? 4.6 * dag : 0.9 * nacht;
     s.zon.color.copy(elevGr > -3 ? this.tmp.copy(ZON_LAAG).lerp(ZON_HOOG, THREE.MathUtils.smoothstep(elevGr, 0, 30)) : MAAN);
-    s.hemi.intensity = 0.24 + 0.06 * dag;
+    s.hemi.intensity = 0.16 + 0.05 * dag;
     s.hemi.color.copy(LUCHT_NACHT).lerp(LUCHT_DAG, dag);
     s.hemi.groundColor.copy(GROND_NACHT).lerp(GROND_DAG, dag);
-    s.scene.environmentIntensity = 0.12 + 0.24 * dag;
+    s.scene.environmentIntensity = 0.1 + 0.17 * dag;
     const u = s.sky.material.uniforms;
     u.sunPosition.value.copy(zon);
     u.rayleigh.value = 2.4 + schemer * 0.8;
@@ -64,6 +64,10 @@ export class DagNacht {
     const wu = (s.wolken.material as THREE.ShaderMaterial).uniforms;
     wu.uLicht.value.copy(s.zon.color).multiplyScalar(0.12 + 0.95 * dag).lerp(this.tmp.set(0x2a3550), nacht * 0.7);
     wu.uSchaduw.value.set(0x9fb0c8).multiplyScalar(0.18 + 0.72 * dag).lerp(this.tmp.set(0x141a28), nacht * 0.8);
+    // Luchtkleuren voor de spiegeling in ramen.
+    LUCHT.zenit.value.setRGB(0.20, 0.42, 0.80).multiplyScalar(0.08 + 0.92 * dag).lerp(this.tmp.setRGB(0.95, 0.55, 0.35), schemer * 0.35);
+    LUCHT.horizon.value.setRGB(0.70, 0.79, 0.90).multiplyScalar(0.06 + 0.94 * dag).lerp(this.tmp.setRGB(1.0, 0.62, 0.38), schemer * 0.6);
+    LUCHT.grond.value.setRGB(0.16, 0.16, 0.15).multiplyScalar(0.1 + 0.9 * dag);
     const f = s.scene.fog as THREE.Fog;
     f.color.copy(NEVEL_NACHT).lerp(NEVEL_DAG, dag).lerp(NEVEL_SCHEMER, schemer * 0.55);
     s.renderer.toneMappingExposure = 1.0 + nacht * 0.15;

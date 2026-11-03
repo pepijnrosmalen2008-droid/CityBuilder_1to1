@@ -5,6 +5,22 @@ import { atlas } from '../core/geom/lod';
 
 /** Nachtwaarde (0 = dag, 1 = nacht), gedeeld door alle materialen die 's nachts licht geven. */
 export const NACHT = { value: 0 };
+/** Luchtkleuren voor de spiegeling in ramen (dagnacht.ts werkt ze bij). */
+export const LUCHT = { zenit: { value: new THREE.Color(0.20, 0.42, 0.80) }, horizon: { value: new THREE.Color(0.68, 0.78, 0.90) }, grond: { value: new THREE.Color(0.18, 0.18, 0.17) } };
+
+/** GLSL: spiegeling van de lucht in glas (Fresnel). n en vd in kijkruimte; geeft kleur en sterkte. */
+const SPIEGEL_GLSL = `
+uniform vec3 uZenit, uHorizon, uGrond;
+vec4 luchtSpiegel(vec3 n, vec3 vd, float ruw) {
+  vec3 r = inverseTransformDirection(reflect(-vd, n), viewMatrix);
+  float fr = 0.06 + 0.94 * pow(1.0 - clamp(dot(vd, n), 0.0, 1.0), 4.0);
+  vec3 sky = r.y > 0.0 ? mix(uHorizon, uZenit, pow(r.y, 0.6)) : mix(uHorizon * 0.55, uGrond, clamp(-r.y * 4.0, 0.0, 1.0));
+  // Wolkjes en weerspiegelde gebouwen tegenover: wat variatie zodat ramen niet allemaal gelijk zijn.
+  float w = fract(sin(dot(floor(r.xz / max(0.08, r.y + 0.12) * 3.0), vec2(12.9, 78.2))) * 43758.5);
+  sky *= r.y > 0.0 ? 0.9 + 0.2 * w : 1.0;
+  return vec4(sky, fr * (1.0 - ruw * 0.6));
+}`;
+const spiegelUni = (s: { uniforms: Record<string, unknown> }) => { s.uniforms.uZenit = LUCHT.zenit; s.uniforms.uHorizon = LUCHT.horizon; s.uniforms.uGrond = LUCHT.grond; };
 
 /** GLSL: willekeurig getal per raamvak en de kleur van het licht erachter (warm, soms koel of tv-blauw). */
 const RAAM_GLSL = `
@@ -178,9 +194,19 @@ export class Materialen {
       s.uniforms.uGevels = { value: sleutels.filter(k => k.startsWith('gevel:')).length };
       s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute float atlaslaag;\nvarying float vLaag;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLaag = atlaslaag;');
-      s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform highp sampler2DArray tAtlas;\nuniform float uGevels;\nvarying float vLaag;\n' + RAAM_GLSL)
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (vLaag < uGevels - 0.5) totalEmissiveRadiance += raamLicht(floor(vMapUv * 2.0), smoothstep(0.55, 0.8, atlasT.a)) * 0.9;')
-        .replace('#include <map_fragment>', 'vec4 atlasT = texture(tAtlas, vec3(vMapUv, floor(vLaag + 0.5)));\ndiffuseColor.rgb *= atlasT.rgb;')
+      spiegelUni(s);
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform highp sampler2DArray tAtlas;\nuniform float uGevels;\nvarying float vLaag;\n' + RAAM_GLSL + SPIEGEL_GLSL)
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (vLaag < uGevels - 0.5) { float gm = smoothstep(0.55, 0.8, atlasT.a); totalEmissiveRadiance += raamLicht(floor(vMapUv * 2.0), gm) * 0.9; vec4 sp = luchtSpiegel(normal, normalize(vViewPosition), 0.0); totalEmissiveRadiance += sp.rgb * sp.a * gm * (1.0 - uNacht * 0.85) * 0.8; diffuseColor.rgb *= 1.0 - 0.15 * smoothstep(0.32, 0.0, vMapUv.y); }')
+        .replace('#include <map_fragment>', `vec4 atlasT = texture(tAtlas, vec3(vMapUv, floor(vLaag + 0.5)), -0.8);
+diffuseColor.rgb *= atlasT.rgb;
+if (vLaag < uGevels - 0.5) {
+  // Van ver: raamrijen per verdieping blijven zichtbaar (de mipmap middelt ze anders weg tot een egale muur).
+  float fwy = fwidth(vMapUv.y * 2.0);
+  float rij = smoothstep(0.12, 0.2, fract(vMapUv.y * 2.0)) * smoothstep(0.88, 0.8, fract(vMapUv.y * 2.0));
+  float ver = smoothstep(0.15, 0.5, fwy);
+  diffuseColor.rgb *= mix(1.0, mix(1.0, 0.58, rij), ver * 0.75);
+}`)
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nif (vLaag < uGevels - 0.5) reflectedLight.indirectDiffuse *= mix(0.5, 1.0, smoothstep(0.0, 3.0, vMapUv.y));')
         .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.95, 0.12, atlasT.a);');
     };
     return m;
@@ -247,7 +273,8 @@ float sdF(vec2 p) { return sdR(p) * 0.5 + sdR(p * 2.1 + 3.7) * 0.3 + sdR(p * 4.3
 function parallaxRamen(m: THREE.MeshStandardMaterial) {
   m.onBeforeCompile = s => {
     s.uniforms.uNacht = NACHT;
-    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\n' + RAAM_GLSL)
+    spiegelUni(s);
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\n' + RAAM_GLSL + SPIEGEL_GLSL)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   #ifdef USE_NORMALMAP
   {
@@ -258,11 +285,14 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
     vec2 fw = fwidth(pUv * 2.0);
     float dicht = 1.0 - smoothstep(0.012, 0.04, max(fw.x, fw.y));
     vec3 vlak = raamLicht(cel, glasM) * 0.9;
+    vec4 sp = luchtSpiegel(normal, normalize(vViewPosition), 0.0);
+    float spF = sp.a * glasM * (1.0 - uNacht * 0.85);
+    totalEmissiveRadiance += sp.rgb * spF * 0.9;
     if (dicht > 0.0 && glasM > 0.01) {
       vec3 k = kamer(cel, fract(pUv * 2.0), -pV);
       float aanL = step(raamHash(cel), 0.12 + uNacht * 0.33);
       vec3 licht = vec3(0.16, 0.17, 0.18) * (1.0 - uNacht) + (aanL > 0.5 ? raamLicht(cel, 1.0) * 1.7 + vec3(0.02) * uNacht : vec3(0.008) * uNacht);
-      vec3 binnen = k * licht * glasM;
+      vec3 binnen = k * licht * glasM * (1.0 - spF);
       totalEmissiveRadiance += mix(vlak, binnen, dicht);
     } else totalEmissiveRadiance += vlak;
   }
@@ -304,6 +334,12 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
 ` + met(C.map_fragment) + `
   // Neggekant en binnenkant van het venster wat donkerder.
   diffuseColor.rgb *= 1.0 - 0.35 * pDiep;
+  // Vuil onderaan de gevel (spatwater, straatstof) en verticale regenstrepen; verdwijnt naar boven.
+  {
+    float onder = smoothstep(0.32, 0.0, pUv.y);
+    float streep = fract(sin(floor(pUv.x * 14.0) * 91.7) * 4375.5);
+    diffuseColor.rgb *= 1.0 - 0.2 * onder - 0.07 * streep * smoothstep(0.9, 0.0, fract(pUv.y * 0.5)) * 0.5;
+  }
   #ifdef USE_NORMALMAP
   {
     float glasA = smoothstep(0.32, 0.18, texture2D(normalMap, pUv).a);
@@ -311,6 +347,10 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
     diffuseColor.rgb *= 1.0 - 0.55 * glasA * (1.0 - smoothstep(0.012, 0.04, max(fwA.x, fwA.y)));
   }
   #endif`)
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+  // Straatkloof: lager in de gevel komt minder hemellicht (de overkant en de buren schermen af).
+  reflectedLight.indirectDiffuse *= mix(0.5, 1.0, smoothstep(0.0, 3.0, pUv.y));
+  reflectedLight.indirectSpecular *= mix(0.6, 1.0, smoothstep(0.0, 3.0, pUv.y));`)
       .replace('#include <roughnessmap_fragment>', met(C.roughnessmap_fragment))
       .replace('#include <metalnessmap_fragment>', met(C.metalnessmap_fragment))
       .replace('#include <normal_fragment_maps>', met(C.normal_fragment_maps));
