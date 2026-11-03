@@ -81,13 +81,23 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
     return mb.bouw();
   }
 
-  // Hoofdtakken naar de kroon (ver weg niet nodig).
+  // Takkenskelet: hoofdtakken naar de kroon, elk met zijtakken; de bladtrossen groeien aan de uiteinden.
+  // Zo zie je door de gaten in de kroon echte takken en krijgt elke boom een eigen, grillig silhouet.
+  const uiteinden: V3[] = [];
   const takken = laag ? 0 : 4 + r.int(0, 2);
   for (let i = 0; i < takken; i++) {
     const h = (i / takken) * Math.PI * 2 + r.range(-0.3, 0.3);
     const vanY = v.stam + r.range(-0.5, 1.5);
+    const van = { x: top.x * 0.4, y: vanY, z: top.z * 0.4 };
     const eind = { x: midden.x + Math.cos(h) * v.kroonR * 0.55, y: v.kroonY + r.range(-1, 1.5), z: midden.z + Math.sin(h) * v.kroonR * 0.55 };
-    cilinder(mb, schors, { x: top.x * 0.4, y: vanY, z: top.z * 0.4 }, eind, v.stamR * 0.45, 0.06, 5);
+    cilinder(mb, schors, van, eind, v.stamR * 0.45, v.stamR * 0.16, 5);
+    for (let k = 0; k < 3; k++) {
+      const hh = h + r.range(-0.9, 0.9), op = r.range(-0.2, 0.9);
+      const ver2 = { x: eind.x + Math.cos(hh) * v.kroonR * r.range(0.3, 0.45), y: eind.y + op * v.kroonH * 0.35, z: eind.z + Math.sin(hh) * v.kroonR * r.range(0.3, 0.45) };
+      cilinder(mb, schors, eind, ver2, v.stamR * 0.15, 0.03, 4);
+      uiteinden.push(ver2);
+    }
+    uiteinden.push(eind);
   }
   // Donkere kern zodat de kroon niet doorzichtig oogt.
   const kern = `bladkern:${soort}`;
@@ -96,7 +106,7 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   for (let j = 0; j <= nV; j++) for (let i = 0; i <= nU; i++) {
     const th = (j / nV) * Math.PI, ph = (i / nU) * Math.PI * 2;
     const n = { x: Math.sin(th) * Math.cos(ph), y: Math.cos(th), z: Math.sin(th) * Math.sin(ph) };
-    const k = 0.8 + 0.09 * Math.sin(ph * 3 + j * 1.7) + 0.05 * Math.cos(ph * 5 + j);
+    const k = (laag ? 0.8 : 0.66) + 0.09 * Math.sin(ph * 3 + j * 1.7) + 0.05 * Math.cos(ph * 5 + j);
     pts.push({ x: midden.x + n.x * v.kroonR * k, y: midden.y + n.y * v.kroonH * 0.55 * k, z: midden.z + n.z * v.kroonR * k });
     nrm.push(n); uv.push([i / nU, j / nV]);
   }
@@ -106,10 +116,21 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   }
   mb.ruw(kern, pts, nrm, uv, idx);
   // Bladtrossen: drie kruisende kaarten per tros, verdeeld over een ellipsoïde.
-  for (let t = 0; t < (ver ? 3 : laag ? Math.ceil(v.trossen / 3) : Math.round(v.trossen * 1.35)); t++) {
-    const th = Math.acos(r.range(-0.55, 0.95)), ph = r.range(0, Math.PI * 2);
-    const c = { x: midden.x + Math.sin(th) * Math.cos(ph) * v.kroonR * 0.72, y: midden.y + Math.cos(th) * v.kroonH * 0.5, z: midden.z + Math.sin(th) * Math.sin(ph) * v.kroonR * 0.72 };
-    const s = v.kaart * r.range(0.72, 1.05);
+  // Grillige omtrek: per richting een eigen straal (bulten en inhammen).
+  const bult = [r.range(0.8, 1.15), r.range(0.8, 1.15), r.range(0.8, 1.15), r.range(0.8, 1.15), r.range(0.85, 1.1)];
+  const vormF = (ph: number, th: number) => 0.92 + 0.12 * Math.sin(ph * 2 + bult[0] * 5) * bult[1] + 0.08 * Math.cos(ph * 3 + bult[2] * 4) + 0.06 * Math.cos(th * 3 + bult[3]);
+  const nT = ver ? 3 : laag ? Math.ceil(v.trossen / 3) : Math.round(v.trossen * 2.1);
+  for (let t = 0; t < nT; t++) {
+    let c: V3;
+    if (uiteinden.length && t < uiteinden.length * 2) {
+      // Trossen aan en rond de takuiteinden.
+      const u = uiteinden[t % uiteinden.length];
+      c = { x: u.x + r.range(-0.9, 0.9), y: u.y + r.range(-0.4, 0.9), z: u.z + r.range(-0.9, 0.9) };
+    } else {
+      const th = Math.acos(r.range(-0.55, 0.95)), ph = r.range(0, Math.PI * 2), f = vormF(ph, th);
+      c = { x: midden.x + Math.sin(th) * Math.cos(ph) * v.kroonR * 0.72 * f, y: midden.y + Math.cos(th) * v.kroonH * 0.5 * f, z: midden.z + Math.sin(th) * Math.sin(ph) * v.kroonR * 0.72 * f };
+    }
+    const s = v.kaart * (laag || ver ? r.range(0.72, 1.05) : r.range(0.5, 0.78));
     const a = r.range(0, Math.PI);
     const assen: [V3, V3][] = [
       [{ x: Math.cos(a), y: 0, z: Math.sin(a) }, { x: 0, y: 1, z: 0 }],

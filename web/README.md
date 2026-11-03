@@ -95,6 +95,17 @@ hierheen).
 
 `src/core/geom/monumentmesh.ts` (groep Monumenten in Voorzieningen): gotische kathedraal (torens van 84 m, roosvensters, luchtbogen, koor met kooromgang), koepelgebouw met zuilenportiek en koperen koepel, stadhuis met klokkentoren en wijzerplaten, fonteinplein met platanen en banken. Een monument verhoogt de grondwaarde in de buurt (sterkste volledig, de rest voor een derde, samen max 25%), geeft de hele stad punten tevredenheid (een tweede van dezelfde soort telt half, max +12) en trekt toeristen: inkomsten per maand die meegroeien met de stad (post Toerisme in de begroting).
 
+## Beeldkwaliteit (maatstaf: Cities: Skylines II)
+
+- Licht: sterke, warme zon met lange schaduwen (start 15:30), weinig vullicht, ambient occlusion vanaf 'midden', schaduwkaart 3072/4096.
+- Gevels: echte geometrie voor dorpels, lateien, kroonlijstjes, frontons en lisenen, precies op de ramen van de textuur (`wandReliëf` in `gebouwmesh.ts`, `gevelReliëf` in `stadshart.ts`); alleen dichtbij en uit op 'laag' (`LOD.reliëf`).
+- Ramen: parallax-diepte plus interior mapping (`kamer()` in `render/materialen.ts`): elke raamvak een kamer met wanden, vloer, plafond en meubels, 's nachts verlicht; van ver vloeiend naar vlakke ramen.
+- Winkelpuien met interieur, spiegelend glas en een gevelbord met echte letters (zes winkeltypes).
+- Lucht: diepblauw verloop overdag, belichte wolkenlaag die meedrijft, zonsop- en ondergang uit de luchtshader.
+- Wegdek en stoep in wereldcoördinaten (`straatDek`): tintvariatie zonder herhaling, reparatieplekken, olievlekken, putdeksels, vuil en mos.
+- Bomen: takkenskelet met zijtakken, trossen aan de takuiteinden, grillig silhouet, doorschijnend blad tegen de zon in.
+- Van ver: land en bos buiten de kaart tot ~6 km (zelfde landschapsfunctie), nevel die meeschaalt met de zoomafstand, anisotrope filtering op de verre textuuratlas.
+
 ## Dag en nacht en prestaties
 
 - `src/render/dagnacht.ts`: zon van oost naar west (etmaal = 12 minuten), warm licht bij opkomst en ondergang, maanlicht; 's nachts verlichte ramen (per raamvak aan/uit), etalages, lantaarns met lichtvlekken (`render/licht.ts`) en koplampbundels. Aan/uit in het instellingenmenu.
