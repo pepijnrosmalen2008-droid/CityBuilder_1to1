@@ -241,7 +241,24 @@ export function gevel(stijl: string, ramen: boolean): TexData {
       if (fy < 0.035 || fx < 0.015) { k = mul(p.voeg, 0.95); h = 0.62; }
     } else { k = mul(p.muur, 0.94 + 0.1 * fbm(u, v, 8, 3, s + 1)); h = 0.8 + 0.04 * fbm(u, v, 32, 2, s + 2); gl = 0.15; }
     const rx0 = (3 - p.rb) / 2, rx1 = rx0 + p.rb, ry0 = p.borst, ry1 = p.borst + p.rh;
-    if (!ramen) { d.zet(x, y, k, h, gl); return; }
+    if (!ramen) {
+      // Blinde muur: regenstrepen vanaf de bovenkant en wat vuil, zodat het geen egaal vlak is.
+      const streep = glad01(0.55, 0.85, fbm(u * 3, v * 0.25, 8, 3, s + 31));
+      k = mul(k, 1 - 0.055 * streep - 0.04 * fbm(u, v, 3, 3, s + 32));
+      d.zet(x, y, k, h, gl); return;
+    }
+    // Schaduw rond de raamopening (de muur werpt schaduw in de negge) en onder de dorpel een
+    // vochtige uitloop van regenwater: geeft ook vlakke gevels diepte.
+    {
+      const binnenX = bx > rx0 - 0.07 && bx < rx1 + 0.07;
+      if (binnenX && by < ry0 && by > ry0 - 0.6) {
+        const t = (ry0 - by) / 0.6, rand = Math.min(bx - rx0 + 0.07, rx1 + 0.07 - bx);
+        k = mul(k, 1 - 0.16 * (1 - t) * glad01(0, 0.25, rand) * (0.6 + 0.4 * fbm(u * 4, v, 16, 2, s + 33)));
+      }
+      const dx = Math.max(rx0 - bx, bx - rx1, 0), dy = Math.max(ry0 - by, by - ry1, 0);
+      const r = Math.hypot(dx, dy);
+      if (r > 0 && r < 0.09) k = mul(k, 0.82 + 0.18 * r / 0.09);
+    }
     if (p.vuil && bx > rx0 && bx < rx1 && by < ry0) {
       const streep = fbm(u, v, 64, 2, s + 3), af = 1 - Math.min(1, Math.max(0, (ry0 - by) / ry0));
       k = mul(k, 1 - 0.18 * af * glad01(0.45, 0.7, streep));
@@ -726,60 +743,82 @@ const BLADKLEUR: Record<string, [C, C]> = {
   plataan: [K(0.18, 0.31, 0.09), K(0.44, 0.56, 0.19)],
 };
 
-/** Bladtros met alfa: honderden losse blaadjes (of naaldtakjes) in een ronde wolk. */
+/**
+ * Bladtros met alfa. Loofbomen: een handvol twijgjes die vanuit het midden uitwaaieren, met kleine
+ * blaadjes in paren langs elke twijg (zoals een echte tak), elk blad met eigen tint, nerf en
+ * schaduw van de bladeren erboven. Naaldbomen: hangende takjes met naalden. 768 px.
+ */
 export function bladkaart(soort: string): TexData {
-  const N = 512, d = new Doek(N, N, true);
+  const N = 768, d = new Doek(N, N, true);
   const [donker, licht] = BLADKLEUR[soort] ?? BLADKLEUR.eik;
   const s = 800 + soort.length * 17;
-  // Achtergrond leeg.
   for (let i = 0; i < N * N; i++) d.alfa![i] = 0;
   const naald = soort === 'den';
-  const aantal = naald ? 320 : 1150;
-  // Loofbomen: bladeren in losse plukjes met gaten ertussen, zodat je diepte ziet in plaats van een plaat.
-  const nPluk = 13;
-  const pluk = Array.from({ length: nPluk }, (_, i) => {
-    const r = Math.sqrt(hash01(i, 11, s)) * 0.3, a = hash01(i, 12, s) * Math.PI * 2;
-    return { x: 0.5 + Math.cos(a) * r, y: 0.5 + Math.sin(a) * r };
-  });
-  for (let b = 0; b < aantal; b++) {
-    let cx: number, cy: number, plukY = 0.5;
-    if (naald) {
-      const r = Math.sqrt(hash01(b, 1, s)) * 0.44, a = hash01(b, 2, s) * Math.PI * 2;
-      cx = 0.5 + Math.cos(a) * r; cy = 0.5 + Math.sin(a) * r * 0.6;
-    } else {
-      const p = pluk[b % nPluk];
-      const r = Math.sqrt(hash01(b, 1, s)) * 0.12, a = hash01(b, 2, s) * Math.PI * 2;
-      cx = p.x + Math.cos(a) * r; cy = p.y + Math.sin(a) * r * 0.85; plukY = p.y;
+  const bladL = soort === 'berk' ? 0.024 : soort === 'plataan' ? 0.036 : soort === 'eik' ? 0.03 : 0.028;
+  const bladB = soort === 'eik' ? 0.5 : soort === 'berk' ? 0.62 : 0.7;
+  // Volgorde van tekenen = diepte: eerst de achterste twijgen (donkerder), de voorste het laatst.
+  const twijgen = naald ? 22 : 40;
+  const diepte = new Float32Array(N * N);
+  const zetPx = (x: number, y: number, k: C, h: number, gl: number, z: number) => {
+    if (x < 1 || y < 1 || x >= N - 1 || y >= N - 1) return;
+    const i = y * N + x;
+    d.kleur[i * 3] = k[0]; d.kleur[i * 3 + 1] = k[1]; d.kleur[i * 3 + 2] = k[2];
+    d.hoogte[i] = h; d.glad[i] = gl; d.metaal[i] = 0; d.alfa![i] = 1; diepte[i] = z;
+  };
+  const lijn = (x0: number, y0: number, x1: number, y1: number, dik: number, k: C, z: number) => {
+    const L = Math.hypot(x1 - x0, y1 - y0) * N, n = Math.ceil(L);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, cx = (x0 + (x1 - x0) * t) * N, cy = (y0 + (y1 - y0) * t) * N, r = dik * N * (1 - t * 0.6);
+      for (let yy = Math.floor(cy - r); yy <= cy + r; yy++) for (let xx = Math.floor(cx - r); xx <= cx + r; xx++) if ((xx - cx) ** 2 + (yy - cy) ** 2 <= r * r) zetPx(xx, yy, k, 0.5, 0.2, z);
     }
-    const a = Math.atan2(cy - 0.5, cx - 0.5);
-    const hoek = naald ? a + (hash01(b, 6, s) - 0.5) * 0.6 : hash01(b, 3, s) * Math.PI * 2;
-    const lang = (naald ? 0.16 : soort === 'berk' ? 0.028 : soort === 'plataan' ? 0.04 : 0.034) * (0.75 + 0.5 * hash01(b, 4, s));
-    const breed = naald ? 0.012 : lang * (soort === 'eik' ? 0.55 : 0.62);
-    const toon = hash01(b, 5, s);
-    // Licht aan de bovenkant van elk plukje en van de hele tros, donker onderin (zelfschaduw).
-    const licht01 = Math.min(1, Math.max(0, 0.3 + toon * 0.28 + (cy - plukY) * 3.2 + (cy - 0.5) * 0.6));
-    const kleur = mix(donker, licht, licht01);
-    const ca = Math.cos(hoek), sa = Math.sin(hoek);
-    const ext = Math.ceil(lang * N) + 2;
-    const px = Math.floor(cx * N), py = Math.floor(cy * N);
-    for (let yy = -ext; yy <= ext; yy++) for (let xx = -ext; xx <= ext; xx++) {
-      const x = px + xx, y = py + yy;
-      if (x < 1 || y < 1 || x >= N - 1 || y >= N - 1) continue;
-      const lx = (xx * ca + yy * sa) / N, ly = (-xx * sa + yy * ca) / N;
-      let inBlad: number;
-      if (naald) inBlad = Math.abs(ly) < breed * (1 - Math.abs(lx) / lang) && Math.abs(lx) < lang ? 1 : 0;
-      else { const t = lx / lang; inBlad = t > -1 && t < 1 && Math.abs(ly) < breed * Math.sqrt(Math.max(0, 1 - t * t)) * (t > 0 ? 1 - t * 0.35 : 1) ? 1 : 0; }
-      if (!inBlad) continue;
-      // Nerf en lichte bolling.
-      const nerf = !naald && Math.abs(ly) < 0.0025 ? 0.85 : 1;
-      const bol = 1 - Math.abs(ly) / Math.max(1e-4, breed);
-      const i = y * N + x;
-      d.kleur[i * 3] = kleur[0] * nerf * (0.85 + 0.2 * bol); d.kleur[i * 3 + 1] = kleur[1] * nerf * (0.85 + 0.2 * bol); d.kleur[i * 3 + 2] = kleur[2] * nerf * (0.85 + 0.2 * bol);
-      d.hoogte[i] = 0.4 + 0.5 * bol + b / aantal * 0.1; d.glad[i] = 0.35; d.metaal[i] = 0; d.alfa![i] = 1;
+  };
+  for (let tw = 0; tw < twijgen; tw++) {
+    const z = tw / twijgen;
+    const hoek = (naald ? Math.PI / 2 : 0) + (hash01(tw, 1, s) - 0.5) * (naald ? 2.2 : Math.PI * 2);
+    const r0 = naald ? 0.05 : 0.02 + hash01(tw, 2, s) * 0.16, lang = naald ? 0.3 + hash01(tw, 3, s) * 0.12 : 0.12 + hash01(tw, 3, s) * 0.14;
+    // Loofbomen: twijgen verspreid over de hele kaart (geen ster vanuit het midden).
+    const pr = Math.sqrt(hash01(tw, 6, s)) * 0.26, pa = hash01(tw, 7, s) * Math.PI * 2;
+    const x0 = naald ? 0.5 + Math.cos(hoek) * r0 : 0.5 + Math.cos(pa) * pr - Math.cos(hoek) * lang * 0.45;
+    const y0 = naald ? 0.5 + Math.sin(hoek) * r0 * 0.8 : 0.5 + Math.sin(pa) * pr * 0.85 - Math.sin(hoek) * lang * 0.4;
+    const buig = (hash01(tw, 4, s) - 0.5) * 0.6;
+    const pt = (t: number): [number, number] => { const a = hoek + buig * t; return [x0 + Math.cos(a) * lang * t, y0 + Math.sin(a) * lang * t * (naald ? 1 : 0.85) + (naald ? t * t * 0.08 : 0)]; };
+    const schaduw = 0.55 + 0.45 * z;
+    // Twijg.
+    const tk = mul(K(0.28, 0.21, 0.14), 0.8 * schaduw);
+    for (let i = 0; i < 8; i++) { const [a, b] = pt(i / 8), [c, e] = pt((i + 1) / 8); lijn(a, b, c, e, naald ? 0.0035 : 0.0028, tk, z); }
+    // Blaadjes of naalden langs de twijg.
+    const nb = naald ? 70 : 22;
+    for (let j = 0; j < nb; j++) {
+      const t = 0.12 + 0.88 * (j / nb) + (hash01(tw, j + 10, s) - 0.5) * 0.03;
+      const [bx, by] = pt(t), [bx2, by2] = pt(Math.min(1, t + 0.02));
+      const ta = Math.atan2(by2 - by, bx2 - bx);
+      for (const kant of [1, -1]) {
+        const hoekB = ta + kant * (naald ? 0.9 : 0.5 + hash01(tw, j, s + 5) * 0.6);
+        const L = (naald ? 0.032 : bladL) * (0.7 + 0.5 * hash01(tw, j + 40, s)) * (naald ? 1 : 1 - t * 0.25);
+        const B = naald ? 0.0018 : L * bladB * 0.5;
+        const toon = hash01(tw * 131 + j, kant + 3, s);
+        // Licht: bovenkant van de tros en voorste twijgen lichter; per blad eigen tint (geel- tot blauwgroen).
+        let k = mix(donker, licht, Math.min(1, Math.max(0, 0.15 + toon * 0.45 + (0.5 - by) * 0.9 + z * 0.3)));
+        k = [k[0] * (0.92 + 0.16 * hash01(j, tw, s + 9)), k[1], k[2] * (0.85 + 0.3 * hash01(j, tw, s + 11))];
+        const ca = Math.cos(hoekB), sa = Math.sin(hoekB);
+        const cx = bx + ca * L * 0.55, cy = by + sa * L * 0.55;
+        const ext = Math.ceil(L * N) + 2, px = Math.floor(cx * N), py = Math.floor(cy * N);
+        for (let yy = -ext; yy <= ext; yy++) for (let xx = -ext; xx <= ext; xx++) {
+          const lx = (xx * ca + yy * sa) / N, ly = (-xx * sa + yy * ca) / N, tt = lx / (L * 0.55);
+          if (tt < -1 || tt > 1) continue;
+          const breed = naald ? B : B * Math.sqrt(Math.max(0, 1 - tt * tt)) * (tt > 0 ? 1 - tt * 0.3 : 1);
+          if (Math.abs(ly) > breed) continue;
+          const bol = 1 - Math.abs(ly) / Math.max(1e-5, breed);
+          const nerf = !naald && Math.abs(ly) < 0.0012 ? 0.82 : 1;
+          const zij = ly > 0 ? 1.06 : 0.92; // de ene bladhelft vangt meer licht
+          zetPx(px + xx, py + yy, mul(k, schaduw * nerf * zij * (0.86 + 0.18 * bol)), 0.45 + 0.5 * bol, 0.42, z + 0.001 * j);
+        }
+      }
     }
   }
-  // Kleur ook in transparante pixels doorgeven (voorkomt donkere randen bij mipmaps).
-  for (let i = 0; i < N * N; i++) if (d.alfa![i] === 0) { d.kleur[i * 3] = donker[0]; d.kleur[i * 3 + 1] = donker[1]; d.kleur[i * 3 + 2] = donker[2]; d.hoogte[i] = 0.3; }
+  // Kleur ook in transparante pixels (geen donkere randen bij mipmaps).
+  for (let i = 0; i < N * N; i++) if (d.alfa![i] === 0) { d.kleur[i * 3] = donker[0] * 0.8; d.kleur[i * 3 + 1] = donker[1] * 0.8; d.kleur[i * 3 + 2] = donker[2] * 0.8; d.hoogte[i] = 0.3; }
+  void diepte;
   return d.naarTex(3);
 }
 
@@ -789,7 +828,8 @@ export function bladkern(soort: string): TexData {
   const [donker, licht] = BLADKLEUR[soort] ?? BLADKLEUR.eik;
   loop(d, (x, y, u, v) => {
     const w = worley(u, v, 10, 950);
-    const k = mul(mix(donker, licht, (1 - w.f1) * 0.35 + v * 0.25), 0.6 + 0.25 * hash01(x, y, 951));
+    const w2 = worley(u, v, 26, 952);
+    const k = mul(mix(donker, licht, (1 - w.f1) * 0.25 + (1 - w2.f1) * 0.2 + v * 0.15), 0.38 + 0.22 * hash01(x, y, 951));
     d.zet(x, y, k, 1 - w.f1, 0.2);
   });
   return d.naarTex(2);

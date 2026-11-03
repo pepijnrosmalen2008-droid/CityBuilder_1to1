@@ -107,7 +107,7 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
   for (let j = 0; j <= nV; j++) for (let i = 0; i <= nU; i++) {
     const th = (j / nV) * Math.PI, ph = (i / nU) * Math.PI * 2;
     const n = { x: Math.sin(th) * Math.cos(ph), y: Math.cos(th), z: Math.sin(th) * Math.sin(ph) };
-    const k = (laag ? 0.8 : 0.66) + 0.09 * Math.sin(ph * 3 + j * 1.7) + 0.05 * Math.cos(ph * 5 + j);
+    const k = (laag ? 0.8 : 0.42) + 0.09 * Math.sin(ph * 3 + j * 1.7) + 0.05 * Math.cos(ph * 5 + j);
     pts.push({ x: midden.x + n.x * v.kroonR * k, y: midden.y + n.y * v.kroonH * 0.55 * k, z: midden.z + n.z * v.kroonR * k });
     nrm.push(n); uv.push([i / nU, j / nV]);
   }
@@ -115,12 +115,13 @@ export function boomMesh(soort: string, variant: number, niveau = 0): MeshData {
     const a = j * (nU + 1) + i, b = a + 1, c = a + nU + 1, d = c + 1;
     idx.push(a, b, c, b, d, c);
   }
-  mb.ruw(kern, pts, nrm, uv, idx);
+  // Dichtbij geen kern: de dichte bladtrossen vullen de kroon en je kijkt erdoorheen naar de takken.
+  if (laag) mb.ruw(kern, pts, nrm, uv, idx);
   // Bladtrossen: drie kruisende kaarten per tros, verdeeld over een ellipsoïde.
   // Grillige omtrek: per richting een eigen straal (bulten en inhammen).
   const bult = [r.range(0.8, 1.15), r.range(0.8, 1.15), r.range(0.8, 1.15), r.range(0.8, 1.15), r.range(0.85, 1.1)];
   const vormF = (ph: number, th: number) => 0.92 + 0.12 * Math.sin(ph * 2 + bult[0] * 5) * bult[1] + 0.08 * Math.cos(ph * 3 + bult[2] * 4) + 0.06 * Math.cos(th * 3 + bult[3]);
-  const nT = ver ? 3 : laag ? Math.ceil(v.trossen / 3) : Math.round(v.trossen * 2.1);
+  const nT = ver ? 3 : laag ? Math.ceil(v.trossen / 3) : Math.round(v.trossen * 2.6);
   for (let t = 0; t < nT; t++) {
     let c: V3;
     if (uiteinden.length && t < uiteinden.length * 2) {

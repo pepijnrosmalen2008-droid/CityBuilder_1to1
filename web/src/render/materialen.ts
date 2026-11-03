@@ -98,7 +98,7 @@ export class Materialen {
       };
     }
     if (d.dubbelzijdig) m.side = THREE.DoubleSide;
-    if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; m.alphaToCoverage = !sleutel.startsWith('blad'); }
+    if (d.alfa === 'knip') { m.alphaTest = 0.5; m.transparent = false; m.alphaToCoverage = true; }
     if (d.alfa === 'mengen') { m.transparent = true; m.depthWrite = false; }
     if (d.emissie) { m.emissive = new THREE.Color(...d.emissie); m.emissiveIntensity = 2.5; }
     if (sleutel.startsWith('blad')) {
