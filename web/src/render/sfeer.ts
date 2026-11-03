@@ -237,7 +237,8 @@ export class Sfeer {
     this.zon.position.copy(d).addScaledVector(this.zonRichting, r * 2 + 300);
     this.zon.shadow.normalBias = 0.02 * r / 10;
     const f = this.scene.fog as THREE.Fog;
-    f.near = Math.max(500, afstand * 1.7); f.far = Math.max(3200, afstand * 7.5);
+    // Atmosferisch perspectief: uitgezoomd verdwijnt het land blauwig in de horizon (zoals in CS2).
+    f.near = Math.max(380, afstand * 1.15); f.far = Math.min(8800, Math.max(3000, afstand * 4.2 + 1800));
     // Ver uitgezoomd worden schaduwpixels groot en ruist de AO: schaduw zachter, AO uitfaden.
     const ver = THREE.MathUtils.smoothstep(afstand, 450, 1300);
     this.zon.shadow.intensity = 1 - ver * 0.3;

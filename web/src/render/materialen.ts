@@ -138,7 +138,7 @@ export class Materialen {
     arr.format = THREE.RGBAFormat; arr.type = THREE.UnsignedByteType;
     arr.wrapS = arr.wrapT = THREE.RepeatWrapping;
     arr.minFilter = THREE.LinearMipmapLinearFilter; arr.magFilter = THREE.LinearFilter;
-    arr.generateMipmaps = true; arr.anisotropy = 4;
+    arr.generateMipmaps = true; arr.anisotropy = 16;
     arr.colorSpace = THREE.SRGBColorSpace;
     arr.needsUpdate = true;
     let wacht = 0, uploadGepland = false;

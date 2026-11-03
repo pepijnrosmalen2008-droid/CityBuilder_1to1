@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Terrein, ZEENIVEAU } from '../core/terrain';
 import { bouwTerreinVak, aantalVakken, VAK_CELLEN } from '../core/geom/terreinmesh';
 import { TextuurBron, TexSet } from './texturen';
+import { fbm } from '../core/noise';
+import { smoothstep } from '../core/math';
 
 /** Terrein in vakken; bodemtexturen worden per hoekpunt gemengd in een aangepaste standaard-shader. */
 export class TerreinWeergave {
@@ -20,6 +22,79 @@ export class TerreinWeergave {
     const n = aantalVakken(this.t);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) this.bouwVak(i, j);
     this.maakWater(water);
+    this.maakBuitenland();
+  }
+
+  /**
+   * Land buiten de kaart tot ~6 km: dezelfde landschapsfunctie (heuvels, kust, rivier), naadloos op de
+   * kaartrand, met bos- en weidevlakken; verdwijnt in de nevel. Grof raster: ~30k driehoeken.
+   */
+  private maakBuitenland() {
+    const t = this.t, H0 = t.grootte / 2, M = 256;
+    const D = [0, 12, 30, 60, 110, 190, 300, 460, 700, 1050, 1550, 2250, 3200, 4500, 6200];
+    const nv = D.length * 4 * M;
+    const pos = new Float32Array(nv * 3), bod = new Float32Array(nv * 4);
+    let k = 0;
+    for (const d of D) {
+      const H = H0 + d;
+      for (let i = 0; i < 4 * M; i++, k++) {
+        const zij = Math.floor(i / M), f = (i % M) / M * 2 - 1;
+        const [x, z] = zij === 0 ? [f * H, -H] : zij === 1 ? [H, f * H] : zij === 2 ? [-f * H, H] : [-H, -f * H];
+        const y = d === 0 ? t.hoogte(Math.max(-H0, Math.min(H0, x)), Math.max(-H0, Math.min(H0, z))) : Terrein.natuurlijk(x, z, t.seed, t.grootte);
+        pos.set([x, y, z], k * 3);
+        const zand = 1 - smoothstep(0.6, 2.6, y);
+        const bos = smoothstep(0.42, 0.56, fbm(x / 900, z / 900, 1, 4, t.seed + 71, 0.5, false)) * (1 - zand);
+        const weide = smoothstep(0.45, 0.62, fbm(x / 500, z / 500, 1, 3, 31, 0.5, false)) * (1 - zand) * (1 - bos);
+        const gras = Math.max(0, 1 - zand - bos - weide);
+        bod.set([gras, weide, bos, zand], k * 4);
+      }
+    }
+    const idx: number[] = [];
+    for (let r = 0; r < D.length - 1; r++) for (let i = 0; i < 4 * M; i++) {
+      const a = r * 4 * M + i, b = r * 4 * M + (i + 1) % (4 * M), c = a + 4 * M, e = b + 4 * M;
+      idx.push(a, b, c, b, e, c);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('bodem', new THREE.BufferAttribute(bod, 4));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, this.materiaal);
+    m.receiveShadow = true; m.matrixAutoUpdate = false; m.frustumCulled = false;
+    this.groep.add(m);
+    this.buitenBomen();
+  }
+
+  /** Bos buiten de kaart: kegels (naaldbomen, 12 driehoeken) en afgeplatte twintigvlakken (loofbomen) als instanties. */
+  private buitenBomen() {
+    const t = this.t, H0 = t.grootte / 2, MAX = 9000;
+    const naald = new THREE.ConeGeometry(1, 2.6, 6, 1, true).translate(0, 1.5, 0);
+    const loof = new THREE.IcosahedronGeometry(1, 0).scale(1, 0.85, 1).translate(0, 1.2, 0);
+    for (const g of [naald, loof]) g.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 });
+    const lagen = [new THREE.InstancedMesh(naald, mat, MAX), new THREE.InstancedMesh(loof, mat, MAX)];
+    const tel = [0, 0];
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
+    let s = t.seed * 9973 + 17;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    for (let poging = 0; poging < MAX * 8 && tel[0] + tel[1] < MAX; poging++) {
+      const d = 6 + Math.pow(rnd(), 1.8) * 1100, zij = Math.floor(rnd() * 4), f = rnd() * 2 - 1, H = H0 + d;
+      const [x, z] = zij === 0 ? [f * H, -H] : zij === 1 ? [H, f * H] : zij === 2 ? [-f * H, H] : [-H, -f * H];
+      const bos = smoothstep(0.42, 0.56, fbm(x / 900, z / 900, 1, 4, t.seed + 71, 0.5, false));
+      const y = Terrein.natuurlijk(x, z, t.seed, t.grootte);
+      if (bos < 0.4 || y < 1.5 || rnd() > bos) continue;
+      const k = rnd() < 0.4 ? 0 : 1, r = k === 0 ? 2.2 + rnd() * 1.4 : 3.2 + rnd() * 2.4;
+      m4.compose(v.set(x, y - 0.5, z), q.setFromAxisAngle(v.set(0, 1, 0), rnd() * 6.3), sc.set(r, r * (k === 0 ? 2.4 + rnd() : 1.3 + rnd() * 0.5), r));
+      m4.setPosition(x, y - 0.5, z);
+      lagen[k].setMatrixAt(tel[k], m4);
+      lagen[k].setColorAt(tel[k], k === 0 ? c.setRGB(0.05 + rnd() * 0.03, 0.12 + rnd() * 0.04, 0.06 + rnd() * 0.02, THREE.SRGBColorSpace) : c.setRGB(0.11 + rnd() * 0.08, 0.2 + rnd() * 0.08, 0.06 + rnd() * 0.04, THREE.SRGBColorSpace));
+      tel[k]++;
+    }
+    for (const [k, im] of lagen.entries()) {
+      im.count = tel[k]; im.castShadow = false; im.receiveShadow = false; im.frustumCulled = false;
+      im.userData.geenAO = true;
+      this.groep.add(im);
+    }
   }
 
   private bouwVak(i: number, j: number) {

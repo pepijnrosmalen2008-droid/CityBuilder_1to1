@@ -7,6 +7,8 @@ export const ZEENIVEAU = 0;
 export class Terrein {
   readonly grootte: number;
   readonly stap: number;
+  /** Seed van het natuurlijke landschap (ook voor het land buiten de kaart). */
+  readonly seed: number;
   readonly n: number; // aantal punten per zijde
   readonly h: Float32Array;
   /** Oorspronkelijke hoogte (voor herstel als een weg verdwijnt). */
@@ -15,7 +17,7 @@ export class Terrein {
   private vuil: { x0: number; z0: number; x1: number; z1: number }[] = [];
 
   constructor(grootte = 2048, stap = 4, seed = 1) {
-    this.grootte = grootte; this.stap = stap;
+    this.grootte = grootte; this.stap = stap; this.seed = seed;
     this.n = Math.round(grootte / stap) + 1;
     this.h = new Float32Array(this.n * this.n);
     for (let j = 0; j < this.n; j++) for (let i = 0; i < this.n; i++) {
