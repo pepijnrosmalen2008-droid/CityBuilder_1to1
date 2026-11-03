@@ -107,7 +107,7 @@ hierheen).
 - Gras dichtbij (`render/gras.ts`): ~20k plukjes als één instanced mesh rond het kijkpunt, op het terrein via een hoogtetextuur, wind in de shader, enkele bloemen; een grasmasker houdt wegen, gebouwen, verharding en strand vrij. Alleen ingezoomd en vanaf 'midden'.
 - Voertuigen: bedrijfsopschriften op vrachtwagens en bestelbussen (varianten per `lak`), bus met deuren, raamstijlen en ledrichtingsbord.
 - Kantoren en hallen (`core/geom/zakelijk.ts`): vinnen langs glasgevels, bedrijfsnamen, techniekruimtes, antennes, dockshelters, kolommen, dakinstallaties.
-- Geen platte look: Fresnel-spiegeling van de lucht in alle ramen (dichtbij en in de verre atlas, `LUCHT` volgt dag/nacht), straatkloof-occlusie (lagere verdiepingen krijgen minder hemellicht), vuil onderaan gevels en regenstrepen, sterker zon/schaduw-contrast, AO tot ~1,7 km uitgezoomd, donker verweerd zink met felsnaden, en van ver blijven raamrijen per verdieping zichtbaar.
+- Geen platte look: Fresnel-spiegeling van de lucht in alle ramen (dichtbij en in de verre atlas, `LUCHT` volgt dag/nacht), straatkloof-occlusie (lagere verdiepingen krijgen minder hemellicht), vuil onderaan gevels en regenstrepen, sterker zon/schaduw-contrast, AO tot ~1,7 km uitgezoomd, donker verweerd zink met felsnaden, van ver blijven raamrijen per verdieping zichtbaar, en elk gebouw heeft een eigen tint op gevels en muren (`tint()` in `gebouwmesh.ts`, via het kleurattribuut naar de gevelshaders).
 - Van ver: land en bos buiten de kaart tot ~6 km (zelfde landschapsfunctie; de eerste ~320 m met echte boommodellen), nevel die meeschaalt met de zoomafstand, anisotrope filtering op de verre textuuratlas.
 
 ## Dag en nacht en prestaties

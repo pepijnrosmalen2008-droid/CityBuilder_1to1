@@ -187,7 +187,27 @@ export const bijBuur = (p: V2) => BUREN.some(v => puntInPolygoon(p, v));
 export function bouwGebouw(g: Gebouw, hoogte: H, buren: V2[][] = [], ver = false): { mesh: MeshData; props: Prop[] } {
   BUREN = buren;
   LOD.ver = ver;
-  try { return bouwGebouwIntern(g, hoogte); } finally { LOD.ver = false; }
+  try { return tint(bouwGebouwIntern(g, hoogte), g.seed); } finally { LOD.ver = false; }
+}
+
+/**
+ * Eigen tint per gebouw op gevels en muren (lichter/donkerder, iets warmer of koeler, soms wat
+ * verweerder), zoals in CS2: dezelfde stijl ziet er per pand net anders uit. De gevelshaders
+ * vermenigvuldigen met deze kleur (ook op afstand, de atlas neemt hem over).
+ */
+function tint(r: { mesh: MeshData; props: Prop[] }, seed: number) {
+  const rr = new Rng(seed * 31 + 7);
+  const licht = rr.range(0.84, 1.1), warm = rr.range(-0.05, 0.05), vaal = rr.range(0, 0.12);
+  const k = [licht * (1 + warm), licht * (1 + warm * 0.3), licht * (1 - warm)];
+  const m = (k[0] + k[1] + k[2]) / 3;
+  const c = k.map(x => x * (1 - vaal) + m * vaal);
+  for (const gr of r.mesh.groepen) {
+    if (!/^(gevel|muur):/.test(gr.materiaal)) continue;
+    const n = gr.posities.length / 3, kl = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) kl.set(c, i * 3);
+    gr.kleuren = kl;
+  }
+  return r;
 }
 
 function bouwGebouwIntern(g: Gebouw, hoogte: H): { mesh: MeshData; props: Prop[] } {

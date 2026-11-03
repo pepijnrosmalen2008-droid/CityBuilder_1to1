@@ -20,6 +20,13 @@ vec4 luchtSpiegel(vec3 n, vec3 vd, float ruw) {
   sky *= r.y > 0.0 ? 0.9 + 0.2 * w : 1.0;
   return vec4(sky, fr * (1.0 - ruw * 0.6));
 }`;
+/** Tint per gebouw uit het kleurattribuut (ontbreekt het, dan 0 = geen tint). */
+const gebouwTint = (s: { vertexShader: string; fragmentShader: string }) => {
+  s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\n#ifndef USE_COLOR\nattribute vec3 color;\n#endif\nvarying vec3 vTint;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTint = dot(color, vec3(1.0)) < 0.01 ? vec3(1.0) : color;');
+  s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTint;')
+    .replace('#include <emissivemap_fragment>', 'diffuseColor.rgb *= vTint;\n#include <emissivemap_fragment>');
+};
 const spiegelUni = (s: { uniforms: Record<string, unknown> }) => { s.uniforms.uZenit = LUCHT.zenit; s.uniforms.uHorizon = LUCHT.horizon; s.uniforms.uGrond = LUCHT.grond; };
 
 /** GLSL: willekeurig getal per raamvak en de kleur van het licht erachter (warm, soms koel of tv-blauw). */
@@ -119,6 +126,7 @@ export class Materialen {
       };
     }
     if (sleutel.startsWith('gevel:')) parallaxRamen(m);
+    if (sleutel.startsWith('muur:')) m.onBeforeCompile = s => gebouwTint(s);
     if (sleutel === 'asfalt' || sleutel === 'busbaan') straatDek(m, true);
     else if (sleutel === 'fietsasfalt' || sleutel === 'stoeptegels' || sleutel === 'klinkers') straatDek(m, false);
     if (sleutel.startsWith('winkelpui:')) etalage(m);
@@ -195,6 +203,7 @@ export class Materialen {
       s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute float atlaslaag;\nvarying float vLaag;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLaag = atlaslaag;');
       spiegelUni(s);
+      gebouwTint(s);
       s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform highp sampler2DArray tAtlas;\nuniform float uGevels;\nvarying float vLaag;\n' + RAAM_GLSL + SPIEGEL_GLSL)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (vLaag < uGevels - 0.5) { float gm = smoothstep(0.55, 0.8, atlasT.a); totalEmissiveRadiance += raamLicht(floor(vMapUv * 2.0), gm) * 0.9; vec4 sp = luchtSpiegel(normal, normalize(vViewPosition), 0.0); totalEmissiveRadiance += sp.rgb * sp.a * gm * (1.0 - uNacht * 0.85) * 0.8; diffuseColor.rgb *= 1.0 - 0.15 * smoothstep(0.32, 0.0, vMapUv.y); }')
         .replace('#include <map_fragment>', `vec4 atlasT = texture(tAtlas, vec3(vMapUv, floor(vLaag + 0.5)), -0.8);
@@ -274,6 +283,7 @@ function parallaxRamen(m: THREE.MeshStandardMaterial) {
   m.onBeforeCompile = s => {
     s.uniforms.uNacht = NACHT;
     spiegelUni(s);
+    gebouwTint(s);
     s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\n' + RAAM_GLSL + SPIEGEL_GLSL)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   #ifdef USE_NORMALMAP
